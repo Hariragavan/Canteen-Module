@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  
+  html, body {
+    background-color: #f8fafc;
+    color: #0f172a;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #root {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* TVS RP 3230 ABW 80mm Serrated Thermal Paper Tear Line Simulation */
+.thermal-paper-edge {
+  background: #ffffff;
+  position: relative;
+}
+
+.thermal-paper-edge::after {
+  content: "";
+  position: absolute;
+  bottom: -10px;
+  left: 0;
+  right: 0;
+  height: 10px;
+  background: radial-gradient(circle, transparent, transparent 50%, #ffffff 50%, #ffffff 100%);
+  background-size: 14px 14px;
+}
+
+.thermal-paper-top-edge::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background: radial-gradient(circle, #ffffff, #ffffff 50%, transparent 52%);
+  background-size: 14px 14px;
+}
+
+/* Custom crisp scrollbar for kitchen queues and audit ledger */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* TVS RP 3230 ABW Thermal Printer 80mm Print Media Query */
+@media print {
+  /* Hide all regular UI when browser print triggers */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Only display the dedicated 80mm thermal container */
+  #tvsSlipPrintArea,
+  #tvsSlipPrintArea * {
+    visibility: visible !important;
+  }
+
+  #tvsSlipPrintArea {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 79mm !important;
+    max-width: 80mm !important;
+    margin: 0 !important;
+    padding: 3mm 4mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  @page {
+    size: 80mm auto;
+    margin: 0mm;
+  }
+}

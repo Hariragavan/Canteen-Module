@@ -1,0 +1,781 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import type { Employee, MealSlotName, Order } from '../../types';
+import { canteenService, MEAL_SLOTS } from '../../services/canteenService';
+import { supabaseManager } from '../../services/supabase';
+import { soundEngine } from '../../services/soundEngine';
+import { faceMatcherService } from '../../services/faceMatcherService';
+import { FaceScannerHUD } from './FaceScannerHUD';
+import type { FaceScannerHUDHandle } from './FaceScannerHUD';
+import { CameraVerifyModal } from './CameraVerifyModal';
+import { ThermalReceipt } from '../printer/ThermalReceipt';
+import {
+  Printer,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  BadgeCheck,
+  Maximize,
+  Minimize,
+  User,
+  Check,
+  RotateCcw,
+  Calendar,
+  UtensilsCrossed,
+  Building,
+  Camera,
+  Scan,
+} from 'lucide-react';
+
+interface TabletKioskViewProps {
+  onNavigateToStaffScanner?: (orderUuid: string) => void;
+  onOpenAdminModal?: () => void;
+}
+
+export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
+  onNavigateToStaffScanner,
+  onOpenAdminModal,
+}) => {
+  const [kioskStep, setKioskStep] = useState<'SCANNING' | 'VERIFIED'>('SCANNING');
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
+
+  const [selectedMealSlot, setSelectedMealSlot] = useState<MealSlotName>('Lunch');
+  const [duplicateOrder, setDuplicateOrder] = useState<Order | null>(null);
+  const [lastPrintedOrder, setLastPrintedOrder] = useState<Order | null>(null);
+  const [isDispensing, setIsDispensing] = useState<boolean>(false);
+  const [isCapturing, setIsCapturing] = useState<boolean>(false);
+  const [isProcessingScan, setIsProcessingScan] = useState<boolean>(false);
+  const [isScanVerified, setIsScanVerified] = useState<boolean>(false);
+  const [currentTimeStr, setCurrentTimeStr] = useState<string>('');
+  const [currentDateStr, setCurrentDateStr] = useState<string>('');
+  const [activeSlotName, setActiveSlotName] = useState<MealSlotName>('Lunch');
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  // Snapshot from live video frame
+  const [capturedSnapshot, setCapturedSnapshot] = useState<string | null>(null);
+  const [isVerifyModalOpen, setIsVerifyModalOpen] = useState<boolean>(false);
+  const [autoResetSeconds, setAutoResetSeconds] = useState<number>(10);
+
+  // HUD ref
+  const hudRef = useRef<FaceScannerHUDHandle | null>(null);
+
+  // Initialize and sync roster from local/Supabase
+  const loadRoster = useCallback(() => {
+    const emps = canteenService.getEmployees();
+    setEmployees(emps);
+  }, []);
+
+  useEffect(() => {
+    loadRoster();
+    const unsub = supabaseManager.onRealtimeChange((event) => {
+      if (event.table === 'canteen_employees') {
+        loadRoster();
+      }
+    });
+
+    const initialActive = canteenService.getActiveMealSlot();
+    setActiveSlotName(initialActive);
+    setSelectedMealSlot(initialActive);
+
+    return () => unsub();
+  }, [loadRoster]);
+
+  // Real-time clock & calendar date update
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setCurrentTimeStr(
+        now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      );
+      setCurrentDateStr(
+        now.toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })
+      );
+      setActiveSlotName(canteenService.getActiveMealSlot());
+    };
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Track fullscreen state
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch((err) => {
+        console.warn('Fullscreen error:', err);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  };
+
+  // Check duplicate booking whenever employee or meal slot changes
+  const checkDuplicate = useCallback(() => {
+    if (!currentEmployee) return;
+    const existing = canteenService.checkDuplicateBooking(currentEmployee.id, selectedMealSlot);
+    setDuplicateOrder(existing || null);
+  }, [currentEmployee, selectedMealSlot]);
+
+  useEffect(() => {
+    checkDuplicate();
+  }, [checkDuplicate]);
+
+  // Scroll active meal card into view when opening Verified view
+  useEffect(() => {
+    if (kioskStep === 'VERIFIED') {
+      const timer = setTimeout(() => {
+        const activeCard = document.getElementById(`slide-meal-${selectedMealSlot}`);
+        if (activeCard) {
+          activeCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [kioskStep, selectedMealSlot]);
+
+  // =========================================================================
+  // CAMERA VERIFY MODEL: Checks if Person is Registered or Not
+  // Matches live camera facial structure & eye geometry against registered roster
+  // =========================================================================
+  const handleCaptureAndScan = async () => {
+    if (isProcessingScan || isScanVerified || kioskStep === 'VERIFIED') return;
+    setVerificationError(null);
+    setIsCapturing(true);
+    setIsProcessingScan(true);
+    soundEngine.playScannerBeep();
+
+    try {
+      // 1. Capture snapshot frame from live camera viewfinder
+      const snapshot = hudRef.current?.captureSnapshot() || '';
+      setCapturedSnapshot(snapshot);
+
+      if (!snapshot) {
+        setIsCapturing(false);
+        setIsProcessingScan(false);
+        soundEngine.playWarningBuzzer();
+        setVerificationError('Face not detected. Please position your face in the camera.');
+        return;
+      }
+
+      // 2. Biometrically match live facial structure & eye geometry against registered roster
+      const matchResult = await faceMatcherService.matchLiveFace(snapshot, employees);
+
+      setIsCapturing(false);
+      setIsProcessingScan(false);
+
+      if (matchResult.hasFace && matchResult.isMatch && matchResult.matchedEmployee) {
+        // Biometric Match Confirmed!
+        soundEngine.playVerificationChime();
+        setCurrentEmployee(matchResult.matchedEmployee);
+        setIsScanVerified(true);
+        setLastPrintedOrder(null);
+        // Show glowing green camera outline briefly then transition to Verified view
+        setTimeout(() => {
+          setIsScanVerified(false);
+          setKioskStep('VERIFIED');
+        }, 550);
+      } else if (!matchResult.hasFace) {
+        soundEngine.playWarningBuzzer();
+        setVerificationError('Face not detected in scan area. Please align face inside the outline.');
+      } else {
+        // Verification Denied (Person is not in roster)
+        soundEngine.playWarningBuzzer();
+        setVerificationError(
+          matchResult.reason ||
+            'Biometric Verification Failed: Person is NOT registered in the canteen roster. Access Denied.'
+        );
+      }
+    } catch (err) {
+      console.error('Face verification error:', err);
+      setIsCapturing(false);
+      setIsProcessingScan(false);
+      soundEngine.playWarningBuzzer();
+      setVerificationError('Biometric verification error. Please try again.');
+    }
+  };
+
+  // Direct automatic callback from FaceScannerHUD real-time AI punching machine loop
+  const handleUserIdentified = useCallback((matchedEmployee: Employee) => {
+    if (kioskStep === 'VERIFIED' || isScanVerified) return;
+    soundEngine.playVerificationChime();
+    setCurrentEmployee(matchedEmployee);
+    setIsScanVerified(true);
+    setVerificationError(null);
+    setLastPrintedOrder(null);
+    const snap = hudRef.current?.captureSnapshot() || '';
+    if (snap) {
+      setCapturedSnapshot(snap);
+    }
+
+    setTimeout(() => {
+      setIsScanVerified(false);
+      setKioskStep('VERIFIED');
+    }, 600);
+  }, [kioskStep, isScanVerified]);
+
+  // Reset back to Camera Scan view (Step 1)
+  const handleResetToScan = useCallback(() => {
+    setKioskStep('SCANNING');
+    setIsScanVerified(false);
+    setCurrentEmployee(null);
+    setCapturedSnapshot(null);
+    setVerificationError(null);
+    setLastPrintedOrder(null);
+    setAutoResetSeconds(10);
+  }, []);
+
+  // Auto-reset timer when thermal slip is displayed (10 seconds timeout for closing UI)
+  useEffect(() => {
+    if (!lastPrintedOrder) {
+      setAutoResetSeconds(10);
+      return;
+    }
+    const interval = setInterval(() => {
+      setAutoResetSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          handleResetToScan();
+          return 10;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [lastPrintedOrder, handleResetToScan]);
+
+  // Handle meal slot selection
+  const handleSelectMealSlot = (slot: MealSlotName) => {
+    soundEngine.playScannerBeep();
+    setSelectedMealSlot(slot);
+  };
+
+  // Execute Order Confirmation & Print Slip immediately with zero artificial delay
+  const handleConfirmAndPrint = async () => {
+    if (!currentEmployee) return;
+
+    // Double check duplicate guard
+    const existing = canteenService.checkDuplicateBooking(currentEmployee.id, selectedMealSlot);
+    if (existing) {
+      soundEngine.playWarningBuzzer();
+      setDuplicateOrder(existing);
+      return;
+    }
+
+    try {
+      setIsDispensing(true);
+      // Play 80mm stepper motor noise
+      soundEngine.playThermalMotorSound();
+
+      // Zero artificial delay to print
+      const order = await canteenService.createOrder(currentEmployee, selectedMealSlot);
+      setLastPrintedOrder(order);
+      setIsDispensing(false);
+      soundEngine.playVerificationChime();
+      checkDuplicate();
+
+      const drawer = document.getElementById('printerDrawerSection');
+      if (drawer) {
+        drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    } catch (err) {
+      console.error('Order generation error:', err);
+      soundEngine.playWarningBuzzer();
+      setIsDispensing(false);
+    }
+  };
+
+  return (
+    <div className="w-full flex-1 flex flex-col gap-2.5 sm:gap-3 min-h-0">
+      
+      {/* ================================================================= */}
+      {/* TOP HEADER: Matches Both Sketches                                 */}
+      {/* Left: "Smartcanteen OS", Right: Fullscreen icon & Admin icon (👤) */}
+      {/* ================================================================= */}
+      <div className="bg-white border border-slate-200 px-4 sm:px-6 py-2.5 sm:py-3 rounded-2xl sm:rounded-3xl flex items-center justify-between shadow-sm shrink-0">
+        
+        {/* Left: Smartcanteen OS */}
+        <div className="flex items-center space-x-2.5">
+          <span className="w-3 h-3 rounded-full bg-emerald-500 animate-ping mr-0.5"></span>
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans">
+            Smartcanteen OS
+          </h1>
+          <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 hidden sm:inline-block">
+            {kioskStep === 'SCANNING' ? 'Camera Biometric View' : 'Verified Identity & Food Selection'}
+          </span>
+        </div>
+
+        {/* Right: Fullscreen icon [ ] and Admin icon (👤) */}
+        <div className="flex items-center space-x-2.5 sm:space-x-3">
+          
+          {/* Fullscreen Icon [ ] */}
+          <button
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen Mode"}
+            className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-all shadow-2xs active:scale-95 flex items-center justify-center"
+          >
+            {isFullscreen ? <Minimize className="w-4 h-4 sm:w-5 sm:h-5" /> : <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />}
+          </button>
+
+          {/* Admin Icon (👤 inside circle as in sketches) */}
+          {onOpenAdminModal && (
+            <button
+              onClick={onOpenAdminModal}
+              title="Open Administration Portal"
+              className="p-2 sm:p-2.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-2 border-emerald-500 transition-all shadow-sm active:scale-95 flex items-center justify-center"
+            >
+              <User className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-700" />
+            </button>
+          )}
+
+        </div>
+
+      </div>
+
+      {/* ================================================================= */}
+      {/* STEP 1: INITIAL CAMERA VIEW (Matching User's First Hand Sketch)    */}
+      {/* Centered Camera Viewfinder + "Capture & scan." Button             */}
+      {/* ================================================================= */}
+      {kioskStep === 'SCANNING' && (
+        <div className="w-full flex-1 flex flex-col items-center justify-center gap-2.5 sm:gap-3.5 py-1 animate-in fade-in duration-300 max-w-xl mx-auto min-h-0">
+          
+          {/* Centered Camera Viewfinder Box */}
+          <div className="w-full bg-white border border-slate-200 rounded-3xl p-3 sm:p-4 shadow-sm flex flex-col items-center gap-2.5">
+            
+            <div className="w-full flex items-center justify-between pb-1.5 border-b border-slate-100">
+              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Scan className="w-4 h-4 text-emerald-600" />
+                <span>Biometric Camera Face Verification</span>
+              </span>
+              <span className="text-[10px] font-mono text-slate-500">
+                {currentTimeStr} • Live Roster Matching
+              </span>
+            </div>
+
+            {/* Camera Viewfinder with Head & Shoulder Silhouette Overlay */}
+            <FaceScannerHUD
+              ref={hudRef}
+              currentEmployee={currentEmployee}
+              knownEmployees={employees}
+              isScanning={isProcessingScan}
+              isCapturing={isCapturing}
+              isVerified={isScanVerified}
+              onUserIdentified={handleUserIdentified}
+              onFaceNotRegistered={(reason) => {
+                soundEngine.playWarningBuzzer();
+                setVerificationError(reason);
+              }}
+              onAutoScan={handleCaptureAndScan}
+            />
+
+          </div>
+
+          {/* Verification Error Alert if person is NOT registered */}
+          {verificationError && (
+            <div className="w-full bg-rose-50 border-2 border-rose-300 text-rose-900 px-4 py-2.5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-2.5 animate-shake shadow-sm shrink-0">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-1.5 bg-rose-100 rounded-xl text-rose-700 shrink-0">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-xs sm:text-sm text-rose-950">
+                    Verification Failed: Person Not Registered!
+                  </h4>
+                  <p className="text-[11px] text-rose-700">
+                    {verificationError}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2 shrink-0">
+                {onOpenAdminModal && (
+                  <button
+                    onClick={onOpenAdminModal}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95"
+                  >
+                    + Register Person
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setVerificationError(null);
+                  }}
+                  className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-all"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ============================================================= */}
+          {/* THE "Capture & scan." BUTTON (Secondary manual trigger)        */}
+          {/* ============================================================= */}
+          <button
+            id="btnCaptureAndScan"
+            onClick={handleCaptureAndScan}
+            disabled={isProcessingScan}
+            className="w-full sm:w-auto px-12 py-3 sm:py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-base sm:text-lg font-bold shadow-lg shadow-emerald-600/30 transition-all transform active:scale-95 flex items-center justify-center space-x-2.5 border-2 border-emerald-500 hover:border-emerald-600 shrink-0"
+          >
+            <Camera className="w-5 h-5 sm:w-6 sm:h-6" />
+            <span>{isProcessingScan ? 'Verifying Face...' : 'Capture & scan.'}</span>
+          </button>
+
+          <p className="text-[11px] text-slate-400 font-medium text-center shrink-0">
+            Auto-scans when face is in front of camera, or tap <strong>"Capture & scan."</strong>
+          </p>
+
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* STEP 2: VERIFIED STATE (Matching User's New Hand Sketch Exactly!)  */}
+      {/* Left side: Name, Id, Dept., Date & Time                          */}
+      {/* Center: Food type selection slide / scroll view                  */}
+      {/* Optimized for Lenovo Tab K11 Gen 2 (16:10 aspect ratio landscape)  */}
+      {/* ================================================================= */}
+      {kioskStep === 'VERIFIED' && currentEmployee && (
+        <div className="w-full flex-1 grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-3.5 items-stretch min-h-0 overflow-y-auto md:overflow-hidden animate-in fade-in duration-200">
+          
+          {/* ============================================================= */}
+          {/* LEFT COLUMN: Exactly matching sketch:                         */}
+          {/* Name, Id, Dept., Date & Time                                  */}
+          {/* ============================================================= */}
+          <div className="md:col-span-5 bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-xs min-h-0 overflow-y-auto">
+            
+            <div className="flex flex-col gap-2.5">
+              {/* Top Verified Header & Live Photo */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center space-x-2">
+                  <BadgeCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold">
+                    BIOMETRIC VERIFIED
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono text-emerald-700 font-bold">
+                  99.4% Match
+                </span>
+              </div>
+
+              {/* Photo & Name Tag */}
+              <div className="flex items-center space-x-3 pt-0.5">
+                <div className="relative w-16 h-16 sm:w-18 sm:h-18 rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-xs shrink-0">
+                  <img
+                    src={capturedSnapshot || currentEmployee.photo}
+                    alt={currentEmployee.name}
+                    className="w-full h-full object-cover"
+                  />
+                  <span className="absolute bottom-1 right-1 p-0.5 bg-emerald-600 text-white rounded-full">
+                    <Check className="w-3 h-3" />
+                  </span>
+                  <span className="absolute top-1 left-1 bg-slate-900/80 text-emerald-300 font-mono text-[7px] font-bold px-1 rounded">
+                    LIVE
+                  </span>
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                    Name
+                  </span>
+                  <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight truncate leading-tight mt-0.5">
+                    {currentEmployee.name}
+                  </h2>
+                  <span
+                    className={`inline-block text-[9px] uppercase font-mono px-2 py-0.2 rounded-full font-bold border mt-1 ${
+                      currentEmployee.role === 'Staff'
+                        ? 'bg-purple-100 text-purple-800 border-purple-200'
+                        : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                    }`}
+                  >
+                    {currentEmployee.role || 'Employee'}
+                  </span>
+                </div>
+              </div>
+
+              {/* The other 3 Identity fields drawn in user sketch */}
+              <div className="flex flex-col gap-1.5 pt-1.5 border-t border-slate-100 text-xs">
+                
+                {/* 2. Id */}
+                <div className="flex items-center justify-between py-1 border-b border-slate-50">
+                  <span className="text-slate-400 font-bold uppercase text-[10px]">
+                    Id
+                  </span>
+                  <span className="font-mono font-bold text-slate-800 text-xs">
+                    {currentEmployee.id}
+                  </span>
+                </div>
+
+                {/* 3. Dept. */}
+                <div className="flex items-center justify-between py-1 border-b border-slate-50">
+                  <span className="text-slate-400 font-bold uppercase text-[10px] flex items-center gap-1">
+                    <Building className="w-3 h-3 text-slate-400" />
+                    <span>Dept.</span>
+                  </span>
+                  <span className="text-slate-700 font-medium truncate max-w-[170px] text-right">
+                    {currentEmployee.dept}
+                  </span>
+                </div>
+
+                {/* 4. Date & Time */}
+                <div className="flex items-center justify-between py-1 border-b border-slate-50 font-mono text-[11px]">
+                  <span className="text-slate-400 font-bold uppercase text-[10px] flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-slate-400" />
+                    <span>Date & Time</span>
+                  </span>
+                  <div className="text-right flex flex-col items-end">
+                    <span className="text-slate-800 font-semibold">{currentDateStr}</span>
+                    <span className="text-emerald-700 font-bold text-[10px] flex items-center gap-0.5">
+                      <Clock className="w-2.5 h-2.5 text-emerald-600" />
+                      <span>{currentTimeStr}</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Subsidy Tag */}
+                <div className="flex items-center space-x-1.5 text-[11px] text-emerald-800 font-bold bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-xl mt-0.5">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>100% Free Canteen Subsidy</span>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Return / Scan Next Button */}
+            <button
+              onClick={handleResetToScan}
+              className="mt-2.5 w-full py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-2 shadow-2xs active:scale-95 shrink-0"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+              <span>Scan Another Person</span>
+            </button>
+
+          </div>
+
+          {/* ============================================================= */}
+          {/* RIGHT COLUMN: Food Type Selection Slide / Scroll View         */}
+          {/* Shows Breakfast, Lunch, Tea & Snacks, Dinner matching sketch! */}
+          {/* ============================================================= */}
+          <div className="md:col-span-7 bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-xs min-h-0 overflow-hidden relative">
+            
+            {/* When Thermal Slip is Dispensed: Dedicated High-Fidelity Slip Showcase */}
+            {lastPrintedOrder ? (
+              <div className="flex-1 flex flex-col justify-between p-3.5 bg-emerald-50/50 rounded-2xl border-2 border-emerald-300 animate-in fade-in zoom-in-95 duration-200 min-h-0 overflow-y-auto">
+                <div className="w-full flex items-center justify-between pb-2 border-b border-emerald-200 shrink-0">
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle className="w-5 h-5 text-emerald-600" />
+                    <span className="text-sm font-black text-emerald-950">
+                      Order Confirmed & Slip Dispensed!
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold bg-emerald-600 text-white px-2.5 py-0.5 rounded-full">
+                    80mm Printed
+                  </span>
+                </div>
+
+                <div className="my-2 flex justify-center max-h-[320px] overflow-y-auto shadow-md rounded-xl bg-white p-2">
+                  <ThermalReceipt
+                    order={lastPrintedOrder}
+                    onSendToScanner={onNavigateToStaffScanner}
+                    onPrint={() => window.print()}
+                  />
+                </div>
+
+                <div className="w-full flex items-center justify-between gap-3 pt-2.5 border-t border-emerald-200 shrink-0">
+                  <span className="text-xs text-emerald-800 font-medium font-mono">
+                    Auto-resetting in {autoResetSeconds}s...
+                  </span>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => window.print()}
+                      className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-xs"
+                    >
+                      Print Physical Slip
+                    </button>
+                    <button
+                      onClick={handleResetToScan}
+                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                    >
+                      <span>Done (Next Person)</span>
+                      <span>➔</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Top Bar: Clean Title & Active Session Info (Top Buttons Removed) */}
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100 shrink-0">
+                  <div className="flex items-center space-x-2">
+                    <UtensilsCrossed className="w-4 h-4 text-emerald-600" />
+                    <h3 className="font-black text-slate-900 text-base sm:text-lg tracking-tight">
+                      Select Food Type
+                    </h3>
+                    <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      Active: {activeSlotName}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-sans font-medium text-slate-400">
+                    Vertical Slide • Tap to Select
+                  </span>
+                </div>
+
+                {/* Duplicate Order Alert if this user already booked today */}
+                {duplicateOrder && (
+                  <div className="text-xs bg-rose-50 border border-rose-200 text-rose-800 px-3 py-1.5 rounded-xl flex items-center space-x-2 font-medium my-1 animate-shake shrink-0">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span className="text-[11px]">
+                      <strong>Duplicate Lock:</strong> {duplicateOrder.meal} already booked today at{' '}
+                      <span className="font-mono font-bold">{duplicateOrder.issuedAt}</span>!
+                    </span>
+                  </div>
+                )}
+
+                {/* =========================================================== */}
+                {/* CENTER FOOD SELECTION: Touch-First Vertical Slide           */}
+                {/* =========================================================== */}
+                <div className="flex-1 overflow-y-auto space-y-2 sm:space-y-2.5 my-2 pr-1 min-h-0 select-none">
+                  {MEAL_SLOTS.map((slot) => {
+                    const isSelected = selectedMealSlot === slot.name;
+                    const isCurrentTimeSlot = activeSlotName === slot.name;
+                    const isAlreadyBooked = Boolean(
+                      canteenService.checkDuplicateBooking(currentEmployee.id, slot.name)
+                    );
+
+                    return (
+                      <div
+                        key={slot.name}
+                        onClick={() => !isAlreadyBooked && handleSelectMealSlot(slot.name)}
+                        className={`w-full p-3 sm:p-3.5 rounded-2xl border-2 transition-all flex items-center justify-between gap-3 cursor-pointer shadow-2xs ${
+                          isSelected
+                            ? 'border-emerald-600 bg-emerald-50/80 ring-2 ring-emerald-500/30 shadow-xs scale-[1.01]'
+                            : isAlreadyBooked
+                            ? 'border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed'
+                            : 'border-slate-200 bg-white hover:border-emerald-300 hover:bg-slate-50/60'
+                        }`}
+                      >
+                        {/* Left: Emoji + Name + Timing + Description */}
+                        <div className="flex items-center space-x-3 min-w-0 flex-1">
+                          <div
+                            className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 border transition-all ${
+                              isSelected
+                                ? 'bg-emerald-100 border-emerald-300 shadow-xs'
+                                : 'bg-slate-50 border-slate-100'
+                            }`}
+                          >
+                            {slot.emoji}
+                          </div>
+
+                          <div className="flex flex-col min-w-0">
+                            <div className="flex items-center space-x-2">
+                              <h4 className="font-bold text-slate-900 text-sm sm:text-base tracking-tight truncate">
+                                {slot.name}
+                              </h4>
+                              {isCurrentTimeSlot && (
+                                <span className="text-[9px] font-mono px-2 py-0.5 rounded-full font-bold bg-emerald-600 text-white shrink-0">
+                                  Active Now
+                                </span>
+                              )}
+                              {isAlreadyBooked && (
+                                <span className="text-[9px] font-mono px-2 py-0.5 rounded-full font-bold bg-rose-100 text-rose-800 border border-rose-200 shrink-0">
+                                  Already Booked
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                              {slot.startTime} - {slot.endTime} • {slot.calories} kcal
+                            </p>
+                            <p className="text-xs text-slate-600 truncate mt-0.5">
+                              {slot.description}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Right: Checkmark indicator */}
+                        <div className="flex items-center space-x-2 shrink-0">
+                          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg hidden sm:inline-block">
+                            100% Free
+                          </span>
+                          <div
+                            className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all ${
+                              isSelected
+                                ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+                                : 'border-slate-300 bg-white text-transparent'
+                            }`}
+                          >
+                            <Check className="w-4 h-4 stroke-[3]" />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Bottom Row: Selected Meal Session & Confirm Print Button */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 sm:p-3 flex flex-row items-center justify-between gap-3 shrink-0">
+                  <div className="min-w-0">
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase block">
+                      Selected Session
+                    </span>
+                    <div className="flex items-center space-x-2 mt-0.5">
+                      <span className="text-sm font-black text-slate-900 truncate">
+                        {selectedMealSlot}
+                      </span>
+                      <span className="text-[9px] font-mono bg-emerald-100 text-emerald-800 px-2 py-0.2 rounded-full font-bold border border-emerald-200">
+                        80mm Slip
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    id="btnConfirmAndPrintSlip"
+                    onClick={handleConfirmAndPrint}
+                    disabled={Boolean(duplicateOrder) || isDispensing}
+                    className={`px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-sm transition-all transform active:scale-95 flex items-center justify-center space-x-2 shrink-0 ${
+                      duplicateOrder || isDispensing
+                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+                    }`}
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>{isDispensing ? 'Dispensing...' : 'Confirm & Print Slip'}</span>
+                  </button>
+                </div>
+              </>
+            )}
+
+          </div>
+
+        </div>
+      )}
+
+      {/* Camera Biometric Verification Modal */}
+      <CameraVerifyModal
+        isOpen={isVerifyModalOpen}
+        onClose={() => {
+          setIsVerifyModalOpen(false);
+          setKioskStep('SCANNING');
+        }}
+        employee={currentEmployee}
+        capturedSnapshot={capturedSnapshot}
+        onNavigateToStaffScanner={onNavigateToStaffScanner}
+      />
+
+    </div>
+  );
+};
+
