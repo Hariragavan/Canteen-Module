@@ -4,6 +4,10 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 const STORAGE_KEY_URL = 'canteen_supabase_url';
 const STORAGE_KEY_KEY = 'canteen_supabase_anon_key';
 
+// Built-in project credentials (ensures every new device automatically connects)
+export const DEFAULT_SUPABASE_URL = 'https://ppyasypabniuhoqpglay.supabase.co';
+export const DEFAULT_SUPABASE_KEY = 'sb_publishable_ZKBs3ehomxW6UVPL9II0IA_3cVIA55Q';
+
 export interface SupabaseConfig {
   url: string;
   anonKey: string;
@@ -28,8 +32,8 @@ class SupabaseManager {
   }
 
   private initFromStorage() {
-    const savedUrl = localStorage.getItem(STORAGE_KEY_URL) || (import.meta.env.VITE_SUPABASE_URL as string) || '';
-    const savedKey = localStorage.getItem(STORAGE_KEY_KEY) || (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || '';
+    const savedUrl = localStorage.getItem(STORAGE_KEY_URL) || (import.meta.env.VITE_SUPABASE_URL as string) || DEFAULT_SUPABASE_URL;
+    const savedKey = localStorage.getItem(STORAGE_KEY_KEY) || (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || DEFAULT_SUPABASE_KEY;
 
     if (savedUrl && savedKey && savedUrl.startsWith('http')) {
       try {

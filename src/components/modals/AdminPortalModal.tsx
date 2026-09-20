@@ -8,6 +8,7 @@ import {
   UserPlus,
   Users,
   Camera,
+  CameraOff,
   RefreshCw,
   Trash2,
   Edit2,
@@ -119,9 +120,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen && activeTab === 'new' && !formData.photo) {
-      startCamera();
-    } else {
+    if (!isOpen || activeTab !== 'new' || formData.photo) {
       stopCamera();
     }
     return () => stopCamera();
@@ -227,6 +226,39 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     }
   };
 
+  // Helper to scale & compress uploaded images to max 400x400 JPEG (~30KB)
+  const compressImage = (dataUrl: string, maxDim = 400): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.82));
+        } else {
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  };
+
   // File Upload fallback
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -234,7 +266,8 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       const reader = new FileReader();
       reader.onload = async (event) => {
         if (event.target?.result) {
-          const dataUrl = String(event.target.result);
+          const rawDataUrl = String(event.target.result);
+          const dataUrl = await compressImage(rawDataUrl);
           setFormData((prev) => ({ ...prev, photo: dataUrl }));
           stopCamera();
 
@@ -796,7 +829,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                     </span>
                   </div>
 
-                  {/* Video Viewport or Captured Snapshot Preview (Green when properly aligned, Red when misaligned) */}
+                  {/* Video Viewport or Captured Snapshot Preview */}
                   <div
                     className={`relative w-56 h-56 rounded-3xl overflow-hidden shadow-inner flex items-center justify-center transition-all duration-300 ${
                       formData.photo
@@ -814,6 +847,25 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                         alt="Captured face"
                         className="w-full h-full object-cover"
                       />
+                    ) : !isCameraActive ? (
+                      /* Camera Closed Placeholder with Open Camera button */
+                      <div className="flex flex-col items-center justify-center p-3 text-center z-10">
+                        <div className="w-11 h-11 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 mb-1.5 shadow-inner">
+                          <CameraOff className="w-5 h-5" />
+                        </div>
+                        <p className="text-xs font-bold text-slate-200">Camera is Closed</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5 mb-2 font-sans">
+                          Click below to start face camera
+                        </p>
+                        <button
+                          type="button"
+                          onClick={startCamera}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[11px] font-bold shadow-md shadow-emerald-600/30 flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer"
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          <span>Open Camera</span>
+                        </button>
+                      </div>
                     ) : (
                       <>
                         <video
@@ -823,6 +875,18 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                           autoPlay
                           className="w-full h-full object-cover mirror"
                         />
+
+                        {/* Top-Right Corner: Button to Turn OFF camera */}
+                        <button
+                          type="button"
+                          onClick={stopCamera}
+                          title="Click to turn off camera"
+                          className="absolute top-2 right-2 z-30 px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold shadow-md flex items-center space-x-1 border border-rose-500 transition-all active:scale-95 cursor-pointer"
+                        >
+                          <CameraOff className="w-3 h-3" />
+                          <span>Off Camera</span>
+                        </button>
+
                         {/* Center face alignment oval with dynamic Green / Red outline */}
                         <div
                           className={`absolute inset-4 rounded-[50%] border-2 border-dashed transition-all duration-300 pointer-events-none flex flex-col items-center justify-end pb-3 ${
@@ -859,16 +923,27 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                           setFormData((prev) => ({ ...prev, photo: '' }));
                           startCamera();
                         }}
-                        className="w-full py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 rounded-xl text-xs font-bold shadow-2xs flex items-center justify-center space-x-1.5"
+                        className="w-full py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 rounded-xl text-xs font-bold shadow-2xs flex items-center justify-center space-x-1.5 cursor-pointer"
                       >
                         <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
                         <span>Retake Photo</span>
                       </button>
+                    ) : !isCameraActive ? (
+                      /* Open Camera Button at New Registration */
+                      <button
+                        type="button"
+                        onClick={startCamera}
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center justify-center space-x-2 transition-transform active:scale-95 cursor-pointer"
+                      >
+                        <Camera className="w-4 h-4" />
+                        <span>Open Camera</span>
+                      </button>
                     ) : (
+                      /* Capture Photo Button */
                       <button
                         type="button"
                         onClick={capturePhoto}
-                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center justify-center space-x-2 transition-transform active:scale-95"
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center justify-center space-x-2 transition-transform active:scale-95 cursor-pointer"
                       >
                         <Camera className="w-4 h-4" />
                         <span>Capture Photo</span>
@@ -876,12 +951,21 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                     )}
 
                     <div className="flex items-center justify-center space-x-2 text-[11px] text-slate-500 pt-1">
-                      <label className="cursor-pointer hover:text-emerald-700 underline flex items-center gap-1">
+                      {/* Upload: Disabled when camera is not open */}
+                      <label
+                        className={`flex items-center gap-1 ${
+                          isCameraActive
+                            ? 'cursor-pointer hover:text-emerald-700 underline text-slate-700'
+                            : 'opacity-40 cursor-not-allowed pointer-events-none text-slate-400'
+                        }`}
+                        title={isCameraActive ? 'Upload face photo' : 'Upload disabled: Camera must be open first'}
+                      >
                         <Upload className="w-3 h-3" />
                         <span>Upload</span>
                         <input
                           type="file"
                           accept="image/*"
+                          disabled={!isCameraActive}
                           onChange={handleFileUpload}
                           className="hidden"
                         />
@@ -890,7 +974,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       <button
                         type="button"
                         onClick={handleUseSamplePhoto}
-                        className="hover:text-emerald-700 underline"
+                        className="hover:text-emerald-700 underline cursor-pointer"
                       >
                         Sample Face
                       </button>

@@ -147,8 +147,8 @@ class CanteenService {
         .from('canteen_employees')
         .select('*');
 
-      if (!empErr && remoteEmployees && remoteEmployees.length > 0) {
-        this.employees = remoteEmployees.map((rem: any) => ({
+      if (!empErr && remoteEmployees) {
+        const remoteList: Employee[] = remoteEmployees.map((rem: any) => ({
           id: rem.id,
           name: rem.name,
           dept: rem.dept,
@@ -159,6 +159,34 @@ class CanteenService {
           face_descriptor: rem.face_descriptor || null,
           embedding: rem.face_descriptor || null,
         }));
+
+        // Two-way synchronization: If local storage has employees not yet in Supabase, auto-upload them!
+        const remoteIds = new Set(remoteList.map((r) => r.id.toLowerCase()));
+        const missingFromRemote = this.employees.filter((loc) => !remoteIds.has(loc.id.toLowerCase()));
+
+        for (const loc of missingFromRemote) {
+          try {
+            const { error: insErr } = await client.from('canteen_employees').insert({
+              id: loc.id,
+              name: loc.name,
+              dept: loc.dept,
+              photo_url: loc.photo,
+              confidence_score: loc.confidence,
+              subsidy_rate: loc.subsidyRate,
+              role: loc.role,
+              face_descriptor: loc.face_descriptor || loc.embedding || null,
+            });
+            if (!insErr) {
+              remoteList.unshift(loc);
+            } else {
+              console.warn('Auto-upload local employee error:', insErr);
+            }
+          } catch (e) {
+            console.warn('Failed auto-uploading local employee to Supabase:', e);
+          }
+        }
+
+        this.employees = remoteList;
         this.saveEmployeesLocal();
         supabaseManager.broadcastChange('canteen_employees', 'UPDATE', this.employees);
       }
@@ -215,28 +243,28 @@ class CanteenService {
       embedding: descriptor,
     };
 
-    this.employees.unshift(cleanEmp);
-    this.saveEmployeesLocal();
-    supabaseManager.broadcastChange('canteen_employees', 'INSERT', cleanEmp);
-
     // Sync to Supabase if connected
     const client = supabaseManager.getClient();
     if (client) {
-      try {
-        await client.from('canteen_employees').insert({
-          id: cleanEmp.id,
-          name: cleanEmp.name,
-          dept: cleanEmp.dept,
-          photo_url: cleanEmp.photo,
-          confidence_score: cleanEmp.confidence,
-          subsidy_rate: cleanEmp.subsidyRate,
-          role: cleanEmp.role,
-          face_descriptor: descriptor,
-        });
-      } catch (err) {
-        console.warn('Supabase remote employee insert fallback:', err);
+      const { error } = await client.from('canteen_employees').insert({
+        id: cleanEmp.id,
+        name: cleanEmp.name,
+        dept: cleanEmp.dept,
+        photo_url: cleanEmp.photo,
+        confidence_score: cleanEmp.confidence,
+        subsidy_rate: cleanEmp.subsidyRate,
+        role: cleanEmp.role,
+        face_descriptor: descriptor,
+      });
+      if (error) {
+        console.error('Supabase employee insert error:', error);
+        throw new Error(`Database error: ${error.message}`);
       }
     }
+
+    this.employees.unshift(cleanEmp);
+    this.saveEmployeesLocal();
+    supabaseManager.broadcastChange('canteen_employees', 'INSERT', cleanEmp);
   }
 
   public async updateEmployee(id: string, updated: Partial<Employee>): Promise<void> {

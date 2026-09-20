@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import * as faceapi from '@vladmandic/face-api';
-import { Camera, Check, Upload, X } from 'lucide-react';
+import { Camera, CameraOff, Check, Upload, X } from 'lucide-react';
 import type { Employee } from '../../types';
 import {
   loadFaceApiModels,
@@ -38,7 +38,8 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
   ) => {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const [modelLoaded, setModelLoaded] = useState<boolean>(false);
-    const [statusMessage, setStatusMessage] = useState<string>('Loading Neural Models...');
+    const [statusMessage, setStatusMessage] = useState<string>('Camera is closed. Click Open Camera to start.');
+    // App opens with camera CLOSED by default as requested
     const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
     const [testPhoto, setTestPhoto] = useState<string | null>(null);
     const [hasFaceInFrame, setHasFaceInFrame] = useState<boolean>(false);
@@ -54,7 +55,6 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
           if (isMounted) {
             if (success) {
               setModelLoaded(true);
-              setStatusMessage('Align your face within the frame');
             } else {
               setStatusMessage('Model loading failed. Check network or /models.');
             }
@@ -72,12 +72,13 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
       };
     }, []);
 
-    // 2. Start Front Camera (720p/30fps optimized)
+    // 2. Camera Controls: Start and Stop
     const initCamera = useCallback(async () => {
       if (!videoRef.current) return;
       try {
         await startTabletCamera(videoRef.current);
         setIsCameraActive(true);
+        setStatusMessage('Align your face within the frame (scans every 5s)');
       } catch (err) {
         console.warn('Physical camera access error:', err);
         setIsCameraActive(false);
@@ -85,10 +86,19 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
       }
     }, []);
 
-    useEffect(() => {
-      if (!modelLoaded) return;
-      initCamera();
+    const stopCamera = useCallback(() => {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => track.stop());
+        videoRef.current.srcObject = null;
+      }
+      setIsCameraActive(false);
+      setHasFaceInFrame(false);
+      setStatusMessage('Camera is closed. Click Open Camera to start.');
+    }, []);
 
+    // Clean up media tracks on unmount
+    useEffect(() => {
       return () => {
         if (videoRef.current && videoRef.current.srcObject) {
           const stream = videoRef.current.srcObject as MediaStream;
@@ -97,13 +107,13 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
         }
         setIsCameraActive(false);
       };
-    }, [modelLoaded, initCamera]);
+    }, []);
 
-    // 3. Continuous Face Tracking Loop (Every 400ms: Punching Machine Face Detection)
+    // 3. Periodic Face Tracking Loop: Scans once every 5 seconds (5000ms)
     useEffect(() => {
-      if (!modelLoaded || isVerified || locallyVerified) return;
+      if (!modelLoaded || isVerified || locallyVerified || !isCameraActive) return;
 
-      const interval = setInterval(async () => {
+      const runDetection = async () => {
         if (isMatching.current || isScanning) return;
 
         const videoEl = videoRef.current;
@@ -120,7 +130,6 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
         if (!detectionTarget) return;
 
         try {
-          // Real deep learning detection: SSD MobileNet V1 + Landmarks + 128D descriptor
           const detection = await faceapi
             .detectSingleFace(detectionTarget)
             .withFaceLandmarks()
@@ -128,83 +137,78 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
 
           if (!detection) {
             setHasFaceInFrame(false);
-            setStatusMessage('Align your face within the frame');
+            setStatusMessage('Align face within oval (scans every 5s)');
             return;
           }
 
           setHasFaceInFrame(true);
 
-          // Check face alignment: bounding box must be reasonably sized/centered
+          // Check face size
           const box = detection.detection.box;
-          if (box.width < 140) {
-            setStatusMessage('Step closer to the camera');
+          if (box.width < 130) {
+            setStatusMessage('Step closer to camera (scans every 5s)');
             return;
           }
 
-          // Anti-Spoofing: calculate eye aspect ratio from landmarks 36-47
+          // Anti-Spoofing: eye aspect ratio
           const landmarks = detection.landmarks;
           const leftEye = landmarks.getLeftEye();
           const rightEye = landmarks.getRightEye();
           const earLeft = getEyeAspectRatio(leftEye);
           const earRight = getEyeAspectRatio(rightEye);
 
-          // If eyes are too compressed or unnatural, continue monitoring
           if (earLeft < 0.12 && earRight < 0.12) {
-            setStatusMessage('Please open your eyes and face the camera');
+            setStatusMessage('Please open your eyes and face camera');
             return;
           }
 
           // Match extracted 128D descriptor against enrolled roster
           isMatching.current = true;
-          setStatusMessage('Identifying...');
+          setStatusMessage('Analyzing biometric face...');
 
-          const matchResult = findBestMatch(detection.descriptor, knownEmployees, 0.52);
+          const best = findBestMatch(detection.descriptor, knownEmployees, 0.52);
 
-          if (matchResult && matchResult.employee) {
-            const emp = matchResult.employee;
-            setStatusMessage(`Recognized: ${emp.name}`);
+          if (best) {
+            setStatusMessage(`✓ Verified: ${best.employee.name}`);
             setLocallyVerified(true);
-
             if (onUserIdentified) {
-              onUserIdentified(emp);
+              onUserIdentified(best.employee);
             }
-
-            // Release matching lock after 2 seconds
-            setTimeout(() => {
-              isMatching.current = false;
-              setLocallyVerified(false);
-            }, 2000);
           } else {
-            setStatusMessage('Face not registered');
+            setStatusMessage('⚠️ Face not registered in system');
             if (onFaceNotRegistered) {
-              onFaceNotRegistered(
-                'Biometric Verification Failed: Person is NOT registered in the canteen roster. Access Denied.'
-              );
+              onFaceNotRegistered('Face not found in biometric database');
             }
-            // Cooldown period before scanning again
             setTimeout(() => {
               isMatching.current = false;
-            }, 1500);
+              setStatusMessage('Align face within oval (scans every 5s)');
+            }, 3000);
           }
         } catch (err) {
-          console.warn('Continuous face tracking error:', err);
+          console.warn('Face tracking error:', err);
           isMatching.current = false;
         }
-      }, 400); // 2.5 times per second (smooth and prevents tablet overheating)
+      };
 
-      return () => clearInterval(interval);
+      // Run initial check after 1.5s, then every 5 seconds (5000ms)
+      const initialTimer = setTimeout(runDetection, 1500);
+      const interval = setInterval(runDetection, 5000);
+
+      return () => {
+        clearTimeout(initialTimer);
+        clearInterval(interval);
+      };
     }, [
       modelLoaded,
+      isVerified,
+      locallyVerified,
       isCameraActive,
       testPhoto,
       knownEmployees,
       isScanning,
-      isVerified,
-      locallyVerified,
       onUserIdentified,
       onFaceNotRegistered,
     ]);
-
     // Expose captureSnapshot for thermal ticket printing & manual capture
     useImperativeHandle(ref, () => ({
       captureSnapshot: () => {
@@ -257,114 +261,144 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
             }`}
           />
 
+          {/* Top-Right Corner: Dedicated button to Turn OFF / Turn ON camera */}
+          <div className="absolute top-3 right-3 z-30 flex items-center space-x-1.5">
+            {isCameraActive ? (
+              <button
+                type="button"
+                onClick={stopCamera}
+                title="Click to turn off camera"
+                className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-lg backdrop-blur flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer border border-rose-500"
+              >
+                <CameraOff className="w-3.5 h-3.5" />
+                <span>Off Camera</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={initCamera}
+                title="Click to open camera"
+                className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-lg backdrop-blur flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer border border-emerald-500"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                <span>Open Camera</span>
+              </button>
+            )}
+          </div>
+
+          {/* Camera Closed Viewfinder Placeholder */}
+          {!isCameraActive && !testPhoto && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 bg-slate-950/95 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 mb-2 shadow-inner">
+                <CameraOff className="w-7 h-7" />
+              </div>
+              <h4 className="text-sm font-bold text-slate-100 tracking-tight">Camera is Closed</h4>
+              <p className="text-xs text-slate-400 max-w-xs mt-0.5 mb-3 font-sans">
+                Camera is off. Click below or the top-right button to start live biometric scanning.
+              </p>
+              <button
+                type="button"
+                onClick={initCamera}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-600/30 flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                <span>Open Camera</span>
+              </button>
+            </div>
+          )}
+
           {/* Test photo preview when physical camera is offline */}
           {testPhoto && !isCameraActive && (
             <img
               src={testPhoto}
               alt="Test Biometric Face"
-              className="absolute inset-0 w-full h-full object-cover mirror"
+              className="absolute inset-0 w-full h-full object-cover mirror z-10"
             />
           )}
 
-          {/* Target Reticle Oval for Face Alignment (Pulsing Emerald) */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <div
-              className={`w-44 h-56 sm:w-48 sm:h-60 border-2 rounded-[50%] border-dashed transition-all duration-300 flex items-center justify-center ${
-                verifiedActive
-                  ? 'border-emerald-400 bg-emerald-500/20 shadow-[0_0_25px_rgba(16,185,129,0.6)]'
-                  : hasFaceInFrame
-                  ? 'border-emerald-400/90 bg-emerald-500/10 shadow-[0_0_15px_rgba(16,185,129,0.3)] animate-pulse'
-                  : 'border-emerald-400/70 opacity-80 animate-pulse'
-              }`}
-            >
-              {verifiedActive && (
-                <div className="p-3 bg-emerald-500 text-white rounded-full shadow-lg animate-in zoom-in-75 duration-200">
-                  <Check className="w-8 h-8 stroke-[3]" />
-                </div>
-              )}
-            </div>
+          {/* Target Reticle Oval for Face Alignment (Pulsing Emerald) - only when camera is active */}
+          {isCameraActive && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-20">
+              <div
+                className={`w-44 h-56 sm:w-48 sm:h-60 border-2 rounded-[50%] border-dashed transition-all duration-300 flex items-center justify-center ${
+                  verifiedActive
+                    ? 'border-emerald-400 bg-emerald-500/20 shadow-[0_0_25px_rgba(16,185,129,0.6)]'
+                    : hasFaceInFrame
+                    ? 'border-emerald-400/90 bg-emerald-500/10 shadow-[0_0_15px_rgba(16,185,129,0.3)] animate-pulse'
+                    : 'border-emerald-400/70 opacity-80 animate-pulse'
+                }`}
+              >
+                {verifiedActive && (
+                  <div className="p-3 bg-emerald-500 text-white rounded-full shadow-lg animate-in zoom-in-75 duration-200">
+                    <Check className="w-8 h-8 stroke-[3]" />
+                  </div>
+                )}
+              </div>
 
-            {/* Status Message Pill */}
-            <p
-              className={`mt-4 px-4 py-1.5 backdrop-blur-md text-xs font-semibold rounded-full transition-all duration-200 shadow-md ${
-                verifiedActive
-                  ? 'bg-emerald-600/90 text-white border border-emerald-400'
-                  : statusMessage.includes('not registered')
-                  ? 'bg-rose-600/90 text-white border border-rose-400 animate-shake'
-                  : statusMessage.includes('closer') || statusMessage.includes('Align')
-                  ? 'bg-black/70 text-slate-200 border border-slate-600'
-                  : 'bg-black/75 text-emerald-300 border border-emerald-500/50'
-              }`}
-            >
-              {statusMessage}
-            </p>
-          </div>
+              {/* Status Message Pill */}
+              <p
+                className={`mt-4 px-4 py-1.5 backdrop-blur-md text-xs font-semibold rounded-full transition-all duration-200 shadow-md ${
+                  verifiedActive
+                    ? 'bg-emerald-600/90 text-white border border-emerald-400'
+                    : statusMessage.includes('not registered')
+                    ? 'bg-rose-600/90 text-white border border-rose-400 animate-shake'
+                    : statusMessage.includes('closer') || statusMessage.includes('Align')
+                    ? 'bg-black/70 text-slate-200 border border-slate-600'
+                    : 'bg-black/75 text-emerald-300 border border-emerald-500/50'
+                }`}
+              >
+                {statusMessage}
+              </p>
+            </div>
+          )}
 
           {/* Flash Effect on capture */}
           {isCapturing && (
             <div className="absolute inset-0 bg-white animate-out fade-out duration-300 pointer-events-none z-30"></div>
           )}
 
-          {/* Floating Controls in bottom right corner (Camera Switch / Test Image) */}
+          {/* Floating Controls in bottom right corner (Upload Photo: Disabled when camera is not open) */}
           <div className="absolute bottom-3 right-3 flex items-center space-x-1.5 z-20">
-            {!isCameraActive && (
-              <>
-                {testPhoto ? (
-                  <button
-                    type="button"
-                    onClick={() => setTestPhoto(null)}
-                    title="Clear Test Photo"
-                    className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs border border-rose-200 shadow-md backdrop-blur transition-all active:scale-95"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                ) : (
-                  <label
-                    title="Upload test face photo for biometric match"
-                    className="p-2 rounded-xl bg-white/90 hover:bg-white text-slate-800 text-xs border border-slate-200 shadow-md backdrop-blur transition-all active:scale-95 cursor-pointer flex items-center justify-center"
-                  >
-                    <Upload className="w-3.5 h-3.5 text-slate-700" />
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onload = (ev) => {
-                            if (ev.target?.result) {
-                              setTestPhoto(String(ev.target.result));
-                            }
-                          };
-                          reader.readAsDataURL(file);
+            {testPhoto ? (
+              <button
+                type="button"
+                onClick={() => setTestPhoto(null)}
+                title="Clear Test Photo"
+                className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs border border-rose-200 shadow-md backdrop-blur transition-all active:scale-95"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            ) : (
+              <label
+                title={isCameraActive ? 'Upload test face photo' : 'Upload disabled: Camera must be open first'}
+                className={`p-2 rounded-xl text-xs border shadow-md backdrop-blur transition-all flex items-center justify-center ${
+                  isCameraActive
+                    ? 'bg-white/90 hover:bg-white text-slate-800 border-slate-200 cursor-pointer active:scale-95'
+                    : 'bg-slate-900/60 text-slate-500 border-slate-800 opacity-40 cursor-not-allowed pointer-events-none'
+                }`}
+              >
+                <Upload className="w-3.5 h-3.5 text-current" />
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={!isCameraActive}
+                  className="hidden"
+                  onChange={(e) => {
+                    if (!isCameraActive) return;
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        if (ev.target?.result) {
+                          setTestPhoto(String(ev.target.result));
                         }
-                      }}
-                    />
-                  </label>
-                )}
-              </>
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                />
+              </label>
             )}
-
-            <button
-              type="button"
-              onClick={() => {
-                if (isCameraActive) {
-                  if (videoRef.current && videoRef.current.srcObject) {
-                    const stream = videoRef.current.srcObject as MediaStream;
-                    stream.getTracks().forEach((track) => track.stop());
-                    videoRef.current.srcObject = null;
-                  }
-                  setIsCameraActive(false);
-                } else {
-                  initCamera();
-                }
-              }}
-              title={isCameraActive ? 'Switch to Test Mode' : 'Open Front Tablet Camera'}
-              className="p-2 rounded-xl bg-white/90 hover:bg-white text-slate-800 text-xs border border-slate-200 shadow-md backdrop-blur transition-all active:scale-95"
-            >
-              <Camera className="w-3.5 h-3.5 text-slate-700" />
-            </button>
           </div>
 
           <style>{`.mirror { transform: scaleX(-1); }`}</style>
