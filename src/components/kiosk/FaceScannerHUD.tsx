@@ -5,7 +5,6 @@ import type { Employee } from '../../types';
 import {
   loadFaceApiModels,
   startTabletCamera,
-  getEyeAspectRatio,
   findBestMatch,
 } from '../../services/faceMatcherService';
 
@@ -45,6 +44,7 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
     const [hasFaceInFrame, setHasFaceInFrame] = useState<boolean>(false);
     const [locallyVerified, setLocallyVerified] = useState<boolean>(false);
     const isMatching = useRef<boolean>(false);
+    const lastFaceSeenRef = useRef<number>(Date.now());
 
     // 1. Initialize FaceAPI Neural Models from /models (with CDN fallback)
     useEffect(() => {
@@ -73,20 +73,7 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
     }, []);
 
     // 2. Camera Controls: Start and Stop
-    const initCamera = useCallback(async () => {
-      if (!videoRef.current) return;
-      try {
-        await startTabletCamera(videoRef.current);
-        setIsCameraActive(true);
-        setStatusMessage('Align your face within the frame (scans every 5s)');
-      } catch (err) {
-        console.warn('Physical camera access error:', err);
-        setIsCameraActive(false);
-        setStatusMessage('Camera access denied or unavailable');
-      }
-    }, []);
-
-    const stopCamera = useCallback(() => {
+    const stopCamera = useCallback((message?: string) => {
       if (videoRef.current && videoRef.current.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
         stream.getTracks().forEach((track) => track.stop());
@@ -94,7 +81,23 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
       }
       setIsCameraActive(false);
       setHasFaceInFrame(false);
-      setStatusMessage('Camera is closed. Click Open Camera to start.');
+      isMatching.current = false;
+      setStatusMessage(message || 'Camera is closed. Click Open Camera to start.');
+    }, []);
+
+    const initCamera = useCallback(async () => {
+      if (!videoRef.current) return;
+      try {
+        await startTabletCamera(videoRef.current);
+        setIsCameraActive(true);
+        setHasFaceInFrame(false);
+        lastFaceSeenRef.current = Date.now(); // Start 5-second inactivity countdown
+        setStatusMessage('Align your face within the circle');
+      } catch (err) {
+        console.warn('Physical camera access error:', err);
+        setIsCameraActive(false);
+        setStatusMessage('Camera access denied or unavailable');
+      }
     }, []);
 
     // Clean up media tracks on unmount
@@ -109,65 +112,113 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
       };
     }, []);
 
-    // 3. Periodic Face Tracking Loop: Scans once every 5 seconds (5000ms)
+    // 3. Periodic Face Tracking Loop:
+    // - Shows strictly "Align your face within the circle" during scanning
+    // - Turns OFF camera after 5 seconds if face is not in the frame
     useEffect(() => {
       if (!modelLoaded || isVerified || locallyVerified || !isCameraActive) return;
 
-      const runDetection = async () => {
-        if (isMatching.current || isScanning) return;
+      lastFaceSeenRef.current = Date.now(); // Initialize countdown when camera starts
+
+      const checkInterval = setInterval(async () => {
+        if (!isCameraActive || isVerified || locallyVerified) return;
 
         const videoEl = videoRef.current;
-        let detectionTarget: HTMLVideoElement | HTMLImageElement | null = null;
-
-        if (isCameraActive && videoEl && videoEl.readyState >= 2) {
-          detectionTarget = videoEl;
-        } else if (testPhoto) {
-          const img = new Image();
-          img.src = testPhoto;
-          detectionTarget = img;
-        }
-
-        if (!detectionTarget) return;
+        if (!videoEl || videoEl.readyState < 2) return;
 
         try {
           const detection = await faceapi
-            .detectSingleFace(detectionTarget)
+            .detectSingleFace(videoEl)
             .withFaceLandmarks()
             .withFaceDescriptor();
 
           if (!detection) {
             setHasFaceInFrame(false);
-            setStatusMessage('Align face within oval (scans every 5s)');
+            const elapsedNoFace = Date.now() - lastFaceSeenRef.current;
+
+            // Turn off camera after 5 seconds continuously without face in frame
+            if (elapsedNoFace >= 5000) {
+              console.log('No face detected in camera for 5 seconds. Turning off camera.');
+              stopCamera('Camera turned off (no face detected). Click Open Camera to start.');
+              return;
+            }
+
+            // Strictly show "Align your face within the circle" while scanning
+            if (!isMatching.current) {
+              setStatusMessage('Align your face within the circle');
+            }
             return;
           }
 
+          // Human face detected in frame!
           setHasFaceInFrame(true);
+          lastFaceSeenRef.current = Date.now(); // Reset 5-second inactivity timer
 
-          // Check face size
-          const box = detection.detection.box;
-          if (box.width < 130) {
-            setStatusMessage('Step closer to camera (scans every 5s)');
+          // Perform matching against registered roster
+          if (!isMatching.current && !isScanning) {
+            isMatching.current = true;
+            const best = findBestMatch(detection.descriptor, knownEmployees, 0.52);
+
+            if (best) {
+              setStatusMessage(`✓ Verified: ${best.employee.name}`);
+              setLocallyVerified(true);
+              if (onUserIdentified) {
+                onUserIdentified(best.employee);
+              }
+            } else {
+              setStatusMessage('⚠️ Face not registered in system');
+              if (onFaceNotRegistered) {
+                onFaceNotRegistered('Face not found in biometric database');
+              }
+              setTimeout(() => {
+                isMatching.current = false;
+                setStatusMessage('Align your face within the circle');
+              }, 3000);
+            }
+          }
+        } catch (err) {
+          console.warn('Face detection error:', err);
+          isMatching.current = false;
+        }
+      }, 1000);
+
+      return () => {
+        clearInterval(checkInterval);
+      };
+    }, [
+      modelLoaded,
+      isVerified,
+      locallyVerified,
+      isCameraActive,
+      knownEmployees,
+      isScanning,
+      onUserIdentified,
+      onFaceNotRegistered,
+      stopCamera,
+    ]);
+
+    // Handle uploaded test photo matching if test photo provided
+    useEffect(() => {
+      if (!testPhoto || !modelLoaded || isVerified || locallyVerified) return;
+
+      const processTestPhoto = async () => {
+        try {
+          const img = new Image();
+          img.src = testPhoto;
+          await new Promise((res) => {
+            img.onload = res;
+          });
+          const detection = await faceapi
+            .detectSingleFace(img)
+            .withFaceLandmarks()
+            .withFaceDescriptor();
+
+          if (!detection) {
+            setStatusMessage('⚠️ No face detected in photo');
             return;
           }
-
-          // Anti-Spoofing: eye aspect ratio
-          const landmarks = detection.landmarks;
-          const leftEye = landmarks.getLeftEye();
-          const rightEye = landmarks.getRightEye();
-          const earLeft = getEyeAspectRatio(leftEye);
-          const earRight = getEyeAspectRatio(rightEye);
-
-          if (earLeft < 0.12 && earRight < 0.12) {
-            setStatusMessage('Please open your eyes and face camera');
-            return;
-          }
-
-          // Match extracted 128D descriptor against enrolled roster
-          isMatching.current = true;
-          setStatusMessage('Analyzing biometric face...');
 
           const best = findBestMatch(detection.descriptor, knownEmployees, 0.52);
-
           if (best) {
             setStatusMessage(`✓ Verified: ${best.employee.name}`);
             setLocallyVerified(true);
@@ -179,36 +230,14 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
             if (onFaceNotRegistered) {
               onFaceNotRegistered('Face not found in biometric database');
             }
-            setTimeout(() => {
-              isMatching.current = false;
-              setStatusMessage('Align face within oval (scans every 5s)');
-            }, 3000);
           }
         } catch (err) {
-          console.warn('Face tracking error:', err);
-          isMatching.current = false;
+          console.warn('Test photo matching error:', err);
         }
       };
 
-      // Run initial check after 1.5s, then every 5 seconds (5000ms)
-      const initialTimer = setTimeout(runDetection, 1500);
-      const interval = setInterval(runDetection, 5000);
-
-      return () => {
-        clearTimeout(initialTimer);
-        clearInterval(interval);
-      };
-    }, [
-      modelLoaded,
-      isVerified,
-      locallyVerified,
-      isCameraActive,
-      testPhoto,
-      knownEmployees,
-      isScanning,
-      onUserIdentified,
-      onFaceNotRegistered,
-    ]);
+      processTestPhoto();
+    }, [testPhoto, modelLoaded, isVerified, locallyVerified, knownEmployees, onUserIdentified, onFaceNotRegistered]);
     // Expose captureSnapshot for thermal ticket printing & manual capture
     useImperativeHandle(ref, () => ({
       captureSnapshot: () => {
@@ -266,7 +295,7 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
             {isCameraActive ? (
               <button
                 type="button"
-                onClick={stopCamera}
+                onClick={() => stopCamera()}
                 title="Click to turn off camera"
                 className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-lg backdrop-blur flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer border border-rose-500"
               >
@@ -316,11 +345,11 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
             />
           )}
 
-          {/* Target Reticle Oval for Face Alignment (Pulsing Emerald) - only when camera is active */}
+          {/* Target Reticle Circle for Face Alignment (Pulsing Emerald) - only when camera is active */}
           {isCameraActive && (
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-20">
               <div
-                className={`w-44 h-56 sm:w-48 sm:h-60 border-2 rounded-[50%] border-dashed transition-all duration-300 flex items-center justify-center ${
+                className={`w-44 h-44 sm:w-52 sm:h-52 aspect-square border-2 rounded-full border-dashed transition-all duration-300 flex items-center justify-center ${
                   verifiedActive
                     ? 'border-emerald-400 bg-emerald-500/20 shadow-[0_0_25px_rgba(16,185,129,0.6)]'
                     : hasFaceInFrame
@@ -335,16 +364,14 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
                 )}
               </div>
 
-              {/* Status Message Pill */}
+              {/* Status Message Pill: Strictly shows "Align your face within the circle" during scanning */}
               <p
                 className={`mt-4 px-4 py-1.5 backdrop-blur-md text-xs font-semibold rounded-full transition-all duration-200 shadow-md ${
                   verifiedActive
                     ? 'bg-emerald-600/90 text-white border border-emerald-400'
                     : statusMessage.includes('not registered')
                     ? 'bg-rose-600/90 text-white border border-rose-400 animate-shake'
-                    : statusMessage.includes('closer') || statusMessage.includes('Align')
-                    ? 'bg-black/70 text-slate-200 border border-slate-600'
-                    : 'bg-black/75 text-emerald-300 border border-emerald-500/50'
+                    : 'bg-black/75 text-white border border-slate-600'
                 }`}
               >
                 {statusMessage}

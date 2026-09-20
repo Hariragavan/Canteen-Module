@@ -68,13 +68,14 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
   // Camera capture state
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   const [isExtractingBiometric, setIsExtractingBiometric] = useState<boolean>(false);
   const [biometricStatus, setBiometricStatus] = useState<string | null>(null);
   const [isFaceAligned, setIsFaceAligned] = useState<boolean>(false);
-  const [alignmentMessage, setAlignmentMessage] = useState<string>('Align face in oval');
+  const [alignmentMessage, setAlignmentMessage] = useState<string>('Align face in circle');
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -95,13 +96,18 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   const startCamera = async () => {
     try {
       setCameraError(null);
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } },
       });
+      mediaStreamRef.current = stream;
+      setIsCameraActive(true);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
-        setIsCameraActive(true);
+        videoRef.current.play().catch((e) => console.warn('Admin camera play error:', e));
       }
     } catch (err) {
       console.warn('Admin camera preview error:', err);
@@ -111,13 +117,28 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   };
 
   const stopCamera = () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
     if (videoRef.current && videoRef.current.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
       stream.getTracks().forEach((track) => track.stop());
       videoRef.current.srcObject = null;
     }
     setIsCameraActive(false);
+    setIsFaceAligned(false);
   };
+
+  // Sync stream to video element whenever camera becomes active or mounts
+  useEffect(() => {
+    if (isCameraActive && videoRef.current && mediaStreamRef.current) {
+      if (videoRef.current.srcObject !== mediaStreamRef.current) {
+        videoRef.current.srcObject = mediaStreamRef.current;
+        videoRef.current.play().catch((e) => console.warn('Video play sync error:', e));
+      }
+    }
+  }, [isCameraActive]);
 
   useEffect(() => {
     if (!isOpen || activeTab !== 'new' || formData.photo) {
@@ -130,7 +151,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   useEffect(() => {
     if (!isCameraActive || activeTab !== 'new' || formData.photo) {
       setIsFaceAligned(false);
-      setAlignmentMessage('Align face in oval');
+      setAlignmentMessage('Align face in circle');
       return;
     }
 
@@ -146,7 +167,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       } catch {
         if (isMounted) {
           setIsFaceAligned(false);
-          setAlignmentMessage('Align face in oval');
+          setAlignmentMessage('Align face in circle');
         }
       }
     }, 300);
@@ -841,11 +862,22 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                         : 'border-2 border-slate-700 bg-slate-900'
                     }`}
                   >
+                    {/* Always keep video element mounted in DOM to guarantee ref attachment */}
+                    <video
+                      ref={videoRef}
+                      playsInline
+                      muted
+                      autoPlay
+                      className={`w-full h-full object-cover mirror absolute inset-0 ${
+                        isCameraActive && !formData.photo ? 'block' : 'hidden'
+                      }`}
+                    />
+
                     {formData.photo ? (
                       <img
                         src={formData.photo}
                         alt="Captured face"
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover z-10"
                       />
                     ) : !isCameraActive ? (
                       /* Camera Closed Placeholder with Open Camera button */
@@ -868,14 +900,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       </div>
                     ) : (
                       <>
-                        <video
-                          ref={videoRef}
-                          playsInline
-                          muted
-                          autoPlay
-                          className="w-full h-full object-cover mirror"
-                        />
-
                         {/* Top-Right Corner: Button to Turn OFF camera */}
                         <button
                           type="button"
@@ -887,9 +911,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                           <span>Off Camera</span>
                         </button>
 
-                        {/* Center face alignment oval with dynamic Green / Red outline */}
+                        {/* Center face alignment circle with dynamic Green / Red outline */}
                         <div
-                          className={`absolute inset-4 rounded-[50%] border-2 border-dashed transition-all duration-300 pointer-events-none flex flex-col items-center justify-end pb-3 ${
+                          className={`absolute inset-4 rounded-full border-2 border-dashed transition-all duration-300 pointer-events-none flex flex-col items-center justify-end pb-3 z-20 ${
                             isFaceAligned
                               ? 'border-emerald-400 bg-emerald-500/10 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
                               : 'border-rose-400 bg-rose-500/10 shadow-[0_0_20px_rgba(244,63,94,0.3)] animate-pulse'
