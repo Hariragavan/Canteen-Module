@@ -100,13 +100,27 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         mediaStreamRef.current.getTracks().forEach((track) => track.stop());
         mediaStreamRef.current = null;
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } },
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        });
+      } catch {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user' },
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        }
+      }
       mediaStreamRef.current = stream;
       setIsCameraActive(true);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.setAttribute('autoplay', 'true');
+        videoRef.current.muted = true;
         videoRef.current.play().catch((e) => console.warn('Admin camera play error:', e));
       }
     } catch (err) {
@@ -135,6 +149,8 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     if (isCameraActive && videoRef.current && mediaStreamRef.current) {
       if (videoRef.current.srcObject !== mediaStreamRef.current) {
         videoRef.current.srcObject = mediaStreamRef.current;
+        videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.muted = true;
         videoRef.current.play().catch((e) => console.warn('Video play sync error:', e));
       }
     }
@@ -181,19 +197,26 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   // Take photo snapshot from video stream and compute 128D biometric descriptor
   const capturePhoto = async () => {
     if (!videoRef.current) return;
+    const video = videoRef.current;
+    if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+      setBiometricStatus('⚠️ Camera is still loading. Please wait a moment and try again.');
+      return;
+    }
+
     setIsCapturing(true);
     soundEngine.playScannerBeep();
 
-    const video = videoRef.current;
     const canvas = canvasRef.current || document.createElement('canvas');
     canvas.width = 400;
     canvas.height = 400;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      // Draw centered square crop with mirror correction
-      const minDim = Math.min(video.videoWidth, video.videoHeight);
-      const startX = (video.videoWidth - minDim) / 2;
-      const startY = (video.videoHeight - minDim) / 2;
+      // Draw centered square crop with bias toward natural head height
+      const vW = video.videoWidth;
+      const vH = video.videoHeight;
+      const minDim = Math.min(vW, vH);
+      const startX = Math.max(0, (vW - minDim) / 2);
+      const startY = Math.max(0, (vH - minDim) / 3);
       ctx.save();
       ctx.drawImage(video, startX, startY, minDim, minDim, 0, 0, 400, 400);
       ctx.restore();
@@ -203,13 +226,22 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       setBiometricStatus('Analyzing face & generating 128D embedding vector...');
 
       try {
-        const descriptor = await faceMatcherService.extractDescriptorArray(canvas);
+        // First try extracting from the cropped avatar
+        let descriptor = await faceMatcherService.extractDescriptorArray(canvas);
+
+        // If not found in the crop (e.g. tablet aspect ratio), extract from full raw video directly
+        if (!descriptor || descriptor.length !== 128) {
+          descriptor = await faceMatcherService.extractDescriptorArray(video);
+        }
+
         if (descriptor && descriptor.length === 128) {
           setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: descriptor }));
           setBiometricStatus('✓ 128D Biometric Vector Enrolled');
+          setIsFaceAligned(true);
         } else {
           setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: null }));
           setBiometricStatus('⚠️ No human face detected in photo. Please ensure face is centered and well lit.');
+          setIsFaceAligned(false);
         }
       } catch (e) {
         console.warn('Biometric extraction error:', e);

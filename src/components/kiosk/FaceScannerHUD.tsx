@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
-import * as faceapi from '@vladmandic/face-api';
 import { Camera, CameraOff, Check, Upload, X } from 'lucide-react';
 import type { Employee } from '../../types';
 import {
   loadFaceApiModels,
   startTabletCamera,
   findBestMatch,
+  extractFaceDetection,
 } from '../../services/faceMatcherService';
 
 export interface FaceScannerHUDHandle {
@@ -45,6 +45,8 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
     const [locallyVerified, setLocallyVerified] = useState<boolean>(false);
     const isMatching = useRef<boolean>(false);
     const lastFaceSeenRef = useRef<number>(Date.now());
+    const cameraOpenedAtRef = useRef<number>(Date.now());
+    const hasDetectedFaceOnceRef = useRef<boolean>(false);
 
     // 1. Initialize FaceAPI Neural Models from /models (with CDN fallback)
     useEffect(() => {
@@ -81,6 +83,7 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
       }
       setIsCameraActive(false);
       setHasFaceInFrame(false);
+      hasDetectedFaceOnceRef.current = false;
       isMatching.current = false;
       setStatusMessage(message || 'Camera is closed. Click Open Camera to start.');
     }, []);
@@ -91,7 +94,9 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
         await startTabletCamera(videoRef.current);
         setIsCameraActive(true);
         setHasFaceInFrame(false);
-        lastFaceSeenRef.current = Date.now(); // Start 5-second inactivity countdown
+        hasDetectedFaceOnceRef.current = false;
+        cameraOpenedAtRef.current = Date.now();
+        lastFaceSeenRef.current = Date.now();
         setStatusMessage('Align your face within the circle');
       } catch (err) {
         console.warn('Physical camera access error:', err);
@@ -114,31 +119,40 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
 
     // 3. Periodic Face Tracking Loop:
     // - Shows strictly "Align your face within the circle" during scanning
-    // - Turns OFF camera after 5 seconds if face is not in the frame
+    // - Uses tablet-optimized dual detector with offscreen canvas conversion
+    // - Turns OFF camera after 5 seconds if face leaves frame (with 15s setup grace when opened)
     useEffect(() => {
       if (!modelLoaded || isVerified || locallyVerified || !isCameraActive) return;
 
-      lastFaceSeenRef.current = Date.now(); // Initialize countdown when camera starts
+      lastFaceSeenRef.current = Date.now();
+      cameraOpenedAtRef.current = Date.now();
+      hasDetectedFaceOnceRef.current = false;
 
       const checkInterval = setInterval(async () => {
         if (!isCameraActive || isVerified || locallyVerified) return;
 
         const videoEl = videoRef.current;
-        if (!videoEl || videoEl.readyState < 2) return;
+        if (!videoEl || videoEl.readyState < 2 || !videoEl.videoWidth) return;
 
         try {
-          const detection = await faceapi
-            .detectSingleFace(videoEl)
-            .withFaceLandmarks()
-            .withFaceDescriptor();
+          // Use tablet-compatible dual detector
+          const detection = await extractFaceDetection(videoEl);
 
           if (!detection) {
             setHasFaceInFrame(false);
-            const elapsedNoFace = Date.now() - lastFaceSeenRef.current;
+            const now = Date.now();
+            const elapsedSinceOpen = now - cameraOpenedAtRef.current;
+            const elapsedSinceFaceSeen = now - lastFaceSeenRef.current;
 
-            // Turn off camera after 5 seconds continuously without face in frame
-            if (elapsedNoFace >= 5000) {
-              console.log('No face detected in camera for 5 seconds. Turning off camera.');
+            // Auto-off logic:
+            // 1. If a face was previously in frame and has now been absent for 5s -> TURN OFF CAMERA!
+            // 2. If camera was just opened, give 15 seconds initial grace window to step in front
+            const shouldAutoOff =
+              (hasDetectedFaceOnceRef.current && elapsedSinceFaceSeen >= 5000) ||
+              (!hasDetectedFaceOnceRef.current && elapsedSinceOpen >= 15000);
+
+            if (shouldAutoOff) {
+              console.log('No face detected in camera. Automatically turning off camera.');
               stopCamera('Camera turned off (no face detected). Click Open Camera to start.');
               return;
             }
@@ -152,6 +166,7 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
 
           // Human face detected in frame!
           setHasFaceInFrame(true);
+          hasDetectedFaceOnceRef.current = true;
           lastFaceSeenRef.current = Date.now(); // Reset 5-second inactivity timer
 
           // Perform matching against registered roster
@@ -208,10 +223,7 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
           await new Promise((res) => {
             img.onload = res;
           });
-          const detection = await faceapi
-            .detectSingleFace(img)
-            .withFaceLandmarks()
-            .withFaceDescriptor();
+          const detection = await extractFaceDetection(img);
 
           if (!detection) {
             setStatusMessage('⚠️ No face detected in photo');

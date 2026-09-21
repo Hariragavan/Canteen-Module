@@ -23,7 +23,7 @@ export interface FaceMatchResult {
 let modelsLoadedPromise: Promise<boolean> | null = null;
 
 /**
- * Load SSD MobileNet V1, 68 Landmarks, and Face Recognition neural models from /models
+ * Load SSD MobileNet V1, TinyFaceDetector, 68 Landmarks, and Face Recognition neural models
  * with automatic fallback to jsdelivr CDN if local files are ever missing.
  */
 export async function loadFaceApiModels(): Promise<boolean> {
@@ -38,14 +38,16 @@ export async function loadFaceApiModels(): Promise<boolean> {
     try {
       console.log('Loading face-api neural models from local /models...');
       await faceapi.nets.ssdMobilenetv1.loadFromUri(LOCAL_URL);
+      await faceapi.nets.tinyFaceDetector.loadFromUri(LOCAL_URL);
       await faceapi.nets.faceLandmark68Net.loadFromUri(LOCAL_URL);
       await faceapi.nets.faceRecognitionNet.loadFromUri(LOCAL_URL);
-      console.log('Neural models loaded successfully from local repository.');
+      console.log('All neural models (SSD MobileNet, TinyFace, Landmarks, Recognition) loaded from /models.');
       return true;
     } catch (localErr) {
       console.warn('Could not load models from /models, falling back to CDN:', localErr);
       try {
         await faceapi.nets.ssdMobilenetv1.loadFromUri(CDN_URL);
+        await faceapi.nets.tinyFaceDetector.loadFromUri(CDN_URL);
         await faceapi.nets.faceLandmark68Net.loadFromUri(CDN_URL);
         await faceapi.nets.faceRecognitionNet.loadFromUri(CDN_URL);
         console.log('Neural models loaded successfully from CDN.');
@@ -62,21 +64,42 @@ export async function loadFaceApiModels(): Promise<boolean> {
 }
 
 /**
- * Start front tablet camera at 720p/30fps (optimal: sharp landmarks without GPU lag)
+ * Start front tablet camera with robust fallbacks for all tablet/phone hardware
  */
 export const startTabletCamera = async (videoElement: HTMLVideoElement): Promise<MediaStream> => {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      facingMode: 'user',
-      width: { ideal: 1280 }, // 720p is optimal: sharp landmarks without GPU lag
-      height: { ideal: 720 },
-      frameRate: { ideal: 30, max: 30 },
-    },
-    audio: false,
-  });
+  let stream: MediaStream;
+  try {
+    // Optimal 720p front camera
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: 'user',
+        width: { ideal: 1280, max: 1920 },
+        height: { ideal: 720, max: 1080 },
+      },
+      audio: false,
+    });
+  } catch {
+    try {
+      // Fallback 1: basic user camera without strict resolution
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: false,
+      });
+    } catch {
+      // Fallback 2: any available camera
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false,
+      });
+    }
+  }
+
   videoElement.srcObject = stream;
-  await videoElement.play().catch(() => {
-    /* auto-play may need user gesture or muted attribute */
+  videoElement.setAttribute('playsinline', 'true');
+  videoElement.setAttribute('autoplay', 'true');
+  videoElement.muted = true;
+  await videoElement.play().catch((err) => {
+    console.warn('Tablet camera video playback warning:', err);
   });
   return stream;
 };
@@ -135,13 +158,15 @@ export function findBestMatch(
 /**
  * Extract 128D face descriptor and landmarks from an HTMLVideoElement,
  * HTMLCanvasElement, HTMLImageElement, or data URL / URL string.
+ * Uses dual detectors (SSD MobileNet + TinyFaceDetector) with offscreen canvas
+ * conversion for 100% reliable tablet & mobile GPU compatibility.
  */
 export async function extractFaceDetection(
   source: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement | string
 ): Promise<faceapi.WithFaceDescriptor<faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection }>> | null> {
   await loadFaceApiModels();
 
-  let inputElement: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement;
+  let inputElement: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement;
 
   if (typeof source === 'string') {
     const img = new Image();
@@ -152,16 +177,50 @@ export async function extractFaceDetection(
       img.src = source;
     });
     inputElement = img;
+  } else if (source instanceof HTMLVideoElement) {
+    if (source.readyState < 2 || !source.videoWidth || !source.videoHeight) {
+      return null;
+    }
+    // On tablet & mobile browsers, copying video frame to canvas prevents black WebGL textures
+    const canvas = document.createElement('canvas');
+    canvas.width = source.videoWidth;
+    canvas.height = source.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+      inputElement = canvas;
+    } else {
+      inputElement = source;
+    }
   } else {
     inputElement = source;
   }
 
-  const detection = await faceapi
-    .detectSingleFace(inputElement)
-    .withFaceLandmarks()
-    .withFaceDescriptor();
+  // 1. Primary high-accuracy detector: SSD MobileNet with sensitive threshold
+  try {
+    const ssdOptions = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.30 });
+    const detection = await faceapi
+      .detectSingleFace(inputElement, ssdOptions)
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+    if (detection) return detection;
+  } catch (err) {
+    console.warn('SSD MobileNet detection error:', err);
+  }
 
-  return detection || null;
+  // 2. High-speed mobile/tablet fallback: TinyFaceDetector
+  try {
+    const tinyOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.25 });
+    const detection = await faceapi
+      .detectSingleFace(inputElement, tinyOptions)
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+    if (detection) return detection;
+  } catch (err) {
+    console.warn('TinyFaceDetector fallback error:', err);
+  }
+
+  return null;
 }
 
 class FaceMatcherService {
@@ -300,47 +359,37 @@ class FaceMatcherService {
         return { hasFace: false, isAligned: false, message: 'Starting camera...' };
       }
 
-      const detection = await faceapi.detectSingleFace(source).withFaceLandmarks();
+      // Use the tablet-optimized dual detector
+      const detection = await extractFaceDetection(source);
       if (!detection) {
-        return { hasFace: false, isAligned: false, message: 'Face not detected' };
+        return { hasFace: false, isAligned: false, message: 'Align face in circle' };
       }
 
       const box = detection.detection.box;
       const videoW = source instanceof HTMLVideoElement ? source.videoWidth : source.width;
       const videoH = source instanceof HTMLVideoElement ? source.videoHeight : source.height;
 
-      // Check sizing
-      if (box.width < 110) {
+      // Realistic sizing checks for tablets & phones
+      if (box.width < 70) {
         return { hasFace: true, isAligned: false, message: 'Step closer to camera' };
       }
-      if (box.width > 340) {
+      if (box.width > videoW * 0.95) {
         return { hasFace: true, isAligned: false, message: 'Step back slightly' };
       }
 
-      // Check center
+      // Check center with realistic bounds
       const centerX = box.x + box.width / 2;
       const centerY = box.y + box.height / 2;
-      const isCenteredX = Math.abs(centerX - videoW / 2) < videoW * 0.26;
-      const isCenteredY = Math.abs(centerY - videoH / 2) < videoH * 0.26;
+      const isCenteredX = Math.abs(centerX - videoW / 2) < videoW * 0.40;
+      const isCenteredY = Math.abs(centerY - videoH / 2) < videoH * 0.40;
 
       if (!isCenteredX || !isCenteredY) {
-        return { hasFace: true, isAligned: false, message: 'Center face in oval' };
-      }
-
-      // Check tilt
-      const landmarks = detection.landmarks;
-      const leftEye = landmarks.getLeftEye();
-      const rightEye = landmarks.getRightEye();
-      if (leftEye && rightEye && leftEye.length > 0 && rightEye.length > 0) {
-        const tilt = Math.abs(leftEye[0].y - rightEye[0].y);
-        if (tilt > box.height * 0.18) {
-          return { hasFace: true, isAligned: false, message: 'Keep head level' };
-        }
+        return { hasFace: true, isAligned: false, message: 'Center face in circle' };
       }
 
       return { hasFace: true, isAligned: true, message: 'Face aligned correctly' };
     } catch {
-      return { hasFace: false, isAligned: false, message: 'Align face in oval' };
+      return { hasFace: false, isAligned: false, message: 'Align face in circle' };
     }
   }
 }
