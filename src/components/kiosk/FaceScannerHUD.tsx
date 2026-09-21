@@ -163,15 +163,45 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
             return;
           }
 
-          // Human face detected in frame!
-          setHasFaceInFrame(true);
-          hasDetectedFaceOnceRef.current = true;
-          lastFaceSeenRef.current = Date.now(); // Reset 5-second inactivity timer
+          // A detection was found. Validate that this detection is:
+          // 1. Confident face score (>= 0.52)
+          // 2. Properly sized for a person at the kiosk (box.width >= minDim * 0.20 && <= minDim * 0.85)
+          // 3. Centered within the circle reticle (distance from frame center <= minDim * 0.28)
+          const vW = videoEl.videoWidth;
+          const vH = videoEl.videoHeight;
+          const minDim = Math.min(vW, vH);
+          const box = detection.detection.box;
+          const faceCenterX = box.x + box.width / 2;
+          const faceCenterY = box.y + box.height / 2;
+          const distFromCenter = Math.hypot(faceCenterX - vW / 2, faceCenterY - vH / 2);
 
-          // Perform matching against registered roster
+          const isScoreGood = (detection.detection.score || 0) >= 0.52;
+          const isProperSize = box.width >= minDim * 0.20 && box.width <= minDim * 0.85;
+          const isCenteredInCircle = distFromCenter <= minDim * 0.28;
+
+          // If a confident face is anywhere in frame, keep camera active (reset 5s inactivity timer)
+          if (isScoreGood) {
+            hasDetectedFaceOnceRef.current = true;
+            lastFaceSeenRef.current = Date.now();
+          }
+
+          // If NOT centered inside the circle reticle or wrong size:
+          // DO NOT SCAN! DO NOT MATCH! DO NOT REPORT "NOT REGISTERED"!
+          if (!isScoreGood || !isProperSize || !isCenteredInCircle) {
+            setHasFaceInFrame(false);
+            if (!isMatching.current) {
+              setStatusMessage('Align your face within the circle');
+            }
+            return;
+          }
+
+          // Face is CONFIRMED centered inside the reticle circle!
+          setHasFaceInFrame(true);
+
+          // Perform matching against registered roster with strict threshold (0.50)
           if (!isMatching.current && !isScanning) {
             isMatching.current = true;
-            const best = findBestMatch(detection.descriptor, knownEmployees, 0.58);
+            const best = findBestMatch(detection.descriptor, knownEmployees, 0.50);
 
             if (best) {
               setStatusMessage(`✓ Verified: ${best.employee.name} (${best.accuracy}% match)`);

@@ -64,33 +64,126 @@ export async function loadFaceApiModels(): Promise<boolean> {
 }
 
 /**
- * Start front tablet camera with robust fallbacks for all tablet/phone hardware
+ * Start camera with front ('user') or rear ('environment') facing mode.
+ * Uses hardware device enumeration to locate and open the actual back/rear camera on tablets and phones.
  */
-export const startTabletCamera = async (videoElement: HTMLVideoElement): Promise<MediaStream> => {
-  let stream: MediaStream;
-  try {
-    // Optimal 720p front camera
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: 'user',
-        width: { ideal: 1280, max: 1920 },
-        height: { ideal: 720, max: 1080 },
-      },
-      audio: false,
-    });
-  } catch {
+export async function startCameraWithFacingMode(
+  videoElement: HTMLVideoElement,
+  facingMode: 'user' | 'environment' = 'user'
+): Promise<MediaStream> {
+  // 1. Fully release previous stream and wait for OS hardware lock release (essential on Android/iOS)
+  if (videoElement.srcObject) {
     try {
-      // Fallback 1: basic user camera without strict resolution
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' },
-        audio: false,
-      });
+      const oldStream = videoElement.srcObject as MediaStream;
+      oldStream.getTracks().forEach((track) => track.stop());
     } catch {
-      // Fallback 2: any available camera
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: false,
-      });
+      // ignore
+    }
+    videoElement.srcObject = null;
+    // Allow Android HAL / iOS AVFoundation 200ms to cleanly release the camera hardware
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  let stream: MediaStream | null = null;
+
+  // Helper matchers for device labels
+  const isBackLabel = (l: string) =>
+    /back|rear|environment|main|external/i.test(l) && !/front|user|selfie/i.test(l);
+  const isFrontLabel = (l: string) =>
+    /front|user|selfie/i.test(l) && !/back|rear/i.test(l);
+
+  // 2. Hardware device enumeration (best for Android tablets and multi-camera devices)
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoInputs = devices.filter((d) => d.kind === 'videoinput');
+
+    if (videoInputs.length > 1) {
+      let targetDevice: MediaDeviceInfo | undefined;
+      if (facingMode === 'environment') {
+        // Find explicit rear/back lens
+        targetDevice = videoInputs.find((d) => isBackLabel(d.label));
+        // If labels are present but none matched rear, pick a lens that isn't front
+        if (!targetDevice) {
+          targetDevice = videoInputs.find((d) => !isFrontLabel(d.label) && d.label.length > 0);
+        }
+        // Fallback on Android: the last videoinput device is conventionally the rear camera
+        if (!targetDevice) {
+          targetDevice = videoInputs[videoInputs.length - 1];
+        }
+      } else {
+        // Look for front / user / selfie camera
+        targetDevice = videoInputs.find((d) => isFrontLabel(d.label));
+        if (!targetDevice) {
+          targetDevice = videoInputs[0];
+        }
+      }
+
+      if (targetDevice && targetDevice.deviceId) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              deviceId: { exact: targetDevice.deviceId },
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 },
+            },
+            audio: false,
+          });
+        } catch {
+          // If exact constraint failed, try ideal
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { deviceId: targetDevice.deviceId },
+              audio: false,
+            });
+          } catch {
+            // Fall through to facingMode constraints
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Enumerate devices fallback:', err);
+  }
+
+  // 3. Fallback to facingMode constraints
+  if (!stream) {
+    if (facingMode === 'environment') {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { exact: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+      } catch {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+      }
+    } else {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
     }
   }
 
@@ -99,9 +192,17 @@ export const startTabletCamera = async (videoElement: HTMLVideoElement): Promise
   videoElement.setAttribute('autoplay', 'true');
   videoElement.muted = true;
   await videoElement.play().catch((err) => {
-    console.warn('Tablet camera video playback warning:', err);
+    console.warn('Camera video play warning:', err);
   });
+
   return stream;
+}
+
+/**
+ * Start front tablet camera with robust fallbacks for all tablet/phone hardware
+ */
+export const startTabletCamera = async (videoElement: HTMLVideoElement): Promise<MediaStream> => {
+  return startCameraWithFacingMode(videoElement, 'user');
 };
 
 /**
@@ -205,8 +306,7 @@ export function findBestMatch(
 /**
  * Extract 128D face descriptor and landmarks from an HTMLVideoElement,
  * HTMLCanvasElement, HTMLImageElement, or data URL / URL string.
- * Uses dual detectors (SSD MobileNet + TinyFaceDetector) with offscreen canvas
- * conversion for 100% reliable tablet & mobile GPU compatibility.
+ * Uses high confidence threshold (0.50) to prevent detecting non-face objects.
  */
 export async function extractFaceDetection(
   source: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement | string
@@ -228,7 +328,6 @@ export async function extractFaceDetection(
     if (source.readyState < 2 || !source.videoWidth || !source.videoHeight) {
       return null;
     }
-    // On tablet & mobile browsers, copying video frame to canvas prevents black WebGL textures
     const canvas = document.createElement('canvas');
     canvas.width = source.videoWidth;
     canvas.height = source.videoHeight;
@@ -243,26 +342,26 @@ export async function extractFaceDetection(
     inputElement = source;
   }
 
-  // 1. Primary high-accuracy detector: SSD MobileNet with sensitive threshold
+  // 1. Primary high-accuracy detector: SSD MobileNet with strict 0.52 confidence
   try {
-    const ssdOptions = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.30 });
+    const ssdOptions = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.52 });
     const detection = await faceapi
       .detectSingleFace(inputElement, ssdOptions)
       .withFaceLandmarks()
       .withFaceDescriptor();
-    if (detection) return detection;
+    if (detection && detection.detection.score >= 0.52) return detection;
   } catch (err) {
     console.warn('SSD MobileNet detection error:', err);
   }
 
-  // 2. High-speed mobile/tablet fallback: TinyFaceDetector
+  // 2. High-speed mobile/tablet fallback: TinyFaceDetector with 0.52 scoreThreshold
   try {
-    const tinyOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.25 });
+    const tinyOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.52 });
     const detection = await faceapi
       .detectSingleFace(inputElement, tinyOptions)
       .withFaceLandmarks()
       .withFaceDescriptor();
-    if (detection) return detection;
+    if (detection && detection.detection.score >= 0.52) return detection;
   } catch (err) {
     console.warn('TinyFaceDetector fallback error:', err);
   }
