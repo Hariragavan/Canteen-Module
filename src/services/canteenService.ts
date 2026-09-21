@@ -53,6 +53,32 @@ export const MEAL_SLOTS: MealSlotConfig[] = [
   },
 ];
 
+export function normalizeDescriptor(val: unknown): number[] | null {
+  if (!val) return null;
+  if (Array.isArray(val) && val.length === 128) {
+    return val.map(Number);
+  }
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed) && parsed.length === 128) {
+        return parsed.map(Number);
+      }
+      if (typeof parsed === 'object' && parsed !== null) {
+        const values = Object.values(parsed).map(Number);
+        if (values.length === 128) return values;
+      }
+    } catch {
+      return null;
+    }
+  }
+  if (typeof val === 'object' && val !== null) {
+    const values = Object.values(val).map(Number);
+    if (values.length === 128) return values;
+  }
+  return null;
+}
+
 // Clean Slate: Empty initial employees so admin can register new users
 export const INITIAL_EMPLOYEES: Employee[] = [];
 
@@ -83,7 +109,7 @@ class CanteenService {
         // Normalize any legacy department names to strictly 'Staff' or 'Employee'
         this.employees = JSON.parse(storedEmployees).map((emp: Employee) => {
           const isStaff = emp.dept?.toLowerCase().includes('staff') || emp.role === 'Staff';
-          const descriptor = emp.face_descriptor || emp.embedding || null;
+          const descriptor = normalizeDescriptor(emp.face_descriptor || emp.embedding);
           return {
             ...emp,
             dept: isStaff ? 'Staff' : 'Employee',
@@ -148,17 +174,20 @@ class CanteenService {
         .select('*');
 
       if (!empErr && remoteEmployees) {
-        const remoteList: Employee[] = remoteEmployees.map((rem: any) => ({
-          id: rem.id,
-          name: rem.name,
-          dept: rem.dept,
-          photo: rem.photo_url,
-          confidence: rem.confidence_score ?? 0.98,
-          subsidyRate: rem.subsidy_rate ?? 1.0,
-          role: rem.role || (rem.dept?.toLowerCase().includes('staff') ? 'Staff' : 'Employee'),
-          face_descriptor: rem.face_descriptor || null,
-          embedding: rem.face_descriptor || null,
-        }));
+        const remoteList: Employee[] = remoteEmployees.map((rem: any) => {
+          const descriptor = normalizeDescriptor(rem.face_descriptor);
+          return {
+            id: rem.id,
+            name: rem.name,
+            dept: rem.dept,
+            photo: rem.photo_url,
+            confidence: rem.confidence_score ?? 0.98,
+            subsidyRate: rem.subsidy_rate ?? 1.0,
+            role: rem.role || (rem.dept?.toLowerCase().includes('staff') ? 'Staff' : 'Employee'),
+            face_descriptor: descriptor,
+            embedding: descriptor,
+          };
+        });
 
         // Two-way synchronization: If local storage has employees not yet in Supabase, auto-upload them!
         const remoteIds = new Set(remoteList.map((r) => r.id.toLowerCase()));

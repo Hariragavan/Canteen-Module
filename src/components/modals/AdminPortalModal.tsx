@@ -22,7 +22,7 @@ import {
   Lock,
 } from 'lucide-react';
 
-import { faceMatcherService, findBestMatch } from '../../services/faceMatcherService';
+import { faceMatcherService, findBestMatch, type FaceMatchDetail } from '../../services/faceMatcherService';
 
 interface AdminPortalModalProps {
   isOpen: boolean;
@@ -78,11 +78,17 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   const [biometricStatus, setBiometricStatus] = useState<string | null>(null);
   const [isFaceAligned, setIsFaceAligned] = useState<boolean>(false);
   const [alignmentMessage, setAlignmentMessage] = useState<string>('Align face in circle');
+  const [liveDuplicateMatch, setLiveDuplicateMatch] = useState<FaceMatchDetail | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const loadEmployees = () => {
+  const loadEmployees = async () => {
+    try {
+      await canteenService.syncFromSupabase();
+    } catch (e) {
+      console.warn('Sync error in loadEmployees:', e);
+    }
     setEmployees(canteenService.getEmployees());
   };
 
@@ -173,36 +179,65 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     return () => stopCamera();
   }, [isOpen, activeTab, formData.photo]);
 
-  // Continuous face alignment monitoring for New Registration (Green when aligned, Red when misaligned)
+  // Continuous face alignment & live duplicate checking for New Registration
   useEffect(() => {
     if (!isCameraActive || activeTab !== 'new' || formData.photo) {
       setIsFaceAligned(false);
+      setLiveDuplicateMatch(null);
       setAlignmentMessage('Align face in circle');
       return;
     }
 
     let isMounted = true;
+    let isProcessing = false;
+
     const interval = setInterval(async () => {
-      if (!videoRef.current || !isCameraActive) return;
+      if (!videoRef.current || !isCameraActive || isProcessing) return;
+      isProcessing = true;
       try {
         const result = await faceMatcherService.checkAlignment(videoRef.current);
-        if (isMounted) {
-          setIsFaceAligned(result.isAligned);
+        if (!isMounted) return;
+
+        if (result.isAligned) {
+          // Analyze live face in frame against already registered database
+          const desc = await faceMatcherService.extractDescriptorArray(videoRef.current);
+          if (isMounted && desc && desc.length === 128) {
+            const match = findBestMatch(desc, employees, 0.58);
+            if (match) {
+              setLiveDuplicateMatch(match);
+              setIsFaceAligned(false);
+              setAlignmentMessage(`⚠️ Already Registered: ${match.employee.name} (${match.accuracy}%)`);
+              setBiometricStatus(
+                `⚠️ Face Already Registered: This face matches "${match.employee.name}" (${match.employee.id}) with ${match.accuracy}% accuracy. Only one face for one ID is allowed.`
+              );
+              isProcessing = false;
+              return;
+            }
+          }
+          setLiveDuplicateMatch(null);
+          setIsFaceAligned(true);
+          setAlignmentMessage('✓ Face Aligned (Unique Face)');
+        } else {
+          setLiveDuplicateMatch(null);
+          setIsFaceAligned(false);
           setAlignmentMessage(result.message);
         }
       } catch {
         if (isMounted) {
+          setLiveDuplicateMatch(null);
           setIsFaceAligned(false);
           setAlignmentMessage('Align face in circle');
         }
+      } finally {
+        isProcessing = false;
       }
-    }, 300);
+    }, 400);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [isCameraActive, activeTab, formData.photo]);
+  }, [isCameraActive, activeTab, formData.photo, employees]);
 
   // Take photo snapshot from video stream and compute 128D biometric descriptor
   const capturePhoto = async () => {
@@ -250,30 +285,30 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         }
 
         if (descriptor && descriptor.length === 128) {
-          // Check for duplicate face against already registered employees
-          const existingMatch = findBestMatch(descriptor, employees, 0.50);
+          // Check for duplicate face against already registered employees (with specs / without specs threshold 0.58)
+          const existingMatch = findBestMatch(descriptor, employees, 0.58);
           if (existingMatch) {
-            setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: null }));
-            const msg = `⚠️ This face is already registered under "${existingMatch.employee.name}" (${existingMatch.employee.id}). Duplicate registrations are not allowed.`;
+            setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
+            const msg = `⚠️ Face Already Registered: Matches "${existingMatch.employee.name}" (${existingMatch.employee.id}) with ${existingMatch.accuracy}% accuracy (distance: ${existingMatch.distance.toFixed(3)}). Only one face for one ID is allowed!`;
             setBiometricStatus(msg);
-            setErrorMessage(`Duplicate Face Error: This person is already registered as ${existingMatch.employee.name} (${existingMatch.employee.id})!`);
+            setErrorMessage(`Duplicate Face Error: This person is already registered as ${existingMatch.employee.name} (${existingMatch.employee.id}) with ${existingMatch.accuracy}% match accuracy!`);
             soundEngine.playWarningBuzzer();
             setIsFaceAligned(false);
             return;
           }
 
           setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: descriptor }));
-          setBiometricStatus('✓ 128D Biometric Vector Enrolled');
+          setBiometricStatus('✓ 128D Biometric Vector Enrolled (Unique Face Verified)');
           setErrorMessage(null);
           setIsFaceAligned(true);
         } else {
-          setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: null }));
+          setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
           setBiometricStatus('⚠️ No human face detected in photo. Please ensure face is centered and well lit.');
           setIsFaceAligned(false);
         }
       } catch (e) {
         console.warn('Biometric extraction error:', e);
-        setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: null }));
+        setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
         setBiometricStatus('⚠️ Could not extract face embedding.');
       } finally {
         setIsExtractingBiometric(false);
@@ -295,11 +330,11 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     try {
       const desc = await faceMatcherService.extractDescriptorArray(photoUrl);
       if (desc && desc.length === 128) {
-        const existingMatch = findBestMatch(desc, employees, 0.50);
+        const existingMatch = findBestMatch(desc, employees, 0.58);
         if (existingMatch) {
-          setFormData((prev) => ({ ...prev, face_descriptor: null }));
-          setBiometricStatus(`⚠️ Sample face already registered under "${existingMatch.employee.name}".`);
-          setErrorMessage(`Duplicate Face: Already registered under ${existingMatch.employee.name}.`);
+          setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
+          setBiometricStatus(`⚠️ Sample face already registered under "${existingMatch.employee.name}" (${existingMatch.accuracy}% accuracy).`);
+          setErrorMessage(`Duplicate Face: Already registered under ${existingMatch.employee.name} with ${existingMatch.accuracy}% accuracy.`);
           soundEngine.playWarningBuzzer();
           return;
         }
@@ -368,24 +403,24 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           try {
             const desc = await faceMatcherService.extractDescriptorArray(dataUrl);
             if (desc && desc.length === 128) {
-              // Check for duplicate face against already registered employees
-              const existingMatch = findBestMatch(desc, employees, 0.50);
+              // Check for duplicate face against already registered employees (threshold 0.58 handles glasses & angles)
+              const existingMatch = findBestMatch(desc, employees, 0.58);
               if (existingMatch) {
-                setFormData((prev) => ({ ...prev, face_descriptor: null }));
-                const msg = `⚠️ This face is already registered under "${existingMatch.employee.name}" (${existingMatch.employee.id}). Duplicate registrations are not allowed.`;
+                setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
+                const msg = `⚠️ Face Already Registered: Uploaded photo matches "${existingMatch.employee.name}" (${existingMatch.employee.id}) with ${existingMatch.accuracy}% accuracy (distance: ${existingMatch.distance.toFixed(3)}). Only one face for one ID is allowed!`;
                 setBiometricStatus(msg);
-                setErrorMessage(`Duplicate Face Error: This face is already registered as ${existingMatch.employee.name} (${existingMatch.employee.id})!`);
+                setErrorMessage(`Duplicate Face Error: This person is already registered as ${existingMatch.employee.name} (${existingMatch.employee.id}) with ${existingMatch.accuracy}% match accuracy!`);
                 soundEngine.playWarningBuzzer();
                 setIsFaceAligned(false);
                 return;
               }
 
-              setFormData((prev) => ({ ...prev, face_descriptor: desc }));
-              setBiometricStatus('✓ 128D Biometric Vector Enrolled');
+              setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: desc }));
+              setBiometricStatus('✓ 128D Biometric Vector Enrolled (Unique Face Verified)');
               setErrorMessage(null);
               setIsFaceAligned(true);
             } else {
-              setFormData((prev) => ({ ...prev, face_descriptor: null }));
+              setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
               setBiometricStatus('⚠️ No human face detected in uploaded file.');
               setErrorMessage('No human face detected. Please upload a clear, front-facing portrait.');
               soundEngine.playWarningBuzzer();
@@ -452,10 +487,10 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       return;
     }
 
-    const duplicateFaceMatch = findBestMatch(formData.face_descriptor, employees, 0.50);
+    const duplicateFaceMatch = findBestMatch(formData.face_descriptor, employees, 0.58);
     if (duplicateFaceMatch) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage(`Duplicate Face Error: This face is already registered under "${duplicateFaceMatch.employee.name}" (${duplicateFaceMatch.employee.id}). Duplicate registrations are strictly not allowed.`);
+      setErrorMessage(`Duplicate Face Error: This face is already registered under "${duplicateFaceMatch.employee.name}" (${duplicateFaceMatch.employee.id}) with ${duplicateFaceMatch.accuracy}% match accuracy! Only one face for one ID is allowed.`);
       return;
     }
 
@@ -760,6 +795,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
             <button
               onClick={() => {
                 setActiveTab('new');
+                loadEmployees();
                 if (!formData.id) {
                   setFormData((prev) => ({
                     ...prev,
@@ -1093,10 +1129,24 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       <button
                         type="button"
                         onClick={capturePhoto}
-                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center justify-center space-x-2 transition-transform active:scale-95 cursor-pointer"
+                        disabled={liveDuplicateMatch !== null}
+                        className={`w-full py-2.5 rounded-xl text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-transform active:scale-95 ${
+                          liveDuplicateMatch !== null
+                            ? 'bg-rose-700 text-white cursor-not-allowed opacity-90'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 cursor-pointer'
+                        }`}
+                        title={
+                          liveDuplicateMatch !== null
+                            ? `Blocked: Face already registered as ${liveDuplicateMatch.employee.name} (${liveDuplicateMatch.accuracy}%)`
+                            : 'Capture face photo'
+                        }
                       >
                         <Camera className="w-4 h-4" />
-                        <span>Capture Photo</span>
+                        <span>
+                          {liveDuplicateMatch !== null
+                            ? `Blocked: Already Registered (${liveDuplicateMatch.accuracy}%)`
+                            : 'Capture Photo'}
+                        </span>
                       </button>
                     )}
 

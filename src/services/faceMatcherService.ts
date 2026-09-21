@@ -117,30 +117,76 @@ export function getEyeAspectRatio(eye: faceapi.Point[]): number {
   return (d1 + d2) / (2.0 * d3);
 }
 
+export interface FaceMatchDetail {
+  employee: Employee;
+  distance: number;
+  accuracy: number;
+}
+
 /**
- * Cosine / Euclidean distance vector matcher for 128D embeddings
- * Standard threshold: < 0.52 (strict is < 0.50)
+ * Calculates exact biometric accuracy percentage from Euclidean distance.
+ * distance 0.00 -> 100.0%
+ * distance 0.25 -> 84.6%
+ * distance 0.48 -> 70.5% (e.g. spectacles vs without spectacles)
+ * distance 0.58 -> 64.3% (boundary threshold)
+ */
+export function calculateAccuracyPercent(distance: number): number {
+  if (distance <= 0) return 100.0;
+  const rawScore = 100 - (distance / 0.65) * 40;
+  const clamped = Math.max(50.0, Math.min(99.9, rawScore));
+  return Math.round(clamped * 10) / 10;
+}
+
+/**
+ * Cosine / Euclidean distance vector matcher for 128D embeddings.
+ * Threshold 0.58 handles natural face variations, including glasses vs no glasses,
+ * slight head angles, and different camera lighting.
  */
 export function findBestMatch(
-  currentDescriptor: Float32Array | number[],
+  currentDescriptor: Float32Array | number[] | null | undefined,
   employees: Employee[],
-  maxDistance = 0.52
-): { employee: Employee; distance: number } | null {
-  let bestMatch: Employee | null = null;
-  let minDistance = maxDistance;
+  maxDistance = 0.58
+): FaceMatchDetail | null {
+  if (!currentDescriptor) return null;
 
   const currentArr =
     currentDescriptor instanceof Float32Array
       ? currentDescriptor
       : new Float32Array(currentDescriptor);
 
+  if (currentArr.length !== 128) return null;
+
+  let bestMatch: Employee | null = null;
+  let minDistance = maxDistance;
+
   for (const emp of employees) {
-    const targetDescriptor = emp.face_descriptor || emp.embedding;
-    if (!targetDescriptor || !Array.isArray(targetDescriptor) || targetDescriptor.length !== 128) {
-      continue;
+    const rawTarget = emp.face_descriptor || emp.embedding;
+    if (!rawTarget) continue;
+
+    let targetArr: Float32Array | null = null;
+    if (rawTarget instanceof Float32Array) {
+      targetArr = rawTarget.length === 128 ? rawTarget : null;
+    } else if (Array.isArray(rawTarget)) {
+      targetArr = rawTarget.length === 128 ? new Float32Array(rawTarget) : null;
+    } else if (typeof rawTarget === 'string') {
+      try {
+        const p = JSON.parse(rawTarget);
+        if (Array.isArray(p) && p.length === 128) {
+          targetArr = new Float32Array(p);
+        } else if (typeof p === 'object' && p !== null) {
+          const vals = Object.values(p).map(Number);
+          if (vals.length === 128) targetArr = new Float32Array(vals);
+        }
+      } catch {
+        // ignore invalid JSON
+      }
+    } else if (typeof rawTarget === 'object' && rawTarget !== null) {
+      const vals = Object.values(rawTarget).map(Number);
+      if (vals.length === 128) targetArr = new Float32Array(vals);
     }
 
-    const targetArr = new Float32Array(targetDescriptor);
+    if (!targetArr || targetArr.length !== 128) continue;
+
     const distance = faceapi.euclideanDistance(currentArr, targetArr);
 
     if (distance < minDistance) {
@@ -150,7 +196,8 @@ export function findBestMatch(
   }
 
   if (bestMatch) {
-    return { employee: bestMatch, distance: minDistance };
+    const accuracy = calculateAccuracyPercent(minDistance);
+    return { employee: bestMatch, distance: minDistance, accuracy };
   }
   return null;
 }
@@ -302,21 +349,15 @@ class FaceMatcherService {
       const earLeft = getEyeAspectRatio(leftEye);
       const earRight = getEyeAspectRatio(rightEye);
 
-      // Perform 128D Euclidean distance matching
-      const match = findBestMatch(detection.descriptor, employees, 0.52);
+      // Perform 128D Euclidean distance matching (threshold 0.58 accommodates glasses and lighting variations)
+      const match = findBestMatch(detection.descriptor, employees, 0.58);
 
       if (match) {
-        // Convert euclidean distance (< 0.52) to confidence percentage (e.g. 0.20 -> 96%, 0.40 -> 90%)
-        const confidenceScore = Math.min(
-          99,
-          Math.max(80, Math.round((1 - match.distance / 0.52) * 20 + 80))
-        );
-
         return {
           hasFace: true,
           isMatch: true,
           matchedEmployee: match.employee,
-          confidence: confidenceScore,
+          confidence: Math.round(match.accuracy),
           distance: Number(match.distance.toFixed(4)),
           box: { x: box.x, y: box.y, width: box.width, height: box.height },
           ear: { left: Number(earLeft.toFixed(2)), right: Number(earRight.toFixed(2)) },

@@ -171,10 +171,10 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
           // Perform matching against registered roster
           if (!isMatching.current && !isScanning) {
             isMatching.current = true;
-            const best = findBestMatch(detection.descriptor, knownEmployees, 0.52);
+            const best = findBestMatch(detection.descriptor, knownEmployees, 0.58);
 
             if (best) {
-              setStatusMessage(`✓ Verified: ${best.employee.name}`);
+              setStatusMessage(`✓ Verified: ${best.employee.name} (${best.accuracy}% match)`);
               setLocallyVerified(true);
               if (onUserIdentified) {
                 onUserIdentified(best.employee);
