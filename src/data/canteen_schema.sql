@@ -184,11 +184,22 @@ ALTER TABLE canteen_daily_counter ENABLE ROW LEVEL SECURITY;
 ALTER TABLE canteen_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE canteen_face_scan_logs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow public read on departments" ON canteen_departments;
 CREATE POLICY "Allow public read on departments" ON canteen_departments FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow public all on employees" ON canteen_employees;
 CREATE POLICY "Allow public all on employees" ON canteen_employees FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public read on meal slots" ON canteen_meal_slots;
 CREATE POLICY "Allow public read on meal slots" ON canteen_meal_slots FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow public all on daily counter" ON canteen_daily_counter;
 CREATE POLICY "Allow public all on daily counter" ON canteen_daily_counter FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public all on orders" ON canteen_orders;
 CREATE POLICY "Allow public all on orders" ON canteen_orders FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public all on scan logs" ON canteen_face_scan_logs;
 CREATE POLICY "Allow public all on scan logs" ON canteen_face_scan_logs FOR ALL USING (true) WITH CHECK (true);
 
 -- ------------------------------------------------------------------------------
