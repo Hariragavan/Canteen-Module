@@ -237,6 +237,7 @@ class CanteenService {
           name: rem.user_name,
           dept: rem.department,
           meal: rem.meal_slot,
+          items: rem.items || [],
           status: rem.status,
           issuedAt: rem.issued_at && rem.issued_at.includes('T') ? new Date(rem.issued_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : (rem.issued_at || ''),
           servedAt: rem.served_at && rem.served_at.includes('T') ? new Date(rem.served_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : (rem.served_at || null),
@@ -393,18 +394,42 @@ class CanteenService {
   /**
    * Creates new order, assigns incremental daily token, saves to store and Supabase
    */
-  public async createOrder(employee: Employee, meal: MealSlotName): Promise<Order> {
+  public async createOrder(employee: Employee, meal: MealSlotName, items: any[] = []): Promise<Order> {
     // 1. Guard against duplicate booking
     const existing = this.checkDuplicateBooking(employee.id, meal);
     if (existing) {
       throw new Error(`Duplicate Lock: ${meal} already issued for ${employee.name} at ${existing.issuedAt}`);
     }
 
-    const tokenNo = this.tokenSeq++;
+    let tokenNo = this.tokenSeq++;
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const dateStr = now.toISOString().slice(0, 10);
-    const orderUuid = `ORD-${Date.now().toString(36).toUpperCase()}-${tokenNo}`;
+    let orderUuid = `ORD-${Date.now().toString(36).toUpperCase()}-${tokenNo}`;
+
+    // Sync to Supabase if connected (Supabase trigger set_daily_token_number generates atomic token)
+    const client = supabaseManager.getClient();
+    if (client) {
+      try {
+        const { data: inserted, error } = await client.from('canteen_orders').insert({
+          user_id: employee.id,
+          user_name: employee.name,
+          department: employee.dept,
+          meal_slot: meal,
+          items: items || [],
+          status: 'PRINTED',
+          issued_at: new Date().toISOString(),
+          order_date: dateStr,
+        }).select().single();
+
+        if (!error && inserted) {
+          if (inserted.token_number) tokenNo = inserted.token_number;
+          if (inserted.order_uuid) orderUuid = inserted.order_uuid;
+        }
+      } catch (err) {
+        console.warn('Supabase remote insert fallback:', err);
+      }
+    }
 
     const newOrder: Order = {
       id: orderUuid.toLowerCase(),
@@ -414,6 +439,7 @@ class CanteenService {
       name: employee.name,
       dept: employee.dept,
       meal,
+      items: items || [],
       status: 'PRINTED',
       issuedAt: timeStr,
       servedAt: null,
@@ -427,26 +453,6 @@ class CanteenService {
 
     // Broadcast change
     supabaseManager.broadcastChange('canteen_orders', 'INSERT', newOrder);
-
-    // Sync to Supabase if connected
-    const client = supabaseManager.getClient();
-    if (client) {
-      try {
-        await client.from('canteen_orders').insert({
-          token_number: newOrder.token,
-          order_uuid: newOrder.orderUuid,
-          user_id: newOrder.userId,
-          user_name: newOrder.name,
-          department: newOrder.dept,
-          meal_slot: newOrder.meal,
-          status: newOrder.status,
-          issued_at: new Date().toISOString(),
-          order_date: newOrder.dateStr,
-        });
-      } catch (err) {
-        console.warn('Supabase remote insert fallback:', err);
-      }
-    }
 
     return newOrder;
   }

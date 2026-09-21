@@ -36,6 +36,7 @@ export interface Order {
   name: string;
   dept: string;
   meal: MealSlotName;
+  items?: any[];            // Selected dishes / vertical menu items
   status: OrderStatus;
   issuedAt: string;         // '12:35:10 PM'
   servedAt: string | null;  // '12:38:05 PM'
