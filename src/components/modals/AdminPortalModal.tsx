@@ -106,8 +106,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     }
   }, [isOpen]);
 
-  const [activeCameraLabel, setActiveCameraLabel] = useState<string>('');
-
   // Start webcam with selected facing mode (front or rear tablet camera)
   const startCamera = async (mode: 'user' | 'environment' = facingMode) => {
     try {
@@ -129,7 +127,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       mediaStreamRef.current = result.stream;
       setIsCameraActive(true);
       setFacingMode(result.actualFacingMode);
-      setActiveCameraLabel(result.label);
 
       if (mode === 'environment' && result.actualFacingMode === 'user') {
         setCameraError('No rear camera detected on this device. Using front camera.');
@@ -1089,11 +1086,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                             <SwitchCamera className={`w-3 h-3 text-emerald-400 ${isSwitchingCamera ? 'animate-spin' : ''}`} />
                             <span>{isSwitchingCamera ? 'Switching...' : facingMode === 'user' ? 'Back Cam' : 'Front Cam'}</span>
                           </button>
-                          {activeCameraLabel && (
-                            <span className="hidden sm:inline-block px-2 py-0.5 bg-black/65 backdrop-blur text-[9px] font-medium text-emerald-300 rounded-md border border-emerald-500/30 max-w-[130px] truncate pointer-events-none">
-                              {activeCameraLabel}
-                            </span>
-                          )}
                         </div>
 
                         {/* Center face alignment circle with dynamic Green / Red outline */}

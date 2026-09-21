@@ -197,10 +197,10 @@ class SoundEngine {
       const gain = ctx.createGain();
 
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(784, now); // G5 soft tone
+      osc.frequency.setValueAtTime(659.25, now); // E5 soft tone
 
       gain.gain.setValueAtTime(0.001, now);
-      gain.gain.linearRampToValueAtTime(0.04, now + 0.01);
+      gain.gain.linearRampToValueAtTime(0.025, now + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
 
       osc.connect(gain);
@@ -208,6 +208,39 @@ class SoundEngine {
 
       osc.start(now);
       osc.stop(now + 0.045);
+    } catch (e) {
+      console.warn('Audio synthesis error:', e);
+    }
+  }
+
+  /**
+   * Ultra-Mild, Pleasant Soft Sound for Food Selection
+   * Delicate, soothing water droplet tick (low gain 0.02, warm decay)
+   */
+  public playSelectSound(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      // Soothing micro-tone: 587Hz (D5) gently decaying to 520Hz
+      osc.frequency.setValueAtTime(587.33, now);
+      osc.frequency.exponentialRampToValueAtTime(520.0, now + 0.035);
+
+      // Very soft, mild, non-irritating volume
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.02, now + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.048);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.05);
     } catch (e) {
       console.warn('Audio synthesis error:', e);
     }

@@ -24,6 +24,9 @@ import {
   Building,
   Camera,
   Scan,
+  ChevronLeft,
+  ChevronRight,
+  Flame,
 } from 'lucide-react';
 
 interface TabletKioskViewProps {
@@ -57,8 +60,9 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
   const [isVerifyModalOpen, setIsVerifyModalOpen] = useState<boolean>(false);
   const [autoResetSeconds, setAutoResetSeconds] = useState<number>(10);
 
-  // HUD ref
+  // HUD and Carousel refs
   const hudRef = useRef<FaceScannerHUDHandle | null>(null);
+  const carouselRef = useRef<HTMLDivElement | null>(null);
 
   // Initialize and sync roster from local/Supabase
   const loadRoster = useCallback(() => {
@@ -258,10 +262,42 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     return () => clearInterval(interval);
   }, [lastPrintedOrder, handleResetToScan]);
 
-  // Handle meal slot selection
+  // Auto-scroll selected meal card into center view of carousel
+  useEffect(() => {
+    if (kioskStep === 'VERIFIED') {
+      const timer = setTimeout(() => {
+        const card = document.getElementById(`kiosk-meal-card-${selectedMealSlot}`);
+        if (card && carouselRef.current) {
+          card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [kioskStep, selectedMealSlot]);
+
+  // Handle meal slot selection with mild, pleasant sound
   const handleSelectMealSlot = (slot: MealSlotName) => {
-    soundEngine.playScannerBeep();
+    soundEngine.playSelectSound();
     setSelectedMealSlot(slot);
+    const card = document.getElementById(`kiosk-meal-card-${slot}`);
+    if (card && carouselRef.current) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  };
+
+  // Carousel slide arrow navigation
+  const handleSlidePrev = () => {
+    soundEngine.playSelectSound();
+    if (carouselRef.current) {
+      carouselRef.current.scrollBy({ left: -280, behavior: 'smooth' });
+    }
+  };
+
+  const handleSlideNext = () => {
+    soundEngine.playSelectSound();
+    if (carouselRef.current) {
+      carouselRef.current.scrollBy({ left: 280, behavior: 'smooth' });
+    }
   };
 
   // Execute Order Confirmation & Print Slip immediately with zero artificial delay
@@ -617,7 +653,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
               </div>
             ) : (
               <>
-                {/* Top Bar: Clean Title & Active Session Info (Top Buttons Removed) */}
+                {/* Top Bar: Clean Title, Active Session Info & Carousel Controls */}
                 <div className="flex items-center justify-between pb-2 border-b border-slate-100 shrink-0">
                   <div className="flex items-center space-x-2">
                     <UtensilsCrossed className="w-4 h-4 text-emerald-600" />
@@ -628,9 +664,26 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                       Active: {activeSlotName}
                     </span>
                   </div>
-                  <span className="text-[11px] font-sans font-medium text-slate-400">
-                    Vertical Slide • Tap to Select
-                  </span>
+
+                  {/* Carousel Left / Right Navigation Controls */}
+                  <div className="flex items-center space-x-1.5">
+                    <button
+                      type="button"
+                      onClick={handleSlidePrev}
+                      className="p-1.5 rounded-xl bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 border border-slate-200 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                      title="Previous meal (Slide Left)"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSlideNext}
+                      className="p-1.5 rounded-xl bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 border border-slate-200 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                      title="Next meal (Slide Right)"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Duplicate Order Alert if this user already booked today */}
@@ -645,10 +698,14 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                 )}
 
                 {/* =========================================================== */}
-                {/* CENTER FOOD SELECTION: Touch-First Vertical Slide           */}
+                {/* CENTER FOOD SELECTION: Touch & Animated Carousel            */}
+                {/* Smooth horizontal scroll-snap with slide-in animation       */}
                 {/* =========================================================== */}
-                <div className="flex-1 overflow-y-auto space-y-2 sm:space-y-2.5 my-2 pr-1 min-h-0 select-none">
-                  {MEAL_SLOTS.map((slot) => {
+                <div
+                  ref={carouselRef}
+                  className="flex-1 flex gap-3 sm:gap-4 overflow-x-auto py-2.5 px-1 my-1 min-h-0 select-none snap-x snap-mandatory scroll-smooth no-scrollbar"
+                >
+                  {MEAL_SLOTS.map((slot, index) => {
                     const isSelected = selectedMealSlot === slot.name;
                     const isCurrentTimeSlot = activeSlotName === slot.name;
                     const isAlreadyBooked = Boolean(
@@ -658,69 +715,109 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                     return (
                       <div
                         key={slot.name}
+                        id={`kiosk-meal-card-${slot.name}`}
                         onClick={() => !isAlreadyBooked && handleSelectMealSlot(slot.name)}
-                        className={`w-full p-3 sm:p-3.5 rounded-2xl border-2 transition-all flex items-center justify-between gap-3 cursor-pointer shadow-2xs ${
+                        style={{ animationDelay: `${index * 80}ms` }}
+                        className={`min-w-[240px] sm:min-w-[270px] max-w-[290px] flex-shrink-0 snap-center rounded-2xl sm:rounded-3xl border-2 transition-all duration-300 flex flex-col justify-between p-3.5 sm:p-4 cursor-pointer relative shadow-2xs animate-in fade-in slide-in-from-right-8 duration-500 fill-mode-both ${
                           isSelected
-                            ? 'border-emerald-600 bg-emerald-50/80 ring-2 ring-emerald-500/30 shadow-xs scale-[1.01]'
+                            ? 'border-emerald-600 bg-gradient-to-b from-emerald-50/90 to-white ring-4 ring-emerald-500/20 shadow-md scale-[1.01]'
                             : isAlreadyBooked
                             ? 'border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed'
-                            : 'border-slate-200 bg-white hover:border-emerald-300 hover:bg-slate-50/60'
+                            : 'border-slate-200 bg-white hover:border-emerald-400 hover:bg-slate-50/70 hover:shadow-xs'
                         }`}
                       >
-                        {/* Left: Emoji + Name + Timing + Description */}
-                        <div className="flex items-center space-x-3 min-w-0 flex-1">
-                          <div
-                            className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 border transition-all ${
-                              isSelected
-                                ? 'bg-emerald-100 border-emerald-300 shadow-xs'
-                                : 'bg-slate-50 border-slate-100'
-                            }`}
-                          >
-                            {slot.emoji}
-                          </div>
+                        {/* Top: Emoji + Name + Timing */}
+                        <div>
+                          <div className="flex items-start justify-between gap-2">
+                            <div
+                              className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 border transition-all ${
+                                isSelected
+                                  ? 'bg-emerald-100 border-emerald-300 shadow-xs'
+                                  : 'bg-slate-50 border-slate-100'
+                              }`}
+                            >
+                              {slot.emoji}
+                            </div>
 
-                          <div className="flex flex-col min-w-0">
-                            <div className="flex items-center space-x-2">
-                              <h4 className="font-bold text-slate-900 text-sm sm:text-base tracking-tight truncate">
-                                {slot.name}
-                              </h4>
+                            <div className="flex flex-col items-end gap-1">
                               {isCurrentTimeSlot && (
-                                <span className="text-[9px] font-mono px-2 py-0.5 rounded-full font-bold bg-emerald-600 text-white shrink-0">
+                                <span className="text-[9px] font-mono px-2 py-0.5 rounded-full font-bold bg-emerald-600 text-white shadow-2xs animate-pulse">
                                   Active Now
                                 </span>
                               )}
                               {isAlreadyBooked && (
-                                <span className="text-[9px] font-mono px-2 py-0.5 rounded-full font-bold bg-rose-100 text-rose-800 border border-rose-200 shrink-0">
-                                  Already Booked
+                                <span className="text-[9px] font-mono px-2 py-0.5 rounded-full font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                  Booked
                                 </span>
                               )}
+                              <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                                100% Free
+                              </span>
                             </div>
-
-                            <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-                              {slot.startTime} - {slot.endTime} • {slot.calories} kcal
-                            </p>
-                            <p className="text-xs text-slate-600 truncate mt-0.5">
-                              {slot.description}
-                            </p>
                           </div>
+
+                          <h4 className="font-black text-slate-900 text-base sm:text-lg tracking-tight mt-2.5">
+                            {slot.name}
+                          </h4>
+
+                          <div className="flex items-center space-x-2 text-[11px] text-slate-500 font-mono mt-1">
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-slate-400" />
+                              <span>{slot.startTime} - {slot.endTime}</span>
+                            </span>
+                            <span>•</span>
+                            <span className="flex items-center gap-0.5 text-amber-600 font-semibold">
+                              <Flame className="w-3 h-3 text-amber-500" />
+                              <span>{slot.calories} kcal</span>
+                            </span>
+                          </div>
+
+                          <p className="text-xs text-slate-600 mt-2 line-clamp-2 leading-relaxed">
+                            {slot.description}
+                          </p>
                         </div>
 
-                        {/* Right: Checkmark indicator */}
-                        <div className="flex items-center space-x-2 shrink-0">
-                          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg hidden sm:inline-block">
-                            100% Free
+                        {/* Bottom: Selection Status & Checkmark */}
+                        <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                          <span
+                            className={`text-[11px] font-bold transition-colors ${
+                              isSelected ? 'text-emerald-700' : 'text-slate-400'
+                            }`}
+                          >
+                            {isSelected ? '✓ Selected for Dispensing' : isAlreadyBooked ? 'Locked' : 'Tap to Select'}
                           </span>
+
                           <div
-                            className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all ${
+                            className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all ${
                               isSelected
                                 ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
                                 : 'border-slate-300 bg-white text-transparent'
                             }`}
                           >
-                            <Check className="w-4 h-4 stroke-[3]" />
+                            <Check className="w-3.5 h-3.5 stroke-[3]" />
                           </div>
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
+
+                {/* Carousel Indicator Dots */}
+                <div className="flex items-center justify-center gap-2 py-1 shrink-0">
+                  {MEAL_SLOTS.map((slot) => {
+                    const isSelected = selectedMealSlot === slot.name;
+                    return (
+                      <button
+                        key={slot.name}
+                        type="button"
+                        onClick={() => handleSelectMealSlot(slot.name)}
+                        className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${
+                          isSelected
+                            ? 'w-7 bg-emerald-600 shadow-xs'
+                            : 'w-2 bg-slate-300 hover:bg-slate-400'
+                        }`}
+                        title={`Jump to ${slot.name}`}
+                      />
                     );
                   })}
                 </div>

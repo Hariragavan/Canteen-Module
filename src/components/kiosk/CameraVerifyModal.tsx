@@ -322,7 +322,7 @@ export const CameraVerifyModal: React.FC<CameraVerifyModalProps> = ({
                     key={slot.name}
                     id={`modal-slide-meal-${slot.name}`}
                     onClick={() => {
-                      soundEngine.playScannerBeep();
+                      soundEngine.playSelectSound();
                       setSelectedMealSlot(slot.name);
                     }}
                     className={`cursor-pointer min-w-[240px] sm:min-w-[270px] flex-shrink-0 p-4 rounded-2xl border-2 transition-all flex flex-col justify-between gap-3 snap-center select-none shadow-2xs ${

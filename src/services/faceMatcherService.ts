@@ -96,91 +96,123 @@ export async function startCameraWithFacingMode(
   let stream: MediaStream | null = null;
   let detectedFacingMode: 'user' | 'environment' = facingMode;
 
-  // Clean helper matchers for device labels (never match raw numbers like 0 or 1)
+  // Clean helper matchers for device labels
   const isBackLabel = (l: string) =>
     /back|rear|environment|world/i.test(l) && !/front|user|selfie/i.test(l);
   const isFrontLabel = (l: string) =>
     /front|user|selfie/i.test(l) && !/back|rear|environment/i.test(l);
 
-  // Strategy 1: Direct native browser facingMode (gold standard across iOS Safari, Android Chrome & Desktop)
-  // Browser engine queries OS Camera2 / AVFoundation natively and NEVER inverts front/back
-  if (facingMode === 'user') {
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { exact: 'user' } },
-        audio: false,
-      });
-      detectedFacingMode = 'user';
-    } catch {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user' },
-          audio: false,
-        });
-        detectedFacingMode = 'user';
-      } catch {
-        // Fall through to enumeration
-      }
-    }
-  } else {
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { exact: 'environment' } },
-        audio: false,
-      });
-      detectedFacingMode = 'environment';
-    } catch {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
-          audio: false,
-        });
-        detectedFacingMode = 'environment';
-      } catch {
-        // Fall through to enumeration
-      }
-    }
-  }
+  // Strategy 1: Prioritize Hardware Device Enumeration
+  // On Android/Chrome, facingMode: 'environment' often silently defaults to camera1 (front).
+  // Directly targeting the physical rear deviceId forces Chrome to open the actual back camera!
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoInputs = devices.filter((d) => d.kind === 'videoinput');
 
-  // Strategy 2: Hardware device enumeration fallback
-  if (!stream) {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoInputs = devices.filter((d) => d.kind === 'videoinput');
+    if (videoInputs.length > 0) {
+      let targetDevice: MediaDeviceInfo | undefined;
 
-      if (videoInputs.length > 0) {
-        let targetDevice: MediaDeviceInfo | undefined;
-        if (facingMode === 'environment') {
-          targetDevice = videoInputs.find((d) => isBackLabel(d.label));
-          if (!targetDevice && videoInputs.length > 1) {
-            targetDevice = videoInputs.find((d) => !isFrontLabel(d.label) && d.label.length > 0);
-          }
-        } else {
-          targetDevice = videoInputs.find((d) => isFrontLabel(d.label));
+      if (facingMode === 'environment') {
+        // Priority 1a: Label explicitly mentions back/rear/environment
+        targetDevice = videoInputs.find((d) => isBackLabel(d.label));
+
+        // Priority 1b: Label does NOT mention front (e.g. camera0 while camera1 is front)
+        if (!targetDevice && videoInputs.length > 1) {
+          targetDevice = videoInputs.find((d) => !isFrontLabel(d.label) && d.label.length > 0);
         }
 
-        if (targetDevice && targetDevice.deviceId) {
+        // Priority 1c: By Android convention, camera0 is back, camera1 is front
+        if (!targetDevice && videoInputs.length > 1) {
+          targetDevice = videoInputs.find((d) => /camera\s*0|camera0/i.test(d.label)) || videoInputs[0];
+        }
+      } else {
+        // Priority 1d: Front camera
+        targetDevice = videoInputs.find((d) => isFrontLabel(d.label));
+        if (!targetDevice && videoInputs.length > 1) {
+          targetDevice = videoInputs.find((d) => /camera\s*1|camera1/i.test(d.label)) || videoInputs[1];
+        }
+      }
+
+      if (targetDevice && targetDevice.deviceId) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: { exact: targetDevice.deviceId } },
+            audio: false,
+          });
+        } catch {
           try {
             stream = await navigator.mediaDevices.getUserMedia({
-              video: { deviceId: { exact: targetDevice.deviceId } },
+              video: { deviceId: targetDevice.deviceId },
               audio: false,
             });
           } catch {
-            try {
-              stream = await navigator.mediaDevices.getUserMedia({
-                video: { deviceId: targetDevice.deviceId },
-                audio: false,
-              });
-            } catch {}
+            // fall through to facingMode constraints
           }
         }
       }
-    } catch (err) {
-      console.warn('Enumerate devices fallback error:', err);
+    }
+  } catch (err) {
+    console.warn('Hardware device enumeration lookup warning:', err);
+  }
+
+  // Strategy 2: Exact facingMode constraint
+  if (!stream) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { exact: facingMode } },
+        audio: false,
+      });
+    } catch {
+      // Exact constraint failed, proceed to ideal
     }
   }
 
-  // Strategy 3: Ultimate fallback
+  // Strategy 3: Soft facingMode with strict rear/front verification
+  if (!stream) {
+    try {
+      const candidate = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facingMode },
+        audio: false,
+      });
+
+      const candTrack = candidate.getVideoTracks()[0];
+      const candLabel = candTrack?.label || '';
+      const candSettings = candTrack?.getSettings?.() || {};
+
+      // If we asked for environment (rear), but the browser gave us the front camera:
+      if (facingMode === 'environment' && (isFrontLabel(candLabel) || candSettings.facingMode === 'user')) {
+        // Stop candidate track to unlock hardware
+        candTrack.stop();
+
+        // Enumerate devices freshly now that permission is active
+        const allDevices = await navigator.mediaDevices.enumerateDevices();
+        const allVideos = allDevices.filter((d) => d.kind === 'videoinput');
+        const alternateDevice = allVideos.find(
+          (d) => !isFrontLabel(d.label) && d.deviceId !== candSettings.deviceId
+        );
+
+        if (alternateDevice) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { deviceId: { exact: alternateDevice.deviceId } },
+              audio: false,
+            });
+          } catch {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { deviceId: alternateDevice.deviceId },
+              audio: false,
+            });
+          }
+        }
+      } else {
+        stream = candidate;
+      }
+    } catch {
+      // Fall through to ultimate fallback
+    }
+  }
+
+  // Strategy 4: Ultimate Fallback (any available camera)
   if (!stream) {
     stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
   }
