@@ -81,8 +81,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   const [isExtractingBiometric, setIsExtractingBiometric] = useState<boolean>(false);
   const [biometricStatus, setBiometricStatus] = useState<string | null>(null);
-  const [isFaceAligned, setIsFaceAligned] = useState<boolean>(false);
-  const [alignmentMessage, setAlignmentMessage] = useState<string>('Align face in circle');
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -162,7 +160,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       videoRef.current.srcObject = null;
     }
     setIsCameraActive(false);
-    setIsFaceAligned(false);
   };
 
   // Sync stream to video element whenever camera becomes active or mounts
@@ -184,42 +181,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     return () => stopCamera();
   }, [isOpen, activeTab, formData.photo]);
 
-  // Continuous face alignment & live duplicate checking for New Registration
-  // Fast, lag-free face alignment check for New Registration preview
-  useEffect(() => {
-    if (!isCameraActive || activeTab !== 'new' || formData.photo) {
-      setIsFaceAligned(false);
-      setAlignmentMessage('Align face in circle');
-      return;
-    }
 
-    let isMounted = true;
-    let isProcessing = false;
-
-    const interval = setInterval(async () => {
-      if (!videoRef.current || !isCameraActive || isProcessing) return;
-      isProcessing = true;
-      try {
-        const result = await faceMatcherService.checkAlignment(videoRef.current);
-        if (!isMounted) return;
-
-        setIsFaceAligned(result.isAligned);
-        setAlignmentMessage(result.isAligned ? '✓ Face Aligned in Circle' : result.message);
-      } catch {
-        if (isMounted) {
-          setIsFaceAligned(false);
-          setAlignmentMessage('Align face in circle');
-        }
-      } finally {
-        isProcessing = false;
-      }
-    }, 280);
-
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, [isCameraActive, activeTab, formData.photo]);
 
   // Take photo snapshot from video stream and compute 128D biometric descriptor
   const capturePhoto = async () => {
@@ -275,18 +237,15 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
             setBiometricStatus(msg);
             setErrorMessage(`Duplicate Face Error: This person is already registered as ${existingMatch.employee.name} (${existingMatch.employee.id}) with ${existingMatch.accuracy}% match accuracy!`);
             soundEngine.playWarningBuzzer();
-            setIsFaceAligned(false);
             return;
           }
 
           setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: descriptor }));
           setBiometricStatus('✓ 128D Biometric Vector Enrolled (Unique Face Verified)');
           setErrorMessage(null);
-          setIsFaceAligned(true);
         } else {
           setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
           setBiometricStatus('⚠️ No human face detected in photo. Please ensure face is centered and well lit.');
-          setIsFaceAligned(false);
         }
       } catch (e) {
         console.warn('Biometric extraction error:', e);
@@ -393,14 +352,12 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 setBiometricStatus(msg);
                 setErrorMessage(`Duplicate Face Error: This person is already registered as ${existingMatch.employee.name} (${existingMatch.employee.id}) with ${existingMatch.accuracy}% match accuracy!`);
                 soundEngine.playWarningBuzzer();
-                setIsFaceAligned(false);
                 return;
               }
 
               setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: desc }));
               setBiometricStatus('✓ 128D Biometric Vector Enrolled (Unique Face Verified)');
               setErrorMessage(null);
-              setIsFaceAligned(true);
             } else {
               setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
               setBiometricStatus('⚠️ No human face detected in uploaded file.');
@@ -984,17 +941,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                   </div>
 
                   {/* Video Viewport or Captured Snapshot Preview */}
-                  <div
-                    className={`relative w-56 h-56 rounded-3xl overflow-hidden shadow-inner flex items-center justify-center transition-all duration-300 ${
-                      formData.photo
-                        ? 'border-2 border-slate-700 bg-slate-900'
-                        : isCameraActive
-                        ? isFaceAligned
-                          ? 'border-4 border-emerald-500 ring-4 ring-emerald-400/50 shadow-[0_0_30px_rgba(16,185,129,0.5)]'
-                          : 'border-4 border-rose-500 ring-4 ring-rose-400/50 shadow-[0_0_25px_rgba(244,63,94,0.45)]'
-                        : 'border-2 border-slate-700 bg-slate-900'
-                    }`}
-                  >
+                  <div className="relative w-56 h-56 rounded-3xl overflow-hidden shadow-inner flex items-center justify-center border-2 border-slate-700 bg-slate-900">
                     {/* Always keep video element mounted in DOM to guarantee ref attachment */}
                     <video
                       ref={videoRef}
@@ -1063,22 +1010,10 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                           </button>
                         </div>
 
-                        {/* Center face alignment circle with dynamic Green / Red outline */}
-                        <div
-                          className={`absolute inset-4 rounded-full border-2 border-dashed transition-all duration-300 pointer-events-none flex flex-col items-center justify-end pb-3 z-20 ${
-                            isFaceAligned
-                              ? 'border-emerald-400 bg-emerald-500/10 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
-                              : 'border-rose-400 bg-rose-500/10 shadow-[0_0_20px_rgba(244,63,94,0.3)] animate-pulse'
-                          }`}
-                        >
-                          <span
-                            className={`px-3 py-1 rounded-full text-[10px] font-bold shadow-md transition-all ${
-                              isFaceAligned
-                                ? 'bg-emerald-600 text-white'
-                                : 'bg-rose-600 text-white'
-                            }`}
-                          >
-                            {isFaceAligned ? '✓ Face Aligned Correctly' : `⚠️ ${alignmentMessage}`}
+                        {/* Static framing guideline circle (no auto-scanning) */}
+                        <div className="absolute inset-4 rounded-full border-2 border-dashed border-white/45 pointer-events-none z-20 flex items-end justify-center pb-2.5">
+                          <span className="px-2.5 py-0.5 rounded-full bg-black/60 backdrop-blur-xs text-[10px] font-medium text-white/90">
+                            Position face in circle
                           </span>
                         </div>
                       </>
