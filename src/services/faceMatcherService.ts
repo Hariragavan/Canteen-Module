@@ -279,26 +279,26 @@ export interface FaceMatchDetail {
 /**
  * Calculates exact biometric accuracy percentage from Euclidean distance.
  * distance 0.00 -> 100.0%
- * distance 0.25 -> 84.6%
- * distance 0.48 -> 70.5% (e.g. spectacles vs without spectacles)
- * distance 0.58 -> 64.3% (boundary threshold)
+ * distance 0.20 -> 88.0%
+ * distance 0.35 -> 79.0%
+ * distance 0.44 -> 73.6% (duplicate boundary)
  */
 export function calculateAccuracyPercent(distance: number): number {
   if (distance <= 0) return 100.0;
-  const rawScore = 100 - (distance / 0.65) * 40;
+  const rawScore = 100 - (distance / 0.55) * 33;
   const clamped = Math.max(50.0, Math.min(99.9, rawScore));
   return Math.round(clamped * 10) / 10;
 }
 
 /**
  * Cosine / Euclidean distance vector matcher for 128D embeddings.
- * Threshold 0.58 handles natural face variations, including glasses vs no glasses,
- * slight head angles, and different camera lighting.
+ * Threshold 0.44 strictly detects true duplicates (same person with/without glasses)
+ * while preventing false matches on different people.
  */
 export function findBestMatch(
   currentDescriptor: Float32Array | number[] | null | undefined,
   employees: Employee[],
-  maxDistance = 0.58
+  maxDistance = 0.44
 ): FaceMatchDetail | null {
   if (!currentDescriptor) return null;
 
@@ -500,8 +500,8 @@ class FaceMatcherService {
       const earLeft = getEyeAspectRatio(leftEye);
       const earRight = getEyeAspectRatio(rightEye);
 
-      // Perform 128D Euclidean distance matching (threshold 0.58 accommodates glasses and lighting variations)
-      const match = findBestMatch(detection.descriptor, employees, 0.58);
+      // Perform 128D Euclidean distance matching (threshold 0.48 accommodates glasses and lighting variations)
+      const match = findBestMatch(detection.descriptor, employees, 0.48);
 
       if (match) {
         return {
@@ -539,8 +539,9 @@ class FaceMatcherService {
   }
 
   /**
-   * Check live face alignment for registration preview:
-   * Returns whether face is detected and properly aligned inside camera reticle.
+   * Fast live face alignment check for camera preview:
+   * Uses lightweight TinyFaceDetector (~15ms) without landmarks or 128D descriptors.
+   * Keeps live camera feed running at smooth 30fps without UI lag.
    */
   public async checkAlignment(
     source: HTMLVideoElement | HTMLCanvasElement
@@ -551,18 +552,26 @@ class FaceMatcherService {
         return { hasFace: false, isAligned: false, message: 'Starting camera...' };
       }
 
-      // Use the tablet-optimized dual detector
-      const detection = await extractFaceDetection(source);
+      // 1. Fast lightweight detector: TinyFaceDetector takes ~12ms
+      const tinyOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.40 });
+      let detection = await faceapi.detectSingleFace(source, tinyOptions);
+
+      // 2. Fallback to SSD if TinyFaceDetector misses
+      if (!detection) {
+        const ssdOptions = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.42 });
+        detection = await faceapi.detectSingleFace(source, ssdOptions);
+      }
+
       if (!detection) {
         return { hasFace: false, isAligned: false, message: 'Align face in circle' };
       }
 
-      const box = detection.detection.box;
+      const box = detection.box;
       const videoW = source instanceof HTMLVideoElement ? source.videoWidth : source.width;
       const videoH = source instanceof HTMLVideoElement ? source.videoHeight : source.height;
 
       // Realistic sizing checks for tablets & phones
-      if (box.width < 70) {
+      if (box.width < 60) {
         return { hasFace: true, isAligned: false, message: 'Step closer to camera' };
       }
       if (box.width > videoW * 0.95) {
@@ -572,8 +581,8 @@ class FaceMatcherService {
       // Check center with realistic bounds
       const centerX = box.x + box.width / 2;
       const centerY = box.y + box.height / 2;
-      const isCenteredX = Math.abs(centerX - videoW / 2) < videoW * 0.40;
-      const isCenteredY = Math.abs(centerY - videoH / 2) < videoH * 0.40;
+      const isCenteredX = Math.abs(centerX - videoW / 2) < videoW * 0.42;
+      const isCenteredY = Math.abs(centerY - videoH / 2) < videoH * 0.42;
 
       if (!isCenteredX || !isCenteredY) {
         return { hasFace: true, isAligned: false, message: 'Center face in circle' };
