@@ -9,6 +9,7 @@ import {
   Users,
   Camera,
   CameraOff,
+  SwitchCamera,
   RefreshCw,
   Trash2,
   Edit2,
@@ -21,7 +22,7 @@ import {
   Lock,
 } from 'lucide-react';
 
-import { faceMatcherService } from '../../services/faceMatcherService';
+import { faceMatcherService, findBestMatch } from '../../services/faceMatcherService';
 
 interface AdminPortalModalProps {
   isOpen: boolean;
@@ -70,6 +71,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   const [isExtractingBiometric, setIsExtractingBiometric] = useState<boolean>(false);
@@ -92,8 +94,8 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     }
   }, [isOpen]);
 
-  // Start webcam when entering New Registration tab or when requested
-  const startCamera = async () => {
+  // Start webcam with selected facing mode
+  const startCamera = async (mode: 'user' | 'environment' = facingMode) => {
     try {
       setCameraError(null);
       if (mediaStreamRef.current) {
@@ -103,12 +105,12 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          video: { facingMode: { ideal: mode }, width: { ideal: 640 }, height: { ideal: 480 } },
         });
       } catch {
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user' },
+            video: { facingMode: mode },
           });
         } catch {
           stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -127,6 +129,14 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       console.warn('Admin camera preview error:', err);
       setCameraError('Camera access denied or unavailable. You can use fallback photo or upload.');
       setIsCameraActive(false);
+    }
+  };
+
+  const toggleFacingMode = async () => {
+    const nextMode = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(nextMode);
+    if (isCameraActive) {
+      await startCamera(nextMode);
     }
   };
 
@@ -218,6 +228,11 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       const startX = Math.max(0, (vW - minDim) / 2);
       const startY = Math.max(0, (vH - minDim) / 3);
       ctx.save();
+      // Only mirror crop when using front camera
+      if (facingMode === 'user') {
+        ctx.translate(400, 0);
+        ctx.scale(-1, 1);
+      }
       ctx.drawImage(video, startX, startY, minDim, minDim, 0, 0, 400, 400);
       ctx.restore();
       const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
@@ -235,8 +250,21 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         }
 
         if (descriptor && descriptor.length === 128) {
+          // Check for duplicate face against already registered employees
+          const existingMatch = findBestMatch(descriptor, employees, 0.50);
+          if (existingMatch) {
+            setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: null }));
+            const msg = `⚠️ This face is already registered under "${existingMatch.employee.name}" (${existingMatch.employee.id}). Duplicate registrations are not allowed.`;
+            setBiometricStatus(msg);
+            setErrorMessage(`Duplicate Face Error: This person is already registered as ${existingMatch.employee.name} (${existingMatch.employee.id})!`);
+            soundEngine.playWarningBuzzer();
+            setIsFaceAligned(false);
+            return;
+          }
+
           setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: descriptor }));
           setBiometricStatus('✓ 128D Biometric Vector Enrolled');
+          setErrorMessage(null);
           setIsFaceAligned(true);
         } else {
           setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: null }));
@@ -267,8 +295,17 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     try {
       const desc = await faceMatcherService.extractDescriptorArray(photoUrl);
       if (desc && desc.length === 128) {
+        const existingMatch = findBestMatch(desc, employees, 0.50);
+        if (existingMatch) {
+          setFormData((prev) => ({ ...prev, face_descriptor: null }));
+          setBiometricStatus(`⚠️ Sample face already registered under "${existingMatch.employee.name}".`);
+          setErrorMessage(`Duplicate Face: Already registered under ${existingMatch.employee.name}.`);
+          soundEngine.playWarningBuzzer();
+          return;
+        }
         setFormData((prev) => ({ ...prev, face_descriptor: desc }));
         setBiometricStatus('✓ 128D Biometric Vector Enrolled');
+        setErrorMessage(null);
       } else {
         setBiometricStatus('⚠️ Could not detect face in sample photo');
       }
@@ -321,19 +358,37 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         if (event.target?.result) {
           const rawDataUrl = String(event.target.result);
           const dataUrl = await compressImage(rawDataUrl);
-          setFormData((prev) => ({ ...prev, photo: dataUrl }));
+          setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: null }));
           stopCamera();
 
           setIsExtractingBiometric(true);
           setBiometricStatus('Analyzing face & generating 128D embedding vector...');
+          setErrorMessage(null);
+
           try {
             const desc = await faceMatcherService.extractDescriptorArray(dataUrl);
             if (desc && desc.length === 128) {
+              // Check for duplicate face against already registered employees
+              const existingMatch = findBestMatch(desc, employees, 0.50);
+              if (existingMatch) {
+                setFormData((prev) => ({ ...prev, face_descriptor: null }));
+                const msg = `⚠️ This face is already registered under "${existingMatch.employee.name}" (${existingMatch.employee.id}). Duplicate registrations are not allowed.`;
+                setBiometricStatus(msg);
+                setErrorMessage(`Duplicate Face Error: This face is already registered as ${existingMatch.employee.name} (${existingMatch.employee.id})!`);
+                soundEngine.playWarningBuzzer();
+                setIsFaceAligned(false);
+                return;
+              }
+
               setFormData((prev) => ({ ...prev, face_descriptor: desc }));
               setBiometricStatus('✓ 128D Biometric Vector Enrolled');
+              setErrorMessage(null);
+              setIsFaceAligned(true);
             } else {
               setFormData((prev) => ({ ...prev, face_descriptor: null }));
               setBiometricStatus('⚠️ No human face detected in uploaded file.');
+              setErrorMessage('No human face detected. Please upload a clear, front-facing portrait.');
+              soundEngine.playWarningBuzzer();
             }
           } catch {
             setBiometricStatus('⚠️ Biometric extraction failed');
@@ -344,7 +399,10 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       };
       reader.readAsDataURL(file);
     }
+    // Reset file input so re-uploading the same file still triggers onChange
+    e.target.value = '';
   };
+
 
   // Switch department and auto-generate clean prefix if ID is blank
   const handleDeptChange = (dept: string) => {
@@ -377,8 +435,33 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       return;
     }
 
+    // Safety Check 1: Prevent duplicate ID
+    const existingIdMatch = employees.find(
+      (emp) => emp.id.toUpperCase() === formData.id.trim().toUpperCase()
+    );
+    if (existingIdMatch) {
+      soundEngine.playWarningBuzzer();
+      setErrorMessage(`ID Conflict: Employee ID "${formData.id.trim().toUpperCase()}" is already registered to ${existingIdMatch.name}.`);
+      return;
+    }
+
+    // Safety Check 2: Require valid biometric descriptor & prevent duplicate face
+    if (!formData.face_descriptor || formData.face_descriptor.length !== 128) {
+      soundEngine.playWarningBuzzer();
+      setErrorMessage('Biometric Requirement: A valid human face must be detected before registration. Please capture or upload a clear photo.');
+      return;
+    }
+
+    const duplicateFaceMatch = findBestMatch(formData.face_descriptor, employees, 0.50);
+    if (duplicateFaceMatch) {
+      soundEngine.playWarningBuzzer();
+      setErrorMessage(`Duplicate Face Error: This face is already registered under "${duplicateFaceMatch.employee.name}" (${duplicateFaceMatch.employee.id}). Duplicate registrations are strictly not allowed.`);
+      return;
+    }
+
     try {
       const role: 'Staff' | 'Employee' = formData.dept.toLowerCase().includes('staff') ? 'Staff' : 'Employee';
+
       const newEmployee: Employee = {
         id: formData.id.trim().toUpperCase(),
         name: formData.name.trim(),
@@ -900,9 +983,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       playsInline
                       muted
                       autoPlay
-                      className={`w-full h-full object-cover mirror absolute inset-0 ${
-                        isCameraActive && !formData.photo ? 'block' : 'hidden'
-                      }`}
+                      className={`w-full h-full object-cover absolute inset-0 ${
+                        facingMode === 'user' ? 'mirror' : ''
+                      } ${isCameraActive && !formData.photo ? 'block' : 'hidden'}`}
                     />
 
                     {formData.photo ? (
@@ -923,7 +1006,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                         </p>
                         <button
                           type="button"
-                          onClick={startCamera}
+                          onClick={() => startCamera(facingMode)}
                           className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[11px] font-bold shadow-md shadow-emerald-600/30 flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer"
                         >
                           <Camera className="w-3.5 h-3.5" />
@@ -932,6 +1015,17 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       </div>
                     ) : (
                       <>
+                        {/* Top-Left Corner: Button to Switch between Front and Rear Camera */}
+                        <button
+                          type="button"
+                          onClick={toggleFacingMode}
+                          title={facingMode === 'user' ? 'Switch to Rear/Back Camera' : 'Switch to Front Camera'}
+                          className="absolute top-2 left-2 z-30 px-2 py-1 bg-slate-800/85 hover:bg-slate-700 text-white rounded-lg text-[10px] font-bold shadow-md flex items-center space-x-1 border border-slate-600 backdrop-blur-xs transition-all active:scale-95 cursor-pointer"
+                        >
+                          <SwitchCamera className="w-3 h-3 text-emerald-400" />
+                          <span>{facingMode === 'user' ? 'Back Cam' : 'Front Cam'}</span>
+                        </button>
+
                         {/* Top-Right Corner: Button to Turn OFF camera */}
                         <button
                           type="button"
@@ -976,19 +1070,19 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          setFormData((prev) => ({ ...prev, photo: '' }));
-                          startCamera();
+                          setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
+                          startCamera(facingMode);
                         }}
                         className="w-full py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 rounded-xl text-xs font-bold shadow-2xs flex items-center justify-center space-x-1.5 cursor-pointer"
                       >
                         <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
-                        <span>Retake Photo</span>
+                        <span>Retake / Clear Photo</span>
                       </button>
                     ) : !isCameraActive ? (
                       /* Open Camera Button at New Registration */
                       <button
                         type="button"
-                        onClick={startCamera}
+                        onClick={() => startCamera(facingMode)}
                         className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center justify-center space-x-2 transition-transform active:scale-95 cursor-pointer"
                       >
                         <Camera className="w-4 h-4" />
@@ -1006,27 +1100,22 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       </button>
                     )}
 
-                    <div className="flex items-center justify-center space-x-2 text-[11px] text-slate-500 pt-1">
-                      {/* Upload: Disabled when camera is not open */}
-                      <label
-                        className={`flex items-center gap-1 ${
-                          isCameraActive
-                            ? 'cursor-pointer hover:text-emerald-700 underline text-slate-700'
-                            : 'opacity-40 cursor-not-allowed pointer-events-none text-slate-400'
-                        }`}
-                        title={isCameraActive ? 'Upload face photo' : 'Upload disabled: Camera must be open first'}
-                      >
-                        <Upload className="w-3 h-3" />
-                        <span>Upload</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          disabled={!isCameraActive}
-                          onChange={handleFileUpload}
-                          className="hidden"
-                        />
-                      </label>
-                      <span>•</span>
+                    {/* Prominent Upload & Detect Face Button */}
+                    <label
+                      className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold shadow-2xs flex items-center justify-center space-x-2 cursor-pointer transition-all active:scale-95"
+                      title="Upload photo from device to detect face and enroll 128D biometrics"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Upload & Detect Face</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                    </label>
+
+                    <div className="flex items-center justify-center space-x-2 text-[11px] text-slate-500 pt-0.5">
                       <button
                         type="button"
                         onClick={handleUseSamplePhoto}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
-import { Camera, CameraOff, Check, Upload, X } from 'lucide-react';
+import { Camera, CameraOff, Check } from 'lucide-react';
 import type { Employee } from '../../types';
 import {
   loadFaceApiModels,
@@ -40,7 +40,6 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
     const [statusMessage, setStatusMessage] = useState<string>('Camera is closed. Click Open Camera to start.');
     // App opens with camera CLOSED by default as requested
     const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
-    const [testPhoto, setTestPhoto] = useState<string | null>(null);
     const [hasFaceInFrame, setHasFaceInFrame] = useState<boolean>(false);
     const [locallyVerified, setLocallyVerified] = useState<boolean>(false);
     const isMatching = useRef<boolean>(false);
@@ -212,44 +211,6 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
       stopCamera,
     ]);
 
-    // Handle uploaded test photo matching if test photo provided
-    useEffect(() => {
-      if (!testPhoto || !modelLoaded || isVerified || locallyVerified) return;
-
-      const processTestPhoto = async () => {
-        try {
-          const img = new Image();
-          img.src = testPhoto;
-          await new Promise((res) => {
-            img.onload = res;
-          });
-          const detection = await extractFaceDetection(img);
-
-          if (!detection) {
-            setStatusMessage('⚠️ No face detected in photo');
-            return;
-          }
-
-          const best = findBestMatch(detection.descriptor, knownEmployees, 0.52);
-          if (best) {
-            setStatusMessage(`✓ Verified: ${best.employee.name}`);
-            setLocallyVerified(true);
-            if (onUserIdentified) {
-              onUserIdentified(best.employee);
-            }
-          } else {
-            setStatusMessage('⚠️ Face not registered in system');
-            if (onFaceNotRegistered) {
-              onFaceNotRegistered('Face not found in biometric database');
-            }
-          }
-        } catch (err) {
-          console.warn('Test photo matching error:', err);
-        }
-      };
-
-      processTestPhoto();
-    }, [testPhoto, modelLoaded, isVerified, locallyVerified, knownEmployees, onUserIdentified, onFaceNotRegistered]);
     // Expose captureSnapshot for thermal ticket printing & manual capture
     useImperativeHandle(ref, () => ({
       captureSnapshot: () => {
@@ -271,9 +232,6 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
           } catch (e) {
             console.warn('Could not grab video frame:', e);
           }
-        }
-        if (testPhoto) {
-          return testPhoto;
         }
         return '';
       },
@@ -328,7 +286,7 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
           </div>
 
           {/* Camera Closed Viewfinder Placeholder */}
-          {!isCameraActive && !testPhoto && (
+          {!isCameraActive && (
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 bg-slate-950/95 text-center">
               <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 mb-2 shadow-inner">
                 <CameraOff className="w-7 h-7" />
@@ -346,15 +304,6 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
                 <span>Open Camera</span>
               </button>
             </div>
-          )}
-
-          {/* Test photo preview when physical camera is offline */}
-          {testPhoto && !isCameraActive && (
-            <img
-              src={testPhoto}
-              alt="Test Biometric Face"
-              className="absolute inset-0 w-full h-full object-cover mirror z-10"
-            />
           )}
 
           {/* Target Reticle Circle for Face Alignment (Pulsing Emerald) - only when camera is active */}
@@ -395,50 +344,6 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
           {isCapturing && (
             <div className="absolute inset-0 bg-white animate-out fade-out duration-300 pointer-events-none z-30"></div>
           )}
-
-          {/* Floating Controls in bottom right corner (Upload Photo: Disabled when camera is not open) */}
-          <div className="absolute bottom-3 right-3 flex items-center space-x-1.5 z-20">
-            {testPhoto ? (
-              <button
-                type="button"
-                onClick={() => setTestPhoto(null)}
-                title="Clear Test Photo"
-                className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs border border-rose-200 shadow-md backdrop-blur transition-all active:scale-95"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            ) : (
-              <label
-                title={isCameraActive ? 'Upload test face photo' : 'Upload disabled: Camera must be open first'}
-                className={`p-2 rounded-xl text-xs border shadow-md backdrop-blur transition-all flex items-center justify-center ${
-                  isCameraActive
-                    ? 'bg-white/90 hover:bg-white text-slate-800 border-slate-200 cursor-pointer active:scale-95'
-                    : 'bg-slate-900/60 text-slate-500 border-slate-800 opacity-40 cursor-not-allowed pointer-events-none'
-                }`}
-              >
-                <Upload className="w-3.5 h-3.5 text-current" />
-                <input
-                  type="file"
-                  accept="image/*"
-                  disabled={!isCameraActive}
-                  className="hidden"
-                  onChange={(e) => {
-                    if (!isCameraActive) return;
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = (ev) => {
-                        if (ev.target?.result) {
-                          setTestPhoto(String(ev.target.result));
-                        }
-                      };
-                      reader.readAsDataURL(file);
-                    }
-                  }}
-                />
-              </label>
-            )}
-          </div>
 
           <style>{`.mirror { transform: scaleX(-1); }`}</style>
         </div>
