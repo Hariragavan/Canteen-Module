@@ -96,17 +96,33 @@ export async function startCameraWithFacingMode(
   let stream: MediaStream | null = null;
   let detectedFacingMode: 'user' | 'environment' = facingMode;
 
-  // Helper matchers for device labels
+  // Clean helper matchers for device labels (never match raw numbers like 0 or 1)
   const isBackLabel = (l: string) =>
-    /back|rear|environment|main|external|world|camera2 1/i.test(l) &&
-    !/front|user|selfie/i.test(l);
+    /back|rear|environment|world/i.test(l) && !/front|user|selfie/i.test(l);
   const isFrontLabel = (l: string) =>
-    /front|user|selfie|camera2 0/i.test(l) &&
-    !/back|rear/i.test(l);
+    /front|user|selfie/i.test(l) && !/back|rear|environment/i.test(l);
 
-  // Strategy 1: For environment, first try direct exact facingMode WITHOUT resolution constraints
-  // On mobile Chrome and iOS Safari, this directly requests the rear sensor without conflicting aspect ratios
-  if (facingMode === 'environment') {
+  // Strategy 1: Direct native browser facingMode (gold standard across iOS Safari, Android Chrome & Desktop)
+  // Browser engine queries OS Camera2 / AVFoundation natively and NEVER inverts front/back
+  if (facingMode === 'user') {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { exact: 'user' } },
+        audio: false,
+      });
+      detectedFacingMode = 'user';
+    } catch {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user' },
+          audio: false,
+        });
+        detectedFacingMode = 'user';
+      } catch {
+        // Fall through to enumeration
+      }
+    }
+  } else {
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { exact: 'environment' } },
@@ -114,40 +130,37 @@ export async function startCameraWithFacingMode(
       });
       detectedFacingMode = 'environment';
     } catch {
-      // Exact constraint failed, proceed to hardware enumeration
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+          audio: false,
+        });
+        detectedFacingMode = 'environment';
+      } catch {
+        // Fall through to enumeration
+      }
     }
   }
 
-  // Strategy 2: Hardware device enumeration (inspects all physical lenses on tablets & multi-cam phones)
+  // Strategy 2: Hardware device enumeration fallback
   if (!stream) {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoInputs = devices.filter((d) => d.kind === 'videoinput');
 
-      if (videoInputs.length > 1) {
+      if (videoInputs.length > 0) {
         let targetDevice: MediaDeviceInfo | undefined;
         if (facingMode === 'environment') {
-          // Find explicit rear/back lens
           targetDevice = videoInputs.find((d) => isBackLabel(d.label));
-          // If labels are present but none matched rear, pick a lens that isn't front
-          if (!targetDevice) {
+          if (!targetDevice && videoInputs.length > 1) {
             targetDevice = videoInputs.find((d) => !isFrontLabel(d.label) && d.label.length > 0);
           }
-          // Fallback on Android: the last videoinput device is conventionally the rear camera
-          if (!targetDevice) {
-            targetDevice = videoInputs[videoInputs.length - 1];
-          }
         } else {
-          // Look for front / user / selfie camera
           targetDevice = videoInputs.find((d) => isFrontLabel(d.label));
-          if (!targetDevice) {
-            targetDevice = videoInputs[0];
-          }
         }
 
         if (targetDevice && targetDevice.deviceId) {
           try {
-            // Request deviceId directly without resolution limits so tablet sensor opens natively
             stream = await navigator.mediaDevices.getUserMedia({
               video: { deviceId: { exact: targetDevice.deviceId } },
               audio: false,
@@ -158,9 +171,7 @@ export async function startCameraWithFacingMode(
                 video: { deviceId: targetDevice.deviceId },
                 audio: false,
               });
-            } catch {
-              // Fall through to facingMode constraints
-            }
+            } catch {}
           }
         }
       }
@@ -169,33 +180,9 @@ export async function startCameraWithFacingMode(
     }
   }
 
-  // Strategy 3: Standard facingMode constraint without conflicting resolution parameters
+  // Strategy 3: Ultimate fallback
   if (!stream) {
-    if (facingMode === 'environment') {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
-          audio: false,
-        });
-        detectedFacingMode = 'environment';
-      } catch {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        } catch (e) {
-          throw e;
-        }
-      }
-    } else {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user' },
-          audio: false,
-        });
-        detectedFacingMode = 'user';
-      } catch {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      }
-    }
+    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
   }
 
   // 4. Verify what camera actually opened from active track settings
@@ -215,9 +202,13 @@ export async function startCameraWithFacingMode(
   videoElement.setAttribute('playsinline', 'true');
   videoElement.setAttribute('autoplay', 'true');
   videoElement.muted = true;
-  await videoElement.play().catch((err) => {
+
+  // Ensure video element plays and doesn't remain blank
+  try {
+    await videoElement.play();
+  } catch (err) {
     console.warn('Camera video play warning:', err);
-  });
+  }
 
   return {
     stream,

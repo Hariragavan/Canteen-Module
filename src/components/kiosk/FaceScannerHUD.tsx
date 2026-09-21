@@ -285,14 +285,16 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
             autoPlay
             playsInline
             muted
+            onLoadedMetadata={() => videoRef.current?.play().catch(() => {})}
+            onCanPlay={() => videoRef.current?.play().catch(() => {})}
             className={`w-full h-full object-cover mirror transition-opacity duration-300 ${
               isCameraActive ? 'opacity-95' : 'opacity-0 pointer-events-none'
             }`}
           />
 
-          {/* Top-Right Corner: Dedicated button to Turn OFF / Turn ON camera */}
-          <div className="absolute top-3 right-3 z-30 flex items-center space-x-1.5">
-            {isCameraActive ? (
+          {/* Top-Right Corner: Button to Turn OFF camera ONLY when camera is open */}
+          {isCameraActive && (
+            <div className="absolute top-3 right-3 z-30 flex items-center space-x-1.5">
               <button
                 type="button"
                 onClick={() => stopCamera()}
@@ -302,20 +304,10 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
                 <CameraOff className="w-3.5 h-3.5" />
                 <span>Off Camera</span>
               </button>
-            ) : (
-              <button
-                type="button"
-                onClick={initCamera}
-                title="Click to open camera"
-                className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-lg backdrop-blur flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer border border-emerald-500"
-              >
-                <Camera className="w-3.5 h-3.5" />
-                <span>Open Camera</span>
-              </button>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Camera Closed Viewfinder Placeholder */}
+          {/* Camera Closed Viewfinder Placeholder: Shows Open Camera button ONLY in center */}
           {!isCameraActive && (
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 bg-slate-950/95 text-center">
               <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 mb-2 shadow-inner">
@@ -323,7 +315,7 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
               </div>
               <h4 className="text-sm font-bold text-slate-100 tracking-tight">Camera is Closed</h4>
               <p className="text-xs text-slate-400 max-w-xs mt-0.5 mb-3 font-sans">
-                Camera is off. Click below or the top-right button to start live biometric scanning.
+                Camera is off. Click below to start live biometric scanning.
               </p>
               <button
                 type="button"

@@ -1029,9 +1029,11 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       playsInline
                       muted
                       autoPlay
-                      className={`w-full h-full object-cover absolute inset-0 ${
+                      onLoadedMetadata={() => videoRef.current?.play().catch(() => {})}
+                      onCanPlay={() => videoRef.current?.play().catch(() => {})}
+                      className={`w-full h-full object-cover absolute inset-0 transition-opacity duration-300 ${
                         facingMode === 'user' ? 'mirror' : ''
-                      } ${isCameraActive && !formData.photo ? 'block' : 'hidden'}`}
+                      } ${isCameraActive && !formData.photo ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none'}`}
                     />
 
                     {formData.photo ? (
@@ -1094,17 +1096,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                           )}
                         </div>
 
-                        {/* Top-Right Corner: Button to Turn OFF camera */}
-                        <button
-                          type="button"
-                          onClick={stopCamera}
-                          title="Click to turn off camera"
-                          className="absolute top-2 right-2 z-30 px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold shadow-md flex items-center space-x-1 border border-rose-500 transition-all active:scale-95 cursor-pointer"
-                        >
-                          <CameraOff className="w-3 h-3" />
-                          <span>Off Camera</span>
-                        </button>
-
                         {/* Center face alignment circle with dynamic Green / Red outline */}
                         <div
                           className={`absolute inset-4 rounded-full border-2 border-dashed transition-all duration-300 pointer-events-none flex flex-col items-center justify-end pb-3 z-20 ${
@@ -1146,8 +1137,45 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                         <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
                         <span>Retake / Clear Photo</span>
                       </button>
-                    ) : !isCameraActive ? (
-                      /* Open Camera Button at New Registration */
+                    ) : isCameraActive ? (
+                      <>
+                        {/* Capture Photo Button */}
+                        <button
+                          type="button"
+                          onClick={capturePhoto}
+                          disabled={liveDuplicateMatch !== null}
+                          className={`w-full py-2.5 rounded-xl text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-transform active:scale-95 ${
+                            liveDuplicateMatch !== null
+                              ? 'bg-rose-700 text-white cursor-not-allowed opacity-90'
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 cursor-pointer'
+                          }`}
+                          title={
+                            liveDuplicateMatch !== null
+                              ? `Blocked: Face already registered as ${liveDuplicateMatch.employee.name} (${liveDuplicateMatch.accuracy}%)`
+                              : 'Capture face photo'
+                          }
+                        >
+                          <Camera className="w-4 h-4" />
+                          <span>
+                            {liveDuplicateMatch !== null
+                              ? `Blocked: Already Registered (${liveDuplicateMatch.accuracy}%)`
+                              : 'Capture Photo'}
+                          </span>
+                        </button>
+
+                        {/* Down of Capture button: Turn Off Camera Button */}
+                        <button
+                          type="button"
+                          onClick={stopCamera}
+                          className="w-full py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold shadow-2xs flex items-center justify-center space-x-1.5 transition-all active:scale-95 cursor-pointer"
+                          title="Turn off camera"
+                        >
+                          <CameraOff className="w-3.5 h-3.5" />
+                          <span>Turn Off Camera</span>
+                        </button>
+                      </>
+                    ) : (
+                      /* Open Camera Button when camera is off */
                       <button
                         type="button"
                         onClick={() => startCamera(facingMode)}
@@ -1155,30 +1183,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       >
                         <Camera className="w-4 h-4" />
                         <span>Open Camera</span>
-                      </button>
-                    ) : (
-                      /* Capture Photo Button */
-                      <button
-                        type="button"
-                        onClick={capturePhoto}
-                        disabled={liveDuplicateMatch !== null}
-                        className={`w-full py-2.5 rounded-xl text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-transform active:scale-95 ${
-                          liveDuplicateMatch !== null
-                            ? 'bg-rose-700 text-white cursor-not-allowed opacity-90'
-                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 cursor-pointer'
-                        }`}
-                        title={
-                          liveDuplicateMatch !== null
-                            ? `Blocked: Face already registered as ${liveDuplicateMatch.employee.name} (${liveDuplicateMatch.accuracy}%)`
-                            : 'Capture face photo'
-                        }
-                      >
-                        <Camera className="w-4 h-4" />
-                        <span>
-                          {liveDuplicateMatch !== null
-                            ? `Blocked: Already Registered (${liveDuplicateMatch.accuracy}%)`
-                            : 'Capture Photo'}
-                        </span>
                       </button>
                     )}
 
