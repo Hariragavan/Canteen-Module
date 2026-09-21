@@ -106,6 +106,8 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     }
   }, [isOpen]);
 
+  const [activeCameraLabel, setActiveCameraLabel] = useState<string>('');
+
   // Start webcam with selected facing mode (front or rear tablet camera)
   const startCamera = async (mode: 'user' | 'environment' = facingMode) => {
     try {
@@ -119,14 +121,19 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         stream.getTracks().forEach((track) => track.stop());
         videoRef.current.srcObject = null;
       }
-      // Wait 150ms for device hardware release
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      // Wait 300ms for device hardware release
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       if (!videoRef.current) return;
-      const stream = await startCameraWithFacingMode(videoRef.current, mode);
-      mediaStreamRef.current = stream;
+      const result = await startCameraWithFacingMode(videoRef.current, mode);
+      mediaStreamRef.current = result.stream;
       setIsCameraActive(true);
-      setFacingMode(mode);
+      setFacingMode(result.actualFacingMode);
+      setActiveCameraLabel(result.label);
+
+      if (mode === 'environment' && result.actualFacingMode === 'user') {
+        setCameraError('No rear camera detected on this device. Using front camera.');
+      }
     } catch (err) {
       console.warn('Admin camera preview error:', err);
       setCameraError('Camera access denied or unavailable. You can use fallback photo or upload.');
@@ -138,10 +145,11 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     if (isSwitchingCamera) return;
     setIsSwitchingCamera(true);
     const nextMode = facingMode === 'user' ? 'environment' : 'user';
-    setFacingMode(nextMode);
     try {
       if (isCameraActive) {
         await startCamera(nextMode);
+      } else {
+        setFacingMode(nextMode);
       }
     } finally {
       setIsSwitchingCamera(false);
@@ -1068,16 +1076,23 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                     ) : (
                       <>
                         {/* Top-Left Corner: Button to Switch between Front and Rear Camera */}
-                        <button
-                          type="button"
-                          disabled={isSwitchingCamera}
-                          onClick={toggleFacingMode}
-                          title={facingMode === 'user' ? 'Switch to Rear/Back Camera' : 'Switch to Front Camera'}
-                          className="absolute top-2 left-2 z-30 px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 text-white rounded-lg text-[10px] font-bold shadow-md flex items-center space-x-1 border border-slate-600 backdrop-blur-xs transition-all active:scale-95 cursor-pointer disabled:opacity-60"
-                        >
-                          <SwitchCamera className={`w-3 h-3 text-emerald-400 ${isSwitchingCamera ? 'animate-spin' : ''}`} />
-                          <span>{isSwitchingCamera ? 'Switching...' : facingMode === 'user' ? 'Back Cam' : 'Front Cam'}</span>
-                        </button>
+                        <div className="absolute top-2 left-2 z-30 flex items-center space-x-1.5">
+                          <button
+                            type="button"
+                            disabled={isSwitchingCamera}
+                            onClick={toggleFacingMode}
+                            title={facingMode === 'user' ? 'Switch to Rear/Back Camera' : 'Switch to Front Camera'}
+                            className="px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 text-white rounded-lg text-[10px] font-bold shadow-md flex items-center space-x-1 border border-slate-600 backdrop-blur-xs transition-all active:scale-95 cursor-pointer disabled:opacity-60"
+                          >
+                            <SwitchCamera className={`w-3 h-3 text-emerald-400 ${isSwitchingCamera ? 'animate-spin' : ''}`} />
+                            <span>{isSwitchingCamera ? 'Switching...' : facingMode === 'user' ? 'Back Cam' : 'Front Cam'}</span>
+                          </button>
+                          {activeCameraLabel && (
+                            <span className="hidden sm:inline-block px-2 py-0.5 bg-black/65 backdrop-blur text-[9px] font-medium text-emerald-300 rounded-md border border-emerald-500/30 max-w-[130px] truncate pointer-events-none">
+                              {activeCameraLabel}
+                            </span>
+                          )}
+                        </div>
 
                         {/* Top-Right Corner: Button to Turn OFF camera */}
                         <button

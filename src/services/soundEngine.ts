@@ -43,7 +43,8 @@ class SoundEngine {
   }
 
   /**
-   * Dual High-Frequency Chime for Valid Verification
+   * Mild, Soft Chime for Valid Verification
+   * Warm, gentle dual sine wave tone
    */
   public playVerificationChime(): void {
     const ctx = this.getContext();
@@ -58,15 +59,17 @@ class SoundEngine {
       osc1.type = 'sine';
       osc2.type = 'sine';
 
-      // Harmonic dual sweep
-      osc1.frequency.setValueAtTime(880, now);
-      osc1.frequency.setValueAtTime(1318.51, now + 0.08); // E6
+      // Warm acoustic chime (E5 -> A5)
+      osc1.frequency.setValueAtTime(659.25, now);
+      osc1.frequency.exponentialRampToValueAtTime(880.0, now + 0.12);
 
-      osc2.frequency.setValueAtTime(1174.66, now); // D6
-      osc2.frequency.setValueAtTime(1760.00, now + 0.08); // A6
+      osc2.frequency.setValueAtTime(523.25, now);
+      osc2.frequency.exponentialRampToValueAtTime(659.25, now + 0.12);
 
-      gain.gain.setValueAtTime(0.22, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+      // Mild, non-intrusive volume
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.07, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
 
       osc1.connect(gain);
       osc2.connect(gain);
@@ -74,15 +77,16 @@ class SoundEngine {
 
       osc1.start(now);
       osc2.start(now);
-      osc1.stop(now + 0.45);
-      osc2.stop(now + 0.45);
+      osc1.stop(now + 0.4);
+      osc2.stop(now + 0.4);
     } catch (e) {
       console.warn('Audio synthesis error:', e);
     }
   }
 
   /**
-   * Low Harsh Sawtooth Buzzer for Duplicate / Security Double-Dip Block
+   * Mild, Soft Warning Tone (Gentle Reminder)
+   * Pure sine wave double-thump — NO harsh sawtooth or grating buzzers
    */
   public playWarningBuzzer(): void {
     const ctx = this.getContext();
@@ -93,65 +97,65 @@ class SoundEngine {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(160, now);
-      osc.frequency.linearRampToValueAtTime(115, now + 0.4);
+      osc.type = 'sine';
+      // Warm low gentle tone: 220Hz (A3) decaying to 180Hz
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.exponentialRampToValueAtTime(180, now + 0.22);
 
-      gain.gain.setValueAtTime(0.28, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
+      // Mild soft volume
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.07, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start(now);
-      osc.stop(now + 0.45);
+      osc.stop(now + 0.26);
     } catch (e) {
       console.warn('Audio synthesis error:', e);
     }
   }
 
   /**
-   * 80mm Stepper Motor Thermal Paper Feed Sound
-   * Synthesizes the mechanical paper drive stepper motor
+   * Soft Mechanical Paper Eject Sound
+   * Gentle, quiet whisper
    */
   public playThermalMotorSound(): void {
     const ctx = this.getContext();
     if (!ctx) return;
 
     try {
-      const duration = 0.85;
+      const duration = 0.45;
       const bufferSize = Math.floor(ctx.sampleRate * duration);
       const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
       const data = buffer.getChannelData(0);
 
       for (let i = 0; i < bufferSize; i++) {
         const white = Math.random() * 2 - 1;
-        // 58Hz mechanical stepper rhythm
-        const pulse = Math.sin((i / ctx.sampleRate) * 2 * Math.PI * 58) > 0.75 ? 1.0 : 0.25;
-        data[i] = white * pulse * 0.12;
+        data[i] = white * 0.02; // Very quiet whisper
       }
 
       const noise = ctx.createBufferSource();
       noise.buffer = buffer;
 
       const filter = ctx.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.frequency.value = 2100;
-      filter.Q.value = 2.2;
+      filter.type = 'lowpass';
+      filter.frequency.value = 800; // Soft low-pass filter
 
       noise.connect(filter);
       filter.connect(ctx.destination);
       noise.start();
 
-      // Trigger cutter click at end of paper ejection
-      setTimeout(() => this.playPaperCutSound(), 700);
+      // Trigger soft cutter click at end
+      setTimeout(() => this.playPaperCutSound(), 350);
     } catch (e) {
       console.warn('Audio synthesis error:', e);
     }
   }
 
   /**
-   * Mechanical Auto-Cutter Guillotine Click
+   * Mild Paper-Cut Click
    */
   public playPaperCutSound(): void {
     const ctx = this.getContext();
@@ -162,25 +166,26 @@ class SoundEngine {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(2800, now);
-      osc.frequency.exponentialRampToValueAtTime(320, now + 0.07);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.exponentialRampToValueAtTime(220, now + 0.04);
 
-      gain.gain.setValueAtTime(0.35, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+      gain.gain.setValueAtTime(0.03, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start(now);
-      osc.stop(now + 0.08);
+      osc.stop(now + 0.05);
     } catch (e) {
       console.warn('Audio synthesis error:', e);
     }
   }
 
   /**
-   * 2D Barcode Scanner Laser Decode Beep
+   * Mild Scanner Beep
+   * Soft, subtle notification blip
    */
   public playScannerBeep(): void {
     const ctx = this.getContext();
@@ -192,16 +197,17 @@ class SoundEngine {
       const gain = ctx.createGain();
 
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(2480, now);
+      osc.frequency.setValueAtTime(784, now); // G5 soft tone
 
-      gain.gain.setValueAtTime(0.18, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.04, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start(now);
-      osc.stop(now + 0.06);
+      osc.stop(now + 0.045);
     } catch (e) {
       console.warn('Audio synthesis error:', e);
     }
