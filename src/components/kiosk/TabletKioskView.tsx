@@ -24,8 +24,8 @@ import {
   Building,
   Camera,
   Scan,
-  ChevronLeft,
-  ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Flame,
 } from 'lucide-react';
 
@@ -60,6 +60,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
   const [capturedSnapshot, setCapturedSnapshot] = useState<string | null>(null);
   const [isVerifyModalOpen, setIsVerifyModalOpen] = useState<boolean>(false);
   const [autoResetSeconds, setAutoResetSeconds] = useState<number>(10);
+  const [snacksQty, setSnacksQty] = useState<number>(1);
 
   // HUD and Carousel refs
   const hudRef = useRef<FaceScannerHUDHandle | null>(null);
@@ -241,6 +242,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     setIsScanVerified(true);
     setVerificationError(null);
     setLastPrintedOrder(null);
+    setSnacksQty(1);
     const snap = hudRef.current?.captureSnapshot() || '';
     if (snap) {
       setCapturedSnapshot(snap);
@@ -260,6 +262,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     setCapturedSnapshot(null);
     setVerificationError(null);
     setLastPrintedOrder(null);
+    setSnacksQty(1);
     setAutoResetSeconds(10);
   }, []);
 
@@ -282,13 +285,13 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     return () => clearInterval(interval);
   }, [lastPrintedOrder, handleResetToScan]);
 
-  // Auto-scroll selected meal card into center view of carousel
+  // Auto-scroll selected meal card into view of vertical carousel
   useEffect(() => {
     if (kioskStep === 'VERIFIED') {
       const timer = setTimeout(() => {
         const card = document.getElementById(`kiosk-meal-card-${selectedMealSlot}`);
         if (card && carouselRef.current) {
-          card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+          card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
       }, 150);
       return () => clearTimeout(timer);
@@ -299,24 +302,25 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
   const handleSelectMealSlot = (slot: MealSlotName) => {
     soundEngine.playSelectSound();
     setSelectedMealSlot(slot);
+    setSnacksQty(1);
     const card = document.getElementById(`kiosk-meal-card-${slot}`);
     if (card && carouselRef.current) {
-      card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   };
 
-  // Carousel slide arrow navigation
-  const handleSlidePrev = () => {
+  // Vertical carousel arrow navigation
+  const handleSlideUp = () => {
     soundEngine.playSelectSound();
     if (carouselRef.current) {
-      carouselRef.current.scrollBy({ left: -280, behavior: 'smooth' });
+      carouselRef.current.scrollBy({ top: -140, behavior: 'smooth' });
     }
   };
 
-  const handleSlideNext = () => {
+  const handleSlideDown = () => {
     soundEngine.playSelectSound();
     if (carouselRef.current) {
-      carouselRef.current.scrollBy({ left: 280, behavior: 'smooth' });
+      carouselRef.current.scrollBy({ top: 140, behavior: 'smooth' });
     }
   };
 
@@ -342,8 +346,18 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
         ? [{ name: chosenSlot.name, description: chosenSlot.description }]
         : [];
 
+      const isSnacks = selectedMealSlot.toLowerCase().includes('snacks');
+      const chosenQty = isSnacks ? snacksQty : 1;
+      const chosenRate = 40;
+
       // Zero artificial delay to print
-      const order = await canteenService.createOrder(currentEmployee, selectedMealSlot, chosenItems);
+      const order = await canteenService.createOrder(
+        currentEmployee,
+        selectedMealSlot,
+        chosenItems,
+        chosenQty,
+        chosenRate
+      );
       setLastPrintedOrder(order);
       setIsDispensing(false);
       soundEngine.playVerificationChime();
@@ -725,7 +739,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
               </div>
             ) : (
               <>
-                {/* Top Bar: Clean Title, Active Session Info & Carousel Controls */}
+                {/* Top Bar: Clean Title, Active Session Info & Vertical Carousel Controls */}
                 <div className="flex items-center justify-between pb-2 border-b border-slate-100 shrink-0">
                   <div className="flex items-center space-x-2">
                     <UtensilsCrossed className="w-4 h-4 text-emerald-600" />
@@ -737,23 +751,23 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                     </span>
                   </div>
 
-                  {/* Carousel Left / Right Navigation Controls */}
+                  {/* Vertical Carousel Up / Down Controls */}
                   <div className="flex items-center space-x-1.5">
                     <button
                       type="button"
-                      onClick={handleSlidePrev}
+                      onClick={handleSlideUp}
                       className="p-1.5 rounded-xl bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 border border-slate-200 transition-all active:scale-95 shadow-2xs cursor-pointer"
-                      title="Previous meal (Slide Left)"
+                      title="Scroll Up (Previous meal)"
                     >
-                      <ChevronLeft className="w-4 h-4" />
+                      <ChevronUp className="w-4 h-4" />
                     </button>
                     <button
                       type="button"
-                      onClick={handleSlideNext}
+                      onClick={handleSlideDown}
                       className="p-1.5 rounded-xl bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 border border-slate-200 transition-all active:scale-95 shadow-2xs cursor-pointer"
-                      title="Next meal (Slide Right)"
+                      title="Scroll Down (Next meal)"
                     >
-                      <ChevronRight className="w-4 h-4" />
+                      <ChevronDown className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -770,12 +784,13 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                 )}
 
                 {/* =========================================================== */}
-                {/* CENTER FOOD SELECTION: Touch & Animated Carousel            */}
-                {/* Smooth horizontal scroll-snap with slide-in animation       */}
+                {/* CENTER FOOD SELECTION: Vertical Carousel / List              */}
+                {/* Smooth vertical scroll-snap with clean animated cards       */}
                 {/* =========================================================== */}
                 <div
                   ref={carouselRef}
-                  className="flex-1 flex gap-3 sm:gap-4 overflow-x-auto py-2.5 px-1 my-1 min-h-0 select-none snap-x snap-mandatory scroll-smooth no-scrollbar"
+                  className="flex-1 flex flex-col gap-2.5 overflow-y-auto py-1 px-1 my-1 min-h-0 select-none snap-y snap-mandatory scroll-smooth max-h-[340px]"
+                  style={{ scrollbarWidth: 'thin' }}
                 >
                   {mealSlots
                     .filter((s) => s.isActive !== false)
@@ -791,20 +806,19 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                           key={slot.name}
                           id={`kiosk-meal-card-${slot.name}`}
                           onClick={() => !isAlreadyBooked && handleSelectMealSlot(slot.name)}
-                          style={{ animationDelay: `${index * 80}ms` }}
-                          className={`min-w-[240px] sm:min-w-[270px] max-w-[290px] flex-shrink-0 snap-center rounded-2xl sm:rounded-3xl border-2 transition-all duration-300 flex flex-col justify-between p-3.5 sm:p-4 cursor-pointer relative shadow-2xs animate-in fade-in slide-in-from-right-8 duration-500 fill-mode-both ${
+                          style={{ animationDelay: `${index * 50}ms` }}
+                          className={`w-full snap-start rounded-2xl border-2 transition-all duration-250 p-3 sm:p-3.5 cursor-pointer relative shadow-2xs animate-in fade-in slide-in-from-bottom-2 duration-300 fill-mode-both ${
                             isSelected
-                              ? 'border-emerald-600 bg-gradient-to-b from-emerald-50/90 to-white ring-4 ring-emerald-500/20 shadow-md scale-[1.01]'
+                              ? 'border-emerald-600 bg-gradient-to-r from-emerald-50/90 via-emerald-50/40 to-white ring-2 ring-emerald-500/20 shadow-md scale-[1.008]'
                               : isAlreadyBooked
                               ? 'border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed'
                               : 'border-slate-200 bg-white hover:border-emerald-400 hover:bg-slate-50/70 hover:shadow-xs'
                           }`}
                         >
-                          {/* Top: Emoji + Name + Timing */}
-                          <div>
-                            <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center space-x-3 min-w-0">
                               <div
-                                className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 border transition-all ${
+                                className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 border transition-all ${
                                   isSelected
                                     ? 'bg-emerald-100 border-emerald-300 shadow-xs'
                                     : 'bg-slate-50 border-slate-100'
@@ -813,103 +827,139 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                                 {slot.emoji}
                               </div>
 
-                              <div className="flex flex-col items-end gap-1">
-                                {isCurrentTimeSlot && (
-                                  <span className="text-[9px] font-mono px-2 py-0.5 rounded-full font-bold bg-emerald-600 text-white shadow-2xs animate-pulse">
-                                    Active Now
+                              <div className="min-w-0">
+                                <div className="flex items-center space-x-2 flex-wrap">
+                                  <h4 className="font-black text-slate-900 text-sm sm:text-base tracking-tight">
+                                    {slot.name}
+                                  </h4>
+                                  {slot.tamilDisplayName && (
+                                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                      {slot.tamilDisplayName}
+                                    </span>
+                                  )}
+                                  {isCurrentTimeSlot && (
+                                    <span className="text-[9px] font-mono px-2 py-0.5 rounded-full font-bold bg-emerald-600 text-white animate-pulse">
+                                      Active Now
+                                    </span>
+                                  )}
+                                  {isAlreadyBooked && (
+                                    <span className="text-[9px] font-mono px-2 py-0.5 rounded-full font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                      Booked
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center space-x-2 text-[11px] text-slate-500 font-mono mt-0.5">
+                                  <span className="flex items-center gap-1">
+                                    <Clock className="w-3 h-3 text-slate-400" />
+                                    <span>{slot.startTime} - {slot.endTime}</span>
                                   </span>
-                                )}
-                                {isAlreadyBooked && (
-                                  <span className="text-[9px] font-mono px-2 py-0.5 rounded-full font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                                    Booked
+                                  <span>•</span>
+                                  <span className="flex items-center gap-0.5 text-amber-600 font-semibold">
+                                    <Flame className="w-3 h-3 text-amber-500" />
+                                    <span>{slot.calories} kcal</span>
                                   </span>
-                                )}
-                                <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                                  100% Free
-                                </span>
+                                  <span>•</span>
+                                  <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                                    Rate: 40
+                                  </span>
+                                </div>
                               </div>
                             </div>
 
-                            <div className="mt-2.5">
-                              <h4 className="font-black text-slate-900 text-base sm:text-lg tracking-tight inline-block">
-                                {slot.name}
-                              </h4>
-                              {slot.tamilDisplayName && (
-                                <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded ml-1.5 border border-emerald-200">
-                                  {slot.tamilDisplayName}
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="flex items-center space-x-2 text-[11px] text-slate-500 font-mono mt-1">
-                              <span className="flex items-center gap-1">
-                                <Clock className="w-3 h-3 text-slate-400" />
-                                <span>{slot.startTime} - {slot.endTime}</span>
-                              </span>
-                              <span>•</span>
-                              <span className="flex items-center gap-0.5 text-amber-600 font-semibold">
-                                <Flame className="w-3 h-3 text-amber-500" />
-                                <span>{slot.calories} kcal</span>
-                              </span>
-                            </div>
-
-                            {/* Food Menu Items */}
-                            <div className="mt-2 p-2 bg-slate-50/90 rounded-xl border border-slate-100">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                                Menu Items / உணவு:
-                              </span>
-                              <p className="text-xs text-slate-800 font-medium mt-0.5 line-clamp-3 leading-snug font-sans">
-                                {slot.description}
-                              </p>
+                            <div className="flex items-center space-x-2 shrink-0">
+                              <div
+                                className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all ${
+                                  isSelected
+                                    ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+                                    : 'border-slate-300 bg-white text-transparent'
+                                }`}
+                              >
+                                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                              </div>
                             </div>
                           </div>
 
-                          {/* Bottom: Selection Status & Checkmark */}
-                          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                          {/* Menu Items description */}
+                          <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-baseline justify-between gap-2 text-xs">
+                            <p className="text-slate-600 text-xs truncate max-w-md font-sans">
+                              <strong className="text-slate-700 font-semibold">Menu:</strong> {slot.description}
+                            </p>
                             <span
-                              className={`text-[11px] font-bold transition-colors ${
+                              className={`text-[10px] font-bold shrink-0 ${
                                 isSelected ? 'text-emerald-700' : 'text-slate-400'
                               }`}
                             >
-                              {isSelected ? '✓ Selected for Dispensing' : isAlreadyBooked ? 'Locked' : 'Tap to Select'}
+                              {isSelected ? '✓ Selected' : isAlreadyBooked ? 'Locked' : 'Tap to Select'}
                             </span>
-
-                            <div
-                              className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all ${
-                                isSelected
-                                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
-                                  : 'border-slate-300 bg-white text-transparent'
-                              }`}
-                            >
-                              <Check className="w-3.5 h-3.5 stroke-[3]" />
-                            </div>
                           </div>
                         </div>
                       );
                     })}
                 </div>
 
-                {/* Carousel Indicator Dots */}
-                <div className="flex items-center justify-center gap-2 py-1 shrink-0">
-                  {mealSlots
-                    .filter((s) => s.isActive !== false)
-                    .map((slot) => {
-                      const isSelected = selectedMealSlot === slot.name;
-                      return (
-                        <button
-                          key={slot.name}
-                          type="button"
-                          onClick={() => handleSelectMealSlot(slot.name)}
-                          className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${
-                            isSelected
-                              ? 'w-7 bg-emerald-600 shadow-xs'
-                              : 'w-2 bg-slate-300 hover:bg-slate-400'
-                          }`}
-                          title={`Jump to ${slot.name}`}
-                        />
-                      );
-                    })}
-                </div>
+                {/* =========================================================== */}
+                {/* QUANTITY SELECTOR: Shown ONLY for Snacks                    */}
+                {/* =========================================================== */}
+                {selectedMealSlot.toLowerCase().includes('snacks') && (
+                  <div className="bg-amber-50/95 border-2 border-amber-300 rounded-2xl p-2.5 sm:p-3 flex items-center justify-between shadow-2xs animate-in fade-in slide-in-from-bottom-2 duration-300 shrink-0 my-1">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs">
+                        <UtensilsCrossed className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-black text-slate-900 uppercase tracking-tight">
+                            Select Quantity / எண்ணிக்கை
+                          </span>
+                          <span className="text-[9px] font-mono font-bold bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full border border-amber-300">
+                            Snacks Only
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-amber-800 font-medium mt-0.5">
+                          Choose number of snack portions to dispense
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playSelectSound();
+                          setSnacksQty((q) => Math.max(1, q - 1));
+                        }}
+                        disabled={snacksQty <= 1}
+                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 font-black text-lg flex items-center justify-center shadow-2xs active:scale-95 disabled:opacity-30 cursor-pointer"
+                        title="Decrease quantity"
+                      >
+                        -
+                      </button>
+
+                      <div className="w-9 text-center">
+                        <span className="font-black text-xl text-slate-950 font-mono">
+                          {snacksQty}
+                        </span>
+                        <span className="text-[8px] text-slate-500 block -mt-1 font-bold">
+                          QTY
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playSelectSound();
+                          setSnacksQty((q) => Math.min(10, q + 1));
+                        }}
+                        disabled={snacksQty >= 10}
+                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-lg flex items-center justify-center shadow-xs active:scale-95 disabled:opacity-30 cursor-pointer"
+                        title="Increase quantity"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Bottom Row: Selected Meal Session & Confirm Print Button */}
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 sm:p-3 flex flex-row items-center justify-between gap-3 shrink-0">
@@ -921,6 +971,11 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                       <span className="text-sm font-black text-slate-900 truncate">
                         {selectedMealSlot}
                       </span>
+                      {selectedMealSlot.toLowerCase().includes('snacks') && (
+                        <span className="text-[10px] font-mono bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full font-bold border border-amber-300">
+                          QTY: <strong>{snacksQty}</strong>
+                        </span>
+                      )}
                       <span className="text-[9px] font-mono bg-emerald-100 text-emerald-800 px-2 py-0.2 rounded-full font-bold border border-emerald-200">
                         80mm Slip
                       </span>
@@ -938,7 +993,13 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                     }`}
                   >
                     <Printer className="w-4 h-4" />
-                    <span>{isDispensing ? 'Dispensing...' : 'Confirm & Print Slip'}</span>
+                    <span>
+                      {isDispensing
+                        ? 'Dispensing...'
+                        : selectedMealSlot.toLowerCase().includes('snacks')
+                        ? `Confirm & Print Slip (${snacksQty} QTY)`
+                        : 'Confirm & Print Slip'}
+                    </span>
                   </button>
                 </div>
               </>

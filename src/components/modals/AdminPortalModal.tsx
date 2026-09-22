@@ -188,18 +188,25 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   }, [isCameraActive]);
 
   useEffect(() => {
-    if (!isOpen || activeTab !== 'new' || formData.photo) {
+    if (isOpen && activeTab === 'new' && !formData.photo) {
+      startCamera(facingMode);
+    } else if (!isOpen || activeTab !== 'new' || formData.photo) {
       stopCamera();
     }
     return () => stopCamera();
   }, [isOpen, activeTab, formData.photo]);
 
-
-
   // Take photo snapshot from video stream and compute 128D biometric descriptor
   const capturePhoto = async () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
+
+    // If camera stream is not active or video is not ready, try starting camera
+    if (!isCameraActive || !mediaStreamRef.current) {
+      await startCamera(facingMode);
+      return;
+    }
+
     if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
       setBiometricStatus('⚠️ Camera is still loading. Please wait a moment and try again.');
       return;
@@ -208,11 +215,16 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     setIsCapturing(true);
     soundEngine.playScannerBeep();
 
-    const canvas = canvasRef.current || document.createElement('canvas');
-    canvas.width = 400;
-    canvas.height = 400;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
+    try {
+      const canvas = canvasRef.current || document.createElement('canvas');
+      canvas.width = 400;
+      canvas.height = 400;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        setBiometricStatus('⚠️ Canvas error. Please try again.');
+        return;
+      }
+
       // Draw centered square crop with bias toward natural head height
       const vW = video.videoWidth;
       const vH = video.videoHeight;
@@ -256,20 +268,23 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: descriptor }));
           setBiometricStatus('✓ 128D Biometric Vector Enrolled (Unique Face Verified)');
           setErrorMessage(null);
+          // Only stop camera when photo is confirmed and enrolled
+          stopCamera();
         } else {
           setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
           setBiometricStatus('⚠️ No human face detected in photo. Please ensure face is centered and well lit.');
+          // Keep camera running so user can immediately retry capture!
         }
       } catch (e) {
         console.warn('Biometric extraction error:', e);
         setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
-        setBiometricStatus('⚠️ Could not extract face embedding.');
+        setBiometricStatus('⚠️ Could not extract face embedding. Please try again.');
       } finally {
         setIsExtractingBiometric(false);
-        stopCamera();
       }
+    } finally {
+      setTimeout(() => setIsCapturing(false), 200);
     }
-    setTimeout(() => setIsCapturing(false), 300);
   };
 
   // Generate random avatar fallback
@@ -463,24 +478,30 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
       await canteenService.addEmployee(newEmployee);
       soundEngine.playVerificationChime();
-      setSuccessMessage(`Successfully registered ${newEmployee.name} (${newEmployee.id})! Redirecting to camera scan...`);
+      setSuccessMessage(`✓ Successfully registered ${newEmployee.name} (${newEmployee.id})! Camera is ready for next registration.`);
       loadEmployees();
       if (onRosterUpdated) onRosterUpdated();
 
-      // Reset form
+      // Reset form and prepare next sequential ID for continuous enrollment
+      const nextId = formData.dept.toLowerCase().includes('staff')
+        ? `STF-${1000 + employees.length + 2}`
+        : `EMP-${1000 + employees.length + 2}`;
+
       setFormData({
-        id: '',
+        id: nextId,
         name: '',
-        dept: 'Employee',
+        dept: formData.dept,
         photo: '',
         face_descriptor: null,
       });
       setBiometricStatus(null);
+      setIsCapturing(false);
+      setIsExtractingBiometric(false);
 
-      // Redirect immediately to the camera scanning page!
+      // Re-start camera immediately so capture button works right away for next registration!
       setTimeout(() => {
-        onClose();
-      }, 700);
+        startCamera(facingMode);
+      }, 250);
     } catch (err: unknown) {
       soundEngine.playWarningBuzzer();
       const msg = err instanceof Error ? err.message : 'Registration failed';

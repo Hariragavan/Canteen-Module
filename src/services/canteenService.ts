@@ -280,6 +280,8 @@ class CanteenService {
           dept: rem.department,
           meal: rem.meal_slot,
           items: rem.items || [],
+          rate: rem.rate ?? 40,
+          qty: rem.qty ?? 1,
           status: rem.status,
           issuedAt: rem.issued_at && rem.issued_at.includes('T') ? new Date(rem.issued_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : (rem.issued_at || ''),
           servedAt: rem.served_at && rem.served_at.includes('T') ? new Date(rem.served_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : (rem.served_at || null),
@@ -464,7 +466,13 @@ class CanteenService {
   /**
    * Creates new order, assigns incremental daily token, saves to store and Supabase
    */
-  public async createOrder(employee: Employee, meal: MealSlotName, items: any[] = []): Promise<Order> {
+  public async createOrder(
+    employee: Employee,
+    meal: MealSlotName,
+    items: any[] = [],
+    qty: number = 1,
+    rate: number = 40
+  ): Promise<Order> {
     // 1. Guard against duplicate booking
     const existing = this.checkDuplicateBooking(employee.id, meal);
     if (existing) {
@@ -510,6 +518,8 @@ class CanteenService {
       dept: employee.dept,
       meal,
       items: items || [],
+      rate,
+      qty,
       status: 'PRINTED',
       issuedAt: timeStr,
       servedAt: null,

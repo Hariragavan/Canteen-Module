@@ -39,6 +39,8 @@ export interface Order {
   dept: string;
   meal: MealSlotName;
   items?: any[];            // Selected dishes / vertical menu items
+  rate?: number;            // Rate / price e.g. 40
+  qty?: number;             // Quantity of servings e.g. 1
   status: OrderStatus;
   issuedAt: string;         // '12:35:10 PM'
   servedAt: string | null;  // '12:38:05 PM'
