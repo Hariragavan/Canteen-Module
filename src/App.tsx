@@ -8,6 +8,7 @@ import { HardwareDiagnosticsModal } from './components/modals/HardwareDiagnostic
 import { SupabaseSettingsModal } from './components/modals/SupabaseSettingsModal';
 import { AdminPortalModal } from './components/modals/AdminPortalModal';
 import { AdminLoginModal } from './components/modals/AdminLoginModal';
+import { MenuTimingModal } from './components/modals/MenuTimingModal';
 import { canteenService } from './services/canteenService';
 import { supabaseManager } from './services/supabase';
 
@@ -17,6 +18,7 @@ export const App: React.FC = () => {
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
   const [isAdminLoginModalOpen, setIsAdminLoginModalOpen] = useState<boolean>(false);
+  const [isMenuModalOpen, setIsMenuModalOpen] = useState<boolean>(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
   const [initialTokenToScan, setInitialTokenToScan] = useState<string | null>(null);
   const [unclaimedCount, setUnclaimedCount] = useState<number>(0);
@@ -75,6 +77,7 @@ export const App: React.FC = () => {
           onOpenHardwareModal={() => setIsHardwareModalOpen(true)}
           onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
           onOpenAdminModal={handleOpenAdminPortal}
+          onOpenMenuModal={() => setIsMenuModalOpen(true)}
           unclaimedCount={unclaimedCount}
         />
       )}
@@ -89,6 +92,7 @@ export const App: React.FC = () => {
           <TabletKioskView
             onNavigateToStaffScanner={handleNavigateToStaffScanner}
             onOpenAdminModal={handleOpenAdminPortal}
+            onOpenMenuModal={() => setIsMenuModalOpen(true)}
           />
         )}
 
@@ -134,6 +138,12 @@ export const App: React.FC = () => {
         isOpen={isSupabaseModalOpen}
         onClose={() => setIsSupabaseModalOpen(false)}
         onConfigChanged={syncUnclaimedCount}
+      />
+
+      {/* Menu & Serving Timings Update Modal */}
+      <MenuTimingModal
+        isOpen={isMenuModalOpen}
+        onClose={() => setIsMenuModalOpen(false)}
       />
 
       {/* Footer - Only shown for desktop/staff/analytics tabs, hidden in kiosk mode */}

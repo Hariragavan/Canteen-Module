@@ -13,6 +13,7 @@ import {
   Maximize,
   Minimize,
   Shield,
+  UtensilsCrossed,
 } from 'lucide-react';
 
 export type ActiveTab = 'kiosk' | 'staff' | 'analytics';
@@ -23,6 +24,7 @@ interface NavbarProps {
   onOpenHardwareModal: () => void;
   onOpenSupabaseModal: () => void;
   onOpenAdminModal: () => void;
+  onOpenMenuModal?: () => void;
   unclaimedCount: number;
 }
 
@@ -32,6 +34,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenHardwareModal,
   onOpenSupabaseModal,
   onOpenAdminModal,
+  onOpenMenuModal,
   unclaimedCount,
 }) => {
   const [isAudioOn, setIsAudioOn] = useState<boolean>(soundEngine.isAudioEnabled());
@@ -162,6 +165,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
           </button>
+
+          {/* Menu & Timings Icon Button */}
+          {onOpenMenuModal && (
+            <button
+              onClick={onOpenMenuModal}
+              title="Daily Menu & Serving Timings Update (தமிழ் / English)"
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs transition-all shadow-2xs active:scale-95 cursor-pointer"
+            >
+              <UtensilsCrossed className="w-4 h-4 text-emerald-600" />
+              <span className="hidden sm:inline">Menu Update</span>
+            </button>
+          )}
 
           {/* Admin Portal Icon Button */}
           <button

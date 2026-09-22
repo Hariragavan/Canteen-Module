@@ -1,6 +1,7 @@
 import React from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Order } from '../../types';
+import { canteenService } from '../../services/canteenService';
 import { Printer, ArrowRight, CheckCircle2 } from 'lucide-react';
 
 interface ThermalReceiptProps {
@@ -67,10 +68,25 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
               {order.meal}
             </span>
           </div>
+
+          {/* Menu Items (Tamil / English) */}
+          <div className="pt-2 border-t border-slate-200 text-left">
+            <span className="text-slate-500 font-bold block text-[9px] uppercase tracking-wider">
+              MENU ITEMS / உணவு:
+            </span>
+            <p className="font-bold text-slate-900 text-xs mt-0.5 leading-snug font-sans">
+              {(() => {
+                if (Array.isArray(order.items) && order.items.length > 0) {
+                  return order.items.map(it => typeof it === 'string' ? it : it?.description || it?.name || '').join(', ');
+                }
+                return canteenService.getMealSlots().find(s => s.name === order.meal)?.description || 'Standard Meal';
+              })()}
+            </p>
+          </div>
         </div>
 
-        {/* High-Density 2D QR Code optimized for thermal contrast */}
-        <div className="py-4 flex flex-col items-center justify-center">
+        {/* High-Density 2D QR Code optimized for thermal contrast & mentioning menu */}
+        <div className="py-3 flex flex-col items-center justify-center">
           <div className="p-2 bg-white border border-slate-300 rounded shadow-2xs flex items-center justify-center">
             <QRCodeSVG
               value={order.orderUuid}
@@ -81,8 +97,18 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
               bgColor="#ffffff"
             />
           </div>
-          <div className="text-[10px] text-slate-600 mt-2 font-mono font-bold tracking-tight">
-            {order.orderUuid}
+          <div className="text-center mt-2">
+            <div className="text-[10px] text-slate-700 font-mono font-bold tracking-tight">
+              {order.orderUuid}
+            </div>
+            <div className="text-[9px] text-emerald-800 font-sans font-semibold mt-0.5 max-w-[220px] truncate">
+              {order.meal} • {(() => {
+                if (Array.isArray(order.items) && order.items.length > 0) {
+                  return order.items.map(it => typeof it === 'string' ? it : it?.description || it?.name || '').join(', ');
+                }
+                return canteenService.getMealSlots().find(s => s.name === order.meal)?.description || 'Standard Meal';
+              })()}
+            </div>
           </div>
         </div>
 

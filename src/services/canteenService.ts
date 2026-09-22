@@ -4,54 +4,78 @@ import { supabaseManager } from './supabase';
 const STORAGE_ORDERS_KEY = 'canteen_local_orders_v3';
 const STORAGE_TOKEN_KEY = 'canteen_token_seq_v3';
 const STORAGE_EMPLOYEES_KEY = 'canteen_local_employees_v3';
+const STORAGE_MEAL_SLOTS_KEY = 'canteen_meal_slots_v5';
 
-// Standard Canteen Meal Slots matching user sketch: Breakfast, Lunch, Tea & Snacks, Dinner
-export const MEAL_SLOTS: MealSlotConfig[] = [
+// Standard 5 Canteen Meal Slots: Breakfast, Lunch, Tea or Coffee, Snacks, Dinner with bilingual Tamil/English support
+export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
   {
     name: 'Breakfast',
     startTime: '07:30',
     endTime: '10:30',
     displayName: 'Breakfast Special',
+    tamilDisplayName: 'காலை உணவு',
     emoji: '🥞',
     category: 'Morning',
-    description: 'Steamed Idli, Crispy Medu Vada, Sambar & Filter Coffee',
+    description: 'Steamed Idli, Crispy Medu Vada, Sambar & Filter Coffee / இட்லி, மெதுவடை, சாம்பார், காபி',
     calories: 420,
     isEligible: true,
+    isActive: true,
   },
   {
     name: 'Lunch',
     startTime: '12:00',
     endTime: '15:00',
     displayName: 'Executive Lunch Platter',
+    tamilDisplayName: 'மதிய உணவு',
     emoji: '🍛',
     category: 'Active Now',
-    description: 'Paneer Butter Masala, Dal Makhani, Steamed Basmati, Phulka & Sweet',
+    description: 'Executive Meals, Basmati Rice, Paneer Butter Masala, Dal, Phulka / மதிய உணவு சாப்பாடு, சாதம், சாம்பார், கூட்டு, பொரியல்',
     calories: 740,
     isEligible: true,
+    isActive: true,
   },
   {
-    name: 'Tea & Snacks',
+    name: 'Tea or Coffee',
     startTime: '15:30',
-    endTime: '18:00',
-    displayName: 'Tea & Evening Snacks',
+    endTime: '17:00',
+    displayName: 'Tea or Coffee',
+    tamilDisplayName: 'தேநீர் / காபி',
     emoji: '☕',
     category: 'Evening',
-    description: 'Hot Cardamom Masala Chai / Filter Coffee with Crispy Samosa & Chutney',
-    calories: 380,
+    description: 'Hot Cardamom Masala Chai, Special Filter Coffee & Biscuits / சுடச்சுட ஸ்பெஷல் டீ, ஃபில்டர் காபி',
+    calories: 180,
     isEligible: true,
+    isActive: true,
+  },
+  {
+    name: 'Snacks',
+    startTime: '16:30',
+    endTime: '18:30',
+    displayName: 'Evening Snacks',
+    tamilDisplayName: 'மாலை சிற்றுண்டி / ஸ்நாக்ஸ்',
+    emoji: '🥟',
+    category: 'Evening',
+    description: 'Crispy Samosa, Onion Pakoda, Mint Chutney / சமோசா, வெங்காய பக்கோடா, புதினா சட்னி',
+    calories: 320,
+    isEligible: true,
+    isActive: true,
   },
   {
     name: 'Dinner',
     startTime: '19:30',
     endTime: '22:00',
     displayName: 'Gourmet Dinner Feast',
+    tamilDisplayName: 'இரவு உணவு',
     emoji: '🍲',
     category: 'Night Slot',
-    description: 'Butter Roti, Dal Tadka, Seasonal Veg Curry, Jeera Rice & Curd',
+    description: 'Butter Roti, Dal Tadka, Seasonal Veg Curry, Jeera Rice & Curd / சப்பாத்தி, பருப்பு தட்கா, காய்கறி குருமா, சாதம்',
     calories: 650,
     isEligible: true,
+    isActive: true,
   },
 ];
+
+export const MEAL_SLOTS: MealSlotConfig[] = DEFAULT_MEAL_SLOTS;
 
 export function normalizeDescriptor(val: unknown): number[] | null {
   if (!val) return null;
@@ -85,6 +109,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [];
 class CanteenService {
   private employees: Employee[] = [];
   private orders: Order[] = [];
+  private mealSlots: MealSlotConfig[] = [...DEFAULT_MEAL_SLOTS];
   private tokenSeq: number = 150;
   private isLoaded: boolean = false;
 
@@ -98,6 +123,23 @@ class CanteenService {
       const storedOrders = localStorage.getItem(STORAGE_ORDERS_KEY);
       const storedSeq = localStorage.getItem(STORAGE_TOKEN_KEY);
       const storedEmployees = localStorage.getItem(STORAGE_EMPLOYEES_KEY);
+      const storedMealSlots = localStorage.getItem(STORAGE_MEAL_SLOTS_KEY);
+
+      if (storedMealSlots) {
+        try {
+          const parsedSlots = JSON.parse(storedMealSlots);
+          if (Array.isArray(parsedSlots) && parsedSlots.length > 0) {
+            this.mealSlots = parsedSlots;
+          } else {
+            this.mealSlots = [...DEFAULT_MEAL_SLOTS];
+          }
+        } catch {
+          this.mealSlots = [...DEFAULT_MEAL_SLOTS];
+        }
+      } else {
+        this.mealSlots = [...DEFAULT_MEAL_SLOTS];
+        this.saveMealSlotsLocal();
+      }
 
       if (storedOrders) {
         this.orders = JSON.parse(storedOrders);
@@ -359,24 +401,52 @@ class CanteenService {
     return [...this.orders];
   }
 
+  public getOrdersByDate(dateStr: string): Order[] {
+    return this.orders.filter(o => o.dateStr === dateStr);
+  }
+
+  public getMealSlots(): MealSlotConfig[] {
+    return [...this.mealSlots];
+  }
+
+  public saveMealSlotsLocal(): void {
+    try {
+      localStorage.setItem(STORAGE_MEAL_SLOTS_KEY, JSON.stringify(this.mealSlots));
+    } catch (e) {
+      console.warn('Failed saving meal slots to localStorage:', e);
+    }
+  }
+
+  public updateMealSlots(newSlots: MealSlotConfig[]): void {
+    this.mealSlots = [...newSlots];
+    this.saveMealSlotsLocal();
+    supabaseManager.broadcastChange('canteen_meal_slots', 'UPDATE', newSlots);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: newSlots }));
+    }
+  }
+
   /**
-   * Determine active meal slot based on current 24h clock
+   * Determine active meal slot based on configured start and end times
    */
   public getActiveMealSlot(): MealSlotName {
     const now = new Date();
     const curMinutes = now.getHours() * 60 + now.getMinutes();
 
-    // Breakfast: 07:30 (450) to 10:30 (630)
-    if (curMinutes >= 450 && curMinutes <= 630) return 'Breakfast';
-    // Lunch: 12:00 (720) to 15:00 (900)
-    if (curMinutes >= 720 && curMinutes <= 900) return 'Lunch';
-    // Tea & Snacks: 15:30 (930) to 18:00 (1080)
-    if (curMinutes >= 930 && curMinutes <= 1080) return 'Tea & Snacks';
-    // Dinner: 19:30 (1170) to 22:00 (1320)
-    if (curMinutes >= 1170 && curMinutes <= 1320) return 'Dinner';
+    const activeSlots = this.mealSlots.filter(s => s.isActive !== false);
+    for (const slot of activeSlots) {
+      const [startH, startM] = (slot.startTime || '00:00').split(':').map(Number);
+      const [endH, endM] = (slot.endTime || '23:59').split(':').map(Number);
+      const startMin = (startH || 0) * 60 + (startM || 0);
+      const endMin = (endH || 0) * 60 + (endM || 0);
 
-    // Default to Lunch for daytime simulation or closest
-    return 'Lunch';
+      if (curMinutes >= startMin && curMinutes <= endMin) {
+        return slot.name;
+      }
+    }
+
+    // Default fallback to first active slot or Lunch
+    return activeSlots[0]?.name || 'Lunch';
   }
 
   /**
@@ -571,8 +641,15 @@ class CanteenService {
     supabaseManager.broadcastChange('canteen_employees', 'DELETE', { type: 'RESET' });
   }
 
-  public exportAuditCSV(): void {
-    if (this.orders.length === 0) return;
+  public exportAuditCSV(dateStr?: string): void {
+    const targetOrders = dateStr
+      ? this.orders.filter(o => o.dateStr === dateStr)
+      : this.orders;
+
+    if (targetOrders.length === 0) {
+      alert(`No records found to export for ${dateStr ? `date ${dateStr}` : 'the ledger'}.`);
+      return;
+    }
 
     const headers = [
       'Token Number',
@@ -581,33 +658,45 @@ class CanteenService {
       'Employee Name',
       'Department',
       'Meal Slot',
+      'Menu Items',
       'Status',
       'Issued Time',
       'Served Time',
       'Date',
     ];
 
-    const rows = this.orders.map(o => [
-      o.token,
-      `"${o.orderUuid}"`,
-      `"${o.userId}"`,
-      `"${o.name}"`,
-      `"${o.dept}"`,
-      `"${o.meal}"`,
-      o.status,
-      `"${o.issuedAt}"`,
-      `"${o.servedAt || ''}"`,
-      `"${o.dateStr}"`,
-    ]);
+    const rows = targetOrders.map(o => {
+      const itemDesc = Array.isArray(o.items) && o.items.length > 0
+        ? o.items.map(it => (typeof it === 'string' ? it : it?.description || it?.name || '')).join('; ')
+        : '';
+      return [
+        o.token,
+        `"${o.orderUuid}"`,
+        `"${o.userId}"`,
+        `"${o.name}"`,
+        `"${o.dept}"`,
+        `"${o.meal}"`,
+        `"${itemDesc.replace(/"/g, '""')}"`,
+        o.status,
+        `"${o.issuedAt}"`,
+        `"${o.servedAt || ''}"`,
+        `"${o.dateStr}"`,
+      ];
+    });
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Canteen_Audit_Ledger_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('href', url);
+    const fileName = dateStr
+      ? `Canteen_Audit_Ledger_${dateStr}.csv`
+      : `Canteen_Audit_Ledger_All_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.setAttribute('download', fileName);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   }
 }
 

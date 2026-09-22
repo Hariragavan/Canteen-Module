@@ -20,7 +20,14 @@ import {
   BarChart3,
   Scan,
   Lock,
+  UtensilsCrossed,
+  Clock,
+  Languages,
+  Sparkles,
+  Save,
+  Flame,
 } from 'lucide-react';
+import type { MealSlotConfig, MealSlotName } from '../../types';
 
 import {
   faceMatcherService,
@@ -45,10 +52,15 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   onNavigateToStaffScanner,
   onLogout,
 }) => {
-  const [activeTab, setActiveTab] = useState<'registered' | 'new' | 'analytics'>('registered');
+  const [activeTab, setActiveTab] = useState<'registered' | 'new' | 'analytics' | 'menu'>('registered');
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'Employee' | 'Staff'>('ALL');
+
+  // Menu and Serving Timings state
+  const [adminMealSlots, setAdminMealSlots] = useState<MealSlotConfig[]>([]);
+  const [activeAdminSlot, setActiveAdminSlot] = useState<MealSlotName>('Breakfast');
+  const [isMenuSavedToast, setIsMenuSavedToast] = useState<boolean>(false);
 
   // Edit Mode state
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -97,6 +109,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       loadEmployees();
+      setAdminMealSlots(canteenService.getMealSlots());
       setSuccessMessage(null);
       setErrorMessage(null);
     }
@@ -766,6 +779,22 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
               <BarChart3 className="w-4 h-4" />
               <span>Kitchen Analytics</span>
             </button>
+
+            <button
+              onClick={() => {
+                setActiveTab('menu');
+                stopCamera();
+                setAdminMealSlots(canteenService.getMealSlots());
+              }}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'menu'
+                  ? 'bg-white text-emerald-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <UtensilsCrossed className="w-4 h-4" />
+              <span>Menu & Timings</span>
+            </button>
           </div>
 
           <div className="hidden sm:block text-xs text-slate-400 font-medium">
@@ -1205,6 +1234,216 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           {activeTab === 'analytics' && (
             <div className="py-1">
               <KitchenAnalyticsView />
+            </div>
+          )}
+
+          {/* ============================================================= */}
+          {/* TAB 4: DAILY MENU & SERVING TIMINGS MANAGEMENT               */}
+          {/* ============================================================= */}
+          {activeTab === 'menu' && (
+            <div className="flex flex-col gap-5 py-1">
+              {/* Header Info */}
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                <div>
+                  <h4 className="text-base font-bold text-slate-900 flex items-center space-x-2">
+                    <UtensilsCrossed className="w-4 h-4 text-emerald-600" />
+                    <span>Daily Menu & Serving Timings Configuration</span>
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    உணவு பட்டியல் & பரிமாறும் நேரம் மாற்றுதல். Enter food items in Tamil or English.
+                  </p>
+                </div>
+
+                {isMenuSavedToast && (
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 animate-in fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Menu saved & live on Kiosk!</span>
+                  </span>
+                )}
+              </div>
+
+              {/* Slot Switcher Pills */}
+              <div className="flex items-center space-x-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200 overflow-x-auto">
+                {adminMealSlots.map((s) => {
+                  const isCurrent = s.name === activeAdminSlot;
+                  return (
+                    <button
+                      key={s.name}
+                      type="button"
+                      onClick={() => setActiveAdminSlot(s.name)}
+                      className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                        isCurrent
+                          ? 'bg-white text-emerald-700 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <span>{s.emoji}</span>
+                      <span>{s.name}</span>
+                      {s.tamilDisplayName && (
+                        <span className="text-[10px] text-slate-400 font-normal">
+                          ({s.tamilDisplayName})
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Active Slot Editor Box */}
+              {(() => {
+                const currentSlot = adminMealSlots.find((s) => s.name === activeAdminSlot) || adminMealSlots[0];
+                if (!currentSlot) return null;
+
+                const updateCurrent = (field: keyof MealSlotConfig, val: unknown) => {
+                  setAdminMealSlots((prev) =>
+                    prev.map((s) => (s.name === currentSlot.name ? { ...s, [field]: val } : s))
+                  );
+                  setIsMenuSavedToast(false);
+                };
+
+                const appendDish = (dish: string) => {
+                  const curr = currentSlot.description.trim();
+                  updateCurrent('description', curr ? `${curr}, ${dish}` : dish);
+                };
+
+                const handleSaveMenu = () => {
+                  canteenService.updateMealSlots(adminMealSlots);
+                  soundEngine.playVerificationChime();
+                  setIsMenuSavedToast(true);
+                  setTimeout(() => setIsMenuSavedToast(false), 3000);
+                };
+
+                const quickTamilDishes: Record<string, string[]> = {
+                  Breakfast: ['இட்லி, சாம்பார், சட்னி', 'மெதுவடை', 'பொங்கல்', 'மசால் தோசை', 'ஃபில்டர் காபி'],
+                  Lunch: ['சாம்பார் சாதம்', 'காய்கறி கூட்டு, பொரியல்', 'ரசம், மோர்', 'சப்பாத்தி குருமா', 'பாயாசம்'],
+                  'Tea or Coffee': ['ஸ்பெஷல் மசாலா டீ', 'ஃபில்டர் காபி', 'சுக்கு காபி', 'பிஸ்கட்'],
+                  Snacks: ['வெங்காய பக்கோடா', 'சூடான சமோசா', 'மெது பஜ்ஜி', 'புதினா சட்னி', 'கார மிக்சர்'],
+                  Dinner: ['சப்பாத்தி, தட்கா தால்', 'வெஜ் பிரியாணி', 'தோசை, குருமா', 'ஜீரா ரைஸ்', 'தயிர் சாதம்'],
+                };
+
+                return (
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col gap-4 shadow-sm">
+                    {/* Header with Active Toggle */}
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                      <div className="flex items-center space-x-2.5">
+                        <span className="text-2xl">{currentSlot.emoji}</span>
+                        <div>
+                          <h5 className="font-bold text-slate-900 text-sm">
+                            {currentSlot.name}
+                            {currentSlot.tamilDisplayName && ` (${currentSlot.tamilDisplayName})`}
+                          </h5>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            Category: {currentSlot.category}
+                          </span>
+                        </div>
+                      </div>
+
+                      <label className="flex items-center space-x-2 cursor-pointer bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={currentSlot.isActive !== false}
+                          onChange={(e) => updateCurrent('isActive', e.target.checked)}
+                          className="rounded text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span>Active Session</span>
+                      </label>
+                    </div>
+
+                    {/* Serving Timing (From - To) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-slate-700 flex items-center space-x-1">
+                          <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Serving Start Time (From)</span>
+                        </label>
+                        <input
+                          type="time"
+                          value={currentSlot.startTime}
+                          onChange={(e) => updateCurrent('startTime', e.target.value)}
+                          className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-slate-700 flex items-center space-x-1">
+                          <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Serving End Time (To)</span>
+                        </label>
+                        <input
+                          type="time"
+                          value={currentSlot.endTime}
+                          onChange={(e) => updateCurrent('endTime', e.target.value)}
+                          className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Food Menu Items Textarea */}
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-900 flex items-center space-x-1.5">
+                          <Languages className="w-4 h-4 text-emerald-600" />
+                          <span>Menu Items (Type in Tamil or English / தமிழ் அல்லது English)</span>
+                        </label>
+                        <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          UTF-8 Unicode
+                        </span>
+                      </div>
+                      <textarea
+                        rows={3}
+                        value={currentSlot.description}
+                        onChange={(e) => updateCurrent('description', e.target.value)}
+                        placeholder="எ.கா: இட்லி, வடை, சாம்பார், காபி / Idli, Vada, Sambar, Coffee"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white leading-relaxed"
+                      />
+
+                      {/* Quick Tamil Dish Chips */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-amber-500" />
+                          <span>Add dish:</span>
+                        </span>
+                        {(quickTamilDishes[currentSlot.name] || quickTamilDishes.Breakfast).map((dish) => (
+                          <button
+                            key={dish}
+                            type="button"
+                            onClick={() => appendDish(dish)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-800 text-slate-700 text-xs font-medium border border-slate-200 transition-colors cursor-pointer"
+                          >
+                            + {dish}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Calories & Save Button */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                      <div className="flex items-center space-x-2 text-xs font-bold text-slate-600">
+                        <Flame className="w-4 h-4 text-amber-500" />
+                        <span>Approx. Nutrition:</span>
+                        <input
+                          type="number"
+                          value={currentSlot.calories || 400}
+                          onChange={(e) => updateCurrent('calories', parseInt(e.target.value, 10) || 0)}
+                          className="w-18 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800 text-right"
+                        />
+                        <span className="font-mono text-[11px]">kcal</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveMenu}
+                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center space-x-2 active:scale-95 cursor-pointer"
+                      >
+                        <Save className="w-4 h-4" />
+                        <span>Save & Broadcast Menu</span>
+                      </button>
+                    </div>
+
+                  </div>
+                );
+              })()}
+
             </div>
           )}
 

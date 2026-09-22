@@ -1,4 +1,4 @@
-export type MealSlotName = 'Breakfast' | 'Lunch' | 'Tea & Snacks' | 'Tea' | 'Snacks' | 'Dinner';
+export type MealSlotName = 'Breakfast' | 'Lunch' | 'Tea or Coffee' | 'Tea & Snacks' | 'Tea' | 'Snacks' | 'Dinner';
 
 export type UserRole = 'Employee' | 'Staff';
 
@@ -19,11 +19,13 @@ export interface MealSlotConfig {
   startTime: string;   // '07:30'
   endTime: string;     // '10:30'
   displayName: string;
+  tamilDisplayName?: string;
   emoji: string;
   category: 'Morning' | 'Active Now' | 'Afternoon' | 'Evening' | 'Night Slot';
   description: string;
   calories: number;
   isEligible: boolean;
+  isActive?: boolean;
 }
 
 export type OrderStatus = 'PRINTED' | 'SERVED' | 'CANCELLED';
