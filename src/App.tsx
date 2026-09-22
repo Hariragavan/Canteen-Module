@@ -92,7 +92,6 @@ export const App: React.FC = () => {
           <TabletKioskView
             onNavigateToStaffScanner={handleNavigateToStaffScanner}
             onOpenAdminModal={handleOpenAdminPortal}
-            onOpenMenuModal={() => setIsMenuModalOpen(true)}
           />
         )}
 

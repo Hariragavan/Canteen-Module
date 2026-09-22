@@ -32,13 +32,11 @@ import {
 interface TabletKioskViewProps {
   onNavigateToStaffScanner?: (orderUuid: string) => void;
   onOpenAdminModal?: () => void;
-  onOpenMenuModal?: () => void;
 }
 
 export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
   onNavigateToStaffScanner,
   onOpenAdminModal,
-  onOpenMenuModal,
 }) => {
   const [kioskStep, setKioskStep] = useState<'SCANNING' | 'VERIFIED'>('SCANNING');
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -382,21 +380,9 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
           </span>
         </div>
 
-        {/* Right: Menu Update, Fullscreen icon [ ] and Admin icon (👤) */}
+        {/* Right: Fullscreen icon [ ] and Admin icon (👤) */}
         <div className="flex items-center space-x-2 sm:space-x-2.5">
           
-          {/* Menu & Timings Icon Button */}
-          {onOpenMenuModal && (
-            <button
-              onClick={onOpenMenuModal}
-              title="Daily Menu & Serving Timings Update (தமிழ் / English)"
-              className="flex items-center space-x-1 px-2.5 sm:px-3 py-2 rounded-xl sm:rounded-2xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 transition-all shadow-2xs font-bold text-xs active:scale-95 cursor-pointer"
-            >
-              <UtensilsCrossed className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600" />
-              <span className="hidden sm:inline">Menu Update</span>
-            </button>
-          )}
-
           {/* Fullscreen Icon [ ] */}
           <button
             onClick={toggleFullscreen}
@@ -456,19 +442,9 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                   </div>
 
                   <div className="flex items-center space-x-1.5">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-600 text-white shadow-2xs">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-emerald-600 text-white shadow-2xs">
                       ● Serving Now
                     </span>
-                    {onOpenMenuModal && (
-                      <button
-                        type="button"
-                        onClick={onOpenMenuModal}
-                        title="Update Daily Menu or Serving Timings"
-                        className="p-1 rounded-lg bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 transition-colors cursor-pointer"
-                      >
-                        <UtensilsCrossed className="w-3.5 h-3.5" />
-                      </button>
-                    )}
                   </div>
                 </div>
 
