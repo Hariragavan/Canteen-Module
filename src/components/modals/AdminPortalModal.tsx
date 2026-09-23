@@ -25,7 +25,6 @@ import {
   Languages,
   Sparkles,
   Save,
-  Flame,
 } from 'lucide-react';
 import type { MealSlotConfig, MealSlotName } from '../../types';
 
@@ -59,7 +58,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
   // Menu and Serving Timings state
   const [adminMealSlots, setAdminMealSlots] = useState<MealSlotConfig[]>([]);
-  const [activeAdminSlot, setActiveAdminSlot] = useState<MealSlotName>('Breakfast');
+  const [activeAdminSlot, setActiveAdminSlot] = useState<MealSlotName>('Tiffin');
   const [isMenuSavedToast, setIsMenuSavedToast] = useState<boolean>(false);
 
   // Edit Mode state
@@ -1335,11 +1334,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 };
 
                 const quickTamilDishes: Record<string, string[]> = {
-                  Breakfast: ['இட்லி, சாம்பார், சட்னி', 'மெதுவடை', 'பொங்கல்', 'மசால் தோசை', 'ஃபில்டர் காபி'],
-                  Lunch: ['சாம்பார் சாதம்', 'காய்கறி கூட்டு, பொரியல்', 'ரசம், மோர்', 'சப்பாத்தி குருமா', 'பாயாசம்'],
-                  'Tea or Coffee': ['ஸ்பெஷல் மசாலா டீ', 'ஃபில்டர் காபி', 'சுக்கு காபி', 'பிஸ்கட்'],
-                  Snacks: ['வெங்காய பக்கோடா', 'சூடான சமோசா', 'மெது பஜ்ஜி', 'புதினா சட்னி', 'கார மிக்சர்'],
-                  Dinner: ['சப்பாத்தி, தட்கா தால்', 'வெஜ் பிரியாணி', 'தோசை, குருமா', 'ஜீரா ரைஸ்', 'தயிர் சாதம்'],
+                  Tiffin: ['இட்லி, சாம்பார், சட்னி', 'மெதுவடை', 'வெண் பொங்கல்', 'பூரி மசாலா', 'மசால் தோசை', 'ஃபில்டர் காபி'],
+                  Lunch: ['சாம்பார் சாதம்', 'காய்கறி கூட்டு, பொரியல்', 'ரசம், மோர்', 'அப்பளம்', 'சப்பாத்தி குருமா', 'பாயாசம்'],
+                  'Tea/Snacks': ['ஸ்பெஷல் மசாலா டீ', 'ஃபில்டர் காபி', 'வெங்காய பக்கோடா', 'சூடான சமோசா', 'மெது பஜ்ஜி', 'புதினா சட்னி'],
                 };
 
                 return (
@@ -1437,9 +1434,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Meal Cost & Nutrition & Save Button */}
+                    {/* Meal Cost & Save Button */}
                     <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
-                      <div className="flex flex-wrap items-center gap-4">
+                      <div>
                         {/* Meal Cost / Rate */}
                         <div className="flex items-center space-x-2 text-xs font-bold text-slate-800 bg-emerald-50/70 border border-emerald-200 px-3 py-1.5 rounded-xl">
                           <span className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-black text-xs font-mono">₹</span>
@@ -1456,18 +1453,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                             }}
                             className="w-20 bg-white border border-emerald-300 rounded-lg px-2 py-1 text-xs font-mono font-black text-slate-900 text-right focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-2xs"
                           />
-                        </div>
-
-                        <div className="flex items-center space-x-2 text-xs font-bold text-slate-600">
-                          <Flame className="w-4 h-4 text-amber-500" />
-                          <span>Approx. Nutrition:</span>
-                          <input
-                            type="number"
-                            value={currentSlot.calories || 400}
-                            onChange={(e) => updateCurrent('calories', parseInt(e.target.value, 10) || 0)}
-                            className="w-18 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800 text-right"
-                          />
-                          <span className="font-mono text-[11px]">kcal</span>
                         </div>
                       </div>
 

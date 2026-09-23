@@ -60,23 +60,23 @@ CREATE TABLE IF NOT EXISTS canteen_meal_slots (
   end_time TIME NOT NULL,
   emoji TEXT NOT NULL,
   description TEXT,
-  calories INTEGER DEFAULT 0,
   price NUMERIC(6, 2) DEFAULT 0.00,
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-INSERT INTO canteen_meal_slots (id, name, display_name, start_time, end_time, emoji, description, calories, price)
+-- Active 3 meal slots: Tiffin, Lunch, Tea/Snacks
+INSERT INTO canteen_meal_slots (id, name, display_name, start_time, end_time, emoji, description, price)
 VALUES 
-  ('BREAKFAST', 'Breakfast', 'Breakfast Special', '07:30', '10:30', '🥞', 'Steamed Idli, Crispy Vada & Sambar', 420, 30.00),
-  ('LUNCH', 'Lunch', 'Executive Lunch Platter', '12:00', '15:00', '🍛', 'Complete South Indian Veg Thali', 740, 60.00),
-  ('TEA', 'Tea', 'Cardamom Tea / Coffee', '15:30', '17:00', '☕', 'Special Masala Chai & Filter Coffee', 120, 10.00),
-  ('SNACKS', 'Snacks', 'Evening Snacks', '16:00', '18:00', '🥐', 'Hot Samosa / Bajji with Mint Chutney', 260, 20.00),
-  ('DINNER', 'Dinner', 'Gourmet Dinner Feast', '19:30', '22:00', '🍲', 'Phulka, Dal Makhani & Jeera Rice', 650, 50.00)
+  ('TIFFIN', 'Tiffin', 'Tiffin Special', '07:30', '10:30', '🥞', 'Steamed Idli, Crispy Vada & Sambar', 35.00),
+  ('LUNCH', 'Lunch', 'Executive Lunch Platter', '12:00', '15:00', '🍛', 'Complete South Indian Veg Thali', 60.00),
+  ('TEASNACKS', 'Tea/Snacks', 'Tea & Evening Snacks', '15:30', '18:30', '☕', 'Special Masala Chai & Hot Snacks', 20.00)
 ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
   start_time = EXCLUDED.start_time,
   end_time = EXCLUDED.end_time,
-  display_name = EXCLUDED.display_name;
+  display_name = EXCLUDED.display_name,
+  price = EXCLUDED.price;
 
 -- 4. DAILY ATOMIC TOKEN COUNTER
 CREATE TABLE IF NOT EXISTS canteen_daily_counter (
@@ -94,6 +94,8 @@ CREATE TABLE IF NOT EXISTS canteen_orders (
   department TEXT NOT NULL,
   meal_slot TEXT NOT NULL,
   items JSONB DEFAULT '[]'::jsonb,
+  rate NUMERIC DEFAULT 40.00,
+  qty INTEGER DEFAULT 1,
   status TEXT NOT NULL DEFAULT 'PRINTED',
   issued_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
   served_at TIMESTAMPTZ,
@@ -103,9 +105,13 @@ CREATE TABLE IF NOT EXISTS canteen_orders (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_canteen_unique_daily_booking 
-ON canteen_orders (user_id, meal_slot, order_date) 
-WHERE status != 'CANCELLED';
+ALTER TABLE canteen_orders ADD COLUMN IF NOT EXISTS rate NUMERIC DEFAULT 40.00;
+ALTER TABLE canteen_orders ADD COLUMN IF NOT EXISTS qty INTEGER DEFAULT 1;
+
+DROP INDEX IF EXISTS idx_canteen_unique_daily_booking;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_canteen_unique_daily_lunch 
+ON canteen_orders (user_id, order_date) 
+WHERE meal_slot = 'Lunch' AND status != 'CANCELLED';
 
 -- Concurrency-Safe Atomic Token Generator Trigger
 CREATE OR REPLACE FUNCTION set_daily_token_number()

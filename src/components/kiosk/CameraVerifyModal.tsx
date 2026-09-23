@@ -15,7 +15,6 @@ import {
   ChevronRight,
   Printer,
   AlertTriangle,
-  Flame,
   Camera,
   RotateCcw,
   Sparkles,
@@ -140,6 +139,13 @@ export const CameraVerifyModal: React.FC<CameraVerifyModalProps> = ({
         soundEngine.playVerificationChime();
         const existingAfter = canteenService.checkDuplicateBooking(employee.id, selectedMealSlot);
         setDuplicateOrder(existingAfter || null);
+
+        // Directly print if printer is available, if not browser opens print dialog
+        try {
+          window.print();
+        } catch (e) {
+          console.warn('Direct print fallback:', e);
+        }
 
         const drawer = document.getElementById('modalReceiptDrawer');
         if (drawer) {
@@ -318,7 +324,7 @@ export const CameraVerifyModal: React.FC<CameraVerifyModalProps> = ({
               className="flex gap-3.5 overflow-x-auto pb-3 pt-1 snap-x snap-mandatory scroll-smooth no-scrollbar"
               style={{ scrollbarWidth: 'thin' }}
             >
-              {MEAL_SLOTS.map((slot) => {
+              {canteenService.getMealSlots().map((slot) => {
                 const isSelected = selectedMealSlot === slot.name;
                 const isCurrentTimeSlot = activeSlotName === slot.name;
                 const isAlreadyBooked = Boolean(
@@ -333,22 +339,25 @@ export const CameraVerifyModal: React.FC<CameraVerifyModalProps> = ({
                       soundEngine.playSelectSound();
                       setSelectedMealSlot(slot.name);
                     }}
-                    className={`cursor-pointer min-w-[240px] sm:min-w-[270px] flex-shrink-0 p-4 rounded-2xl border-2 transition-all flex flex-col justify-between gap-3 snap-center select-none shadow-2xs ${
+                    className={`cursor-pointer min-w-[250px] sm:min-w-[280px] flex-shrink-0 p-4 rounded-2xl border-2 transition-all flex flex-col justify-between gap-3 snap-center select-none shadow-2xs ${
                       isSelected
                         ? 'border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-500/20 shadow-md transform scale-[1.02]'
                         : 'border-slate-200 bg-white hover:border-emerald-300'
                     } ${isAlreadyBooked ? 'opacity-75' : ''}`}
                   >
                     <div className="flex items-start justify-between">
-                      <div className="flex items-center space-x-2.5">
-                        <span className="text-2xl p-1.5 bg-slate-50 rounded-xl border border-slate-100">
-                          {slot.emoji}
-                        </span>
+                      <div className="flex items-center space-x-3">
+                        {/* Amount First: Big & Bold */}
+                        <div className="flex flex-col items-center justify-center px-3 py-1.5 rounded-xl bg-emerald-600 text-white shadow-xs">
+                          <span className="text-[9px] uppercase font-bold text-emerald-100 leading-none">Rate</span>
+                          <span className="text-xl font-black tracking-tight leading-none mt-0.5">₹{slot.rate ?? slot.cost ?? 40}</span>
+                        </div>
                         <div>
                           <div className="flex items-center space-x-1.5">
+                            <span className="text-xl">{slot.emoji}</span>
                             <h5 className="font-bold text-slate-900 text-sm">{slot.name}</h5>
                             {isAlreadyBooked && (
-                              <span className="text-[8px] font-bold uppercase px-1.5 py-0.2 rounded bg-rose-100 text-rose-800">
+                              <span className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-800">
                                 Booked
                               </span>
                             )}
@@ -379,11 +388,8 @@ export const CameraVerifyModal: React.FC<CameraVerifyModalProps> = ({
                     </p>
 
                     <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100 font-medium">
-                      <span className="text-slate-400 flex items-center gap-1 text-[11px]">
-                        <Flame className="w-3 h-3 text-amber-500" />
-                        <span>{slot.calories} kcal</span>
-                      </span>
                       <span className="text-emerald-700 font-bold text-[11px]">100% Subsidized</span>
+                      <span className="text-slate-400 text-[10px]">Instant Punch</span>
                     </div>
                   </div>
                 );

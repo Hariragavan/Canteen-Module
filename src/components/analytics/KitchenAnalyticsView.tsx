@@ -22,8 +22,6 @@ import {
   Search,
   CheckCircle2,
   Clock,
-  Printer,
-  ShieldCheck,
 } from 'lucide-react';
 
 // Register ChartJS modules
@@ -42,7 +40,8 @@ ChartJS.register(
 export const KitchenAnalyticsView: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const todayStr = new Date().toISOString().slice(0, 10);
-  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [fromDate, setFromDate] = useState<string>(todayStr);
+  const [toDate, setToDate] = useState<string>(todayStr);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDept, setSelectedDept] = useState<string>('ALL');
   const [selectedMeal, setSelectedMeal] = useState<string>('ALL');
@@ -60,34 +59,45 @@ export const KitchenAnalyticsView: React.FC = () => {
     return () => unsub();
   }, []);
 
-  // Filter orders by selected date
+  // Filter orders by date range: fromDate to toDate
   const dateOrders = useMemo(() => {
-    return orders.filter((o) => o.dateStr === selectedDate);
-  }, [orders, selectedDate]);
+    return orders.filter((o) => {
+      if (fromDate && o.dateStr < fromDate) return false;
+      if (toDate && o.dateStr > toDate) return false;
+      return true;
+    });
+  }, [orders, fromDate, toDate]);
 
-  // Compute KPI metrics for selected date
+  // Compute KPI metrics for selected date range
   const totalIssued = dateOrders.length;
   const totalServed = dateOrders.filter((o) => o.status === 'SERVED').length;
   const inQueue = totalIssued - totalServed;
   const collectionRate = totalIssued > 0 ? Math.round((totalServed / totalIssued) * 100) : 0;
-  const wastageOrUnclaimedRate = totalIssued > 0 ? (100 - collectionRate) : 0;
+  
+  // Total Revenue / Token Amount
+  const totalRevenue = useMemo(() => {
+    return dateOrders.reduce((sum, o) => {
+      const rate = o.rate ?? 40;
+      const qty = o.qty ?? 1;
+      return sum + rate * qty;
+    }, 0);
+  }, [dateOrders]);
 
-  // Meal counts for Donut Chart (based on selected date)
+  // Meal counts for Donut Chart (based on 3 slots: Tiffin, Lunch, Tea/Snacks)
   const mealCounts = useMemo(() => {
     const counts: Record<string, number> = {
-      Breakfast: 0,
+      Tiffin: 0,
       Lunch: 0,
-      'Tea or Coffee': 0,
-      'Tea & Snacks': 0,
-      Tea: 0,
-      Snacks: 0,
-      Dinner: 0,
+      'Tea/Snacks': 0,
     };
     dateOrders.forEach((o) => {
-      if (counts[o.meal] !== undefined) {
-        counts[o.meal]++;
+      const lower = (o.meal || '').toLowerCase();
+      if (lower.includes('tiffin') || lower.includes('breakfast')) {
+        counts.Tiffin = (counts.Tiffin || 0) + 1;
+      } else if (lower.includes('lunch')) {
+        counts.Lunch = (counts.Lunch || 0) + 1;
       } else {
-        counts[o.meal] = 1;
+        counts['Tea/Snacks'] = (counts['Tea/Snacks'] || 0) + 1;
       }
     });
     return counts;
@@ -95,16 +105,15 @@ export const KitchenAnalyticsView: React.FC = () => {
 
   // Donut Chart Data & Options
   const doughnutData = {
-    labels: ['Breakfast', 'Lunch', 'Tea / Coffee / Snacks', 'Dinner'],
+    labels: ['Tiffin', 'Lunch', 'Tea/Snacks'],
     datasets: [
       {
         data: [
-          mealCounts.Breakfast || 0,
+          mealCounts.Tiffin || 0,
           mealCounts.Lunch || 0,
-          (mealCounts['Tea or Coffee'] || 0) + (mealCounts['Tea & Snacks'] || 0) + (mealCounts.Tea || 0) + (mealCounts.Snacks || 0),
-          mealCounts.Dinner || 0,
+          mealCounts['Tea/Snacks'] || 0,
         ],
-        backgroundColor: ['#f59e0b', '#059669', '#d97706', '#4f46e5'],
+        backgroundColor: ['#f59e0b', '#059669', '#0284c7'],
         borderColor: '#ffffff',
         borderWidth: 2,
       },
@@ -119,82 +128,68 @@ export const KitchenAnalyticsView: React.FC = () => {
         position: 'bottom' as const,
         labels: {
           boxWidth: 12,
-          font: { family: 'Inter', size: 11, weight: 'bold' as const },
-          color: '#475569',
-          padding: 14,
-        },
-      },
-      tooltip: {
-        callbacks: {
-          label: (context: { label: string; raw: unknown }) => ` ${context.label}: ${context.raw} meals`,
+          font: { size: 11, weight: 'bold' as const },
         },
       },
     },
+    cutout: '70%',
   };
 
-  // Dynamic hourly traffic distribution for the selected date
+  // Hourly Traffic distribution
   const hourlyData = useMemo(() => {
-    const counts = [0, 0, 0, 0, 0, 0, 0, 0];
-    dateOrders.forEach((o) => {
-      const match = o.issuedAt.match(/(\d+):(\d+).*?(AM|PM)/i);
-      if (match) {
-        let h = parseInt(match[1], 10);
-        const ampm = match[3].toUpperCase();
-        if (ampm === 'PM' && h < 12) h += 12;
-        if (ampm === 'AM' && h === 12) h = 0;
+    const hours = ['07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'];
+    const counts = new Array(hours.length).fill(0);
 
-        if (h <= 8) counts[0]++;
-        else if (h <= 10) counts[1]++;
-        else if (h <= 12) counts[2]++;
-        else if (h <= 13) counts[3]++;
-        else if (h <= 14) counts[4]++;
-        else if (h <= 16) counts[5]++;
-        else if (h <= 18) counts[6]++;
-        else counts[7]++;
-      } else {
-        counts[2]++;
+    dateOrders.forEach((o) => {
+      if (o.issuedAt) {
+        const parts = o.issuedAt.split(':');
+        const h = parseInt(parts[0], 10);
+        let hour24 = h;
+        if (o.issuedAt.toLowerCase().includes('pm') && h < 12) hour24 += 12;
+        if (o.issuedAt.toLowerCase().includes('am') && h === 12) hour24 = 0;
+
+        const idx = hours.findIndex(slot => parseInt(slot.split(':')[0], 10) === hour24);
+        if (idx !== -1) counts[idx]++;
       }
     });
-    return counts;
-  }, [dateOrders]);
 
-  // Line Chart Data & Options
-  const lineData = {
-    labels: ['08:00 AM', '10:00 AM', '12:00 PM', '01:00 PM', '02:00 PM', '04:00 PM', '05:30 PM', '08:00 PM'],
-    datasets: [
-      {
-        label: `Dispensed Volume (${selectedDate})`,
-        data: hourlyData,
-        borderColor: '#059669',
-        backgroundColor: 'rgba(5, 150, 105, 0.09)',
-        borderWidth: 2.5,
-        tension: 0.35,
-        fill: true,
-        pointBackgroundColor: '#059669',
-        pointHoverRadius: 6,
-      },
-    ],
-  };
+    return {
+      labels: hours,
+      datasets: [
+        {
+          label: 'Tokens Issued',
+          data: counts,
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 4,
+          pointBackgroundColor: '#10b981',
+        },
+      ],
+    };
+  }, [dateOrders]);
 
   const lineOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    scales: {
-      y: {
-        ticks: { color: '#64748b', font: { family: 'Inter', size: 10 } },
-        grid: { color: '#f1f5f9' },
-      },
-      x: {
-        ticks: { color: '#64748b', font: { family: 'Inter', size: 10 } },
-        grid: { display: false },
-      },
-    },
     plugins: {
       legend: { display: false },
     },
+    scales: {
+      y: {
+        beginAtZero: true,
+        grid: { color: '#f1f5f9' },
+        ticks: { stepSize: 1, font: { size: 10 } },
+      },
+      x: {
+        grid: { display: false },
+        ticks: { font: { size: 10 } },
+      },
+    },
   };
 
-  // Filtered Audit Ledger for selected date
+  // Filtered orders table
   const filteredOrders = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return dateOrders.filter((o) => {
@@ -208,7 +203,11 @@ export const KitchenAnalyticsView: React.FC = () => {
       const matchDept =
         selectedDept === 'ALL' ||
         (o.dept ? o.dept.trim().toLowerCase() === selectedDept.toLowerCase() : false);
-      const matchMeal = selectedMeal === 'ALL' || o.meal === selectedMeal;
+      const matchMeal =
+        selectedMeal === 'ALL' ||
+        o.meal === selectedMeal ||
+        (selectedMeal === 'Tiffin' && (o.meal === 'Tiffin' || o.meal === 'Breakfast')) ||
+        (selectedMeal === 'Tea/Snacks' && (o.meal === 'Tea/Snacks' || (o.meal as string) === 'Tea' || o.meal === 'Snacks' || o.meal === 'Tea or Coffee'));
       const matchStatus = selectedStatus === 'ALL' || o.status === selectedStatus;
 
       return matchQuery && matchDept && matchMeal && matchStatus;
@@ -216,7 +215,28 @@ export const KitchenAnalyticsView: React.FC = () => {
   }, [dateOrders, searchQuery, selectedDept, selectedMeal, selectedStatus]);
 
   const handleExportCSV = () => {
-    canteenService.exportAuditCSV(selectedDate);
+    canteenService.exportAuditCSV(fromDate, toDate);
+  };
+
+  const handleSetQuickDate = (preset: 'today' | 'yesterday' | 'week' | 'all') => {
+    if (preset === 'today') {
+      setFromDate(todayStr);
+      setToDate(todayStr);
+    } else if (preset === 'yesterday') {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      const yStr = d.toISOString().slice(0, 10);
+      setFromDate(yStr);
+      setToDate(yStr);
+    } else if (preset === 'week') {
+      const d = new Date();
+      d.setDate(d.getDate() - 7);
+      setFromDate(d.toISOString().slice(0, 10));
+      setToDate(todayStr);
+    } else if (preset === 'all') {
+      setFromDate('');
+      setToDate(todayStr);
+    }
   };
 
   return (
@@ -237,56 +257,87 @@ export const KitchenAnalyticsView: React.FC = () => {
           </p>
         </div>
 
-        {/* Date Selector and Download CSV Toolbar */}
+        {/* Date Range Selector and Download CSV Toolbar */}
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Date Selector */}
-          <div className="flex items-center space-x-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-2xs">
+          {/* From - To Date Range */}
+          <div className="flex flex-wrap items-center space-x-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-2xs">
             <Calendar className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="text-xs font-bold text-slate-600">Date:</span>
+            <span className="text-xs font-bold text-slate-600">From:</span>
             <input
               type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
               className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
             />
+            <span className="text-xs font-bold text-slate-600">To:</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+            />
+          </div>
+
+          {/* Quick Preset Buttons */}
+          <div className="flex items-center space-x-1">
             <button
               type="button"
-              onClick={() => setSelectedDate(todayStr)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
-                selectedDate === todayStr
+              onClick={() => handleSetQuickDate('today')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                fromDate === todayStr && toDate === todayStr
                   ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  : 'bg-white border border-slate-200 hover:bg-slate-50 text-slate-700'
               }`}
             >
               Today
             </button>
+            <button
+              type="button"
+              onClick={() => handleSetQuickDate('yesterday')}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer"
+            >
+              Yesterday
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetQuickDate('week')}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer"
+            >
+              7 Days
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetQuickDate('all')}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer"
+            >
+              All
+            </button>
           </div>
 
-          {/* Download CSV for selected date */}
+          {/* Download CSV for selected date range */}
           <button
             onClick={handleExportCSV}
-            title={`Download CSV file for ${selectedDate}`}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center space-x-1.5 active:scale-95 cursor-pointer"
+            title="Download CSV for selected date range"
+            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center space-x-1.5 active:scale-95 cursor-pointer ml-auto"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Download CSV ({selectedDate})</span>
+            <span>Download CSV</span>
           </button>
         </div>
       </div>
 
-      {/* 4 KPI Metrics */}
+      {/* 4 KPI Metrics: Includes Total Revenue / Token Amount */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        
-        {/* KPI 1 */}
+        {/* KPI 1: Issued */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Issued ({selectedDate === todayStr ? 'Today' : selectedDate})
+              Total Tokens Issued
             </p>
             <h3 className="text-3xl font-black text-slate-900 mt-1 font-mono">{totalIssued}</h3>
             <p className="text-[11px] text-emerald-700 font-semibold mt-1 flex items-center gap-1">
               <TrendingUp className="w-3 h-3" />
-              <span>{dateOrders.length} records on {selectedDate}</span>
+              <span>{fromDate === toDate ? fromDate : `${fromDate || 'Beginning'} → ${toDate}`}</span>
             </p>
           </div>
           <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-200">
@@ -294,7 +345,7 @@ export const KitchenAnalyticsView: React.FC = () => {
           </div>
         </div>
 
-        {/* KPI 2 */}
+        {/* KPI 2: Served */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Meals Served</p>
@@ -308,13 +359,13 @@ export const KitchenAnalyticsView: React.FC = () => {
           </div>
         </div>
 
-        {/* KPI 3 */}
+        {/* KPI 3: In Queue */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">In Queue (Pending)</p>
             <h3 className="text-3xl font-black text-amber-600 mt-1 font-mono">{inQueue}</h3>
             <p className="text-[11px] text-amber-700 font-medium mt-1">
-              {wastageOrUnclaimedRate}% unclaimed rate
+              Waiting for counter pickup
             </p>
           </div>
           <div className="p-3 bg-amber-50 text-amber-600 rounded-2xl border border-amber-200">
@@ -322,77 +373,69 @@ export const KitchenAnalyticsView: React.FC = () => {
           </div>
         </div>
 
-        {/* KPI 4: Hardware Status */}
+        {/* KPI 4: Total Token Value / Amount (₹) */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Thermal Printer Status</p>
-            <h3 className="text-base font-bold text-slate-900 mt-1 truncate">80mm Auto-Dispenser</h3>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Value / Rate</p>
+            <h3 className="text-3xl font-black text-emerald-800 mt-1 font-mono">
+              ₹{totalRevenue.toLocaleString()}
+            </h3>
             <p className="text-[11px] text-emerald-700 font-semibold mt-1 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>80mm Paper 94% • OK</span>
+              <span>Gross token value for selected range</span>
             </p>
           </div>
-          <div className="p-3 bg-slate-50 text-slate-700 rounded-2xl border border-slate-200">
-            <Printer className="w-6 h-6" />
+          <div className="p-3 bg-emerald-100 text-emerald-800 rounded-2xl border border-emerald-300 font-black text-lg">
+            ₹
           </div>
         </div>
-
       </div>
 
       {/* Interactive Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
         {/* Chart 1: Donut Intake Breakdown (4 cols) */}
         <div className="lg:col-span-4 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
           <div>
-            <h4 className="font-bold text-slate-900 text-sm">Meal Slot Intake Share</h4>
-            <p className="text-xs text-slate-500 mt-0.5">Distribution across the 5 cafeteria meal slots</p>
+            <h4 className="font-bold text-slate-900 text-sm">Meal Slot Share (3 Slots)</h4>
+            <p className="text-xs text-slate-500 mt-0.5">Tiffin, Lunch, and Tea/Snacks distribution</p>
           </div>
           <div className="h-64 relative flex items-center justify-center my-2">
             <Doughnut data={doughnutData} options={doughnutOptions} />
           </div>
-          <div className="text-[11px] text-slate-400 text-center font-mono pt-2 border-t border-slate-100">
-            Peak demand concentrated in Lunch & Dinner slots
+          <div className="text-[11px] text-slate-500 text-center font-mono pt-2 border-t border-slate-100">
+            Real-time multi-slot demand breakdown
           </div>
         </div>
 
         {/* Chart 2: Hourly Traffic Velocity Curve (8 cols) */}
         <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
           <div>
-            <h4 className="font-bold text-slate-900 text-sm">Canteen Traffic Velocity Curve</h4>
-            <p className="text-xs text-slate-500 mt-0.5">Hourly counter load & queue velocity</p>
+            <h4 className="font-bold text-slate-900 text-sm">Hourly Consumption Velocity</h4>
+            <p className="text-xs text-slate-500 mt-0.5">Token issuance activity across operational hours</p>
           </div>
-          <div className="h-64 relative my-2">
-            <Line data={lineData} options={lineOptions} />
+          <div className="h-64 my-2">
+            <Line data={hourlyData} options={lineOptions} />
           </div>
-          <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100">
-            <span>Peak queue rush recorded at 12:45 PM - 01:30 PM</span>
-            <span className="font-mono text-emerald-700 font-bold">Counter Scanner Wedge: &lt;1.2s avg clearance</span>
+          <div className="text-[11px] text-slate-500 text-center font-mono pt-2 border-t border-slate-100 flex items-center justify-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span>Live token timestamps</span>
           </div>
         </div>
-
       </div>
 
-      {/* Complete Audit Ledger Table */}
+      {/* Audit Clearance Ledger Table with Rate, Qty & Total Amount */}
       <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
-        
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="flex items-center space-x-2">
-              <ShieldCheck className="w-5 h-5 text-emerald-600" />
-              <h3 className="font-bold text-slate-900 text-base">
-                Canteen Consumption Audit Ledger
-              </h3>
-            </div>
+            <h4 className="font-bold text-slate-900 text-base">Audit Clearance Ledger</h4>
             <p className="text-xs text-slate-500 mt-0.5">
-              Synced records of all biometric authorizations and thermal slip claims.
+              Detailed records including Rate, Quantity, and Total Amount for each token.
             </p>
           </div>
 
-          {/* Filters Bar */}
+          {/* Filters */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
               <input
                 type="text"
                 value={searchQuery}
@@ -405,7 +448,7 @@ export const KitchenAnalyticsView: React.FC = () => {
             <select
               value={selectedDept}
               onChange={(e) => setSelectedDept(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
             >
               <option value="ALL">All Departments</option>
               <option value="Staff">Staff</option>
@@ -415,20 +458,18 @@ export const KitchenAnalyticsView: React.FC = () => {
             <select
               value={selectedMeal}
               onChange={(e) => setSelectedMeal(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
             >
               <option value="ALL">All Meals</option>
-              <option value="Breakfast">Breakfast</option>
+              <option value="Tiffin">Tiffin</option>
               <option value="Lunch">Lunch</option>
-              <option value="Tea">Tea</option>
-              <option value="Snacks">Snacks</option>
-              <option value="Dinner">Dinner</option>
+              <option value="Tea/Snacks">Tea/Snacks</option>
             </select>
 
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
             >
               <option value="ALL">All Statuses</option>
               <option value="SERVED">Served</option>
@@ -443,9 +484,13 @@ export const KitchenAnalyticsView: React.FC = () => {
             <thead className="text-slate-600 uppercase bg-slate-50 font-mono text-[10px] border-b border-slate-200">
               <tr>
                 <th className="p-3 rounded-l">Token</th>
+                <th className="p-3">Date</th>
                 <th className="p-3">Employee</th>
                 <th className="p-3">Department</th>
                 <th className="p-3">Meal Slot</th>
+                <th className="p-3 text-right">Rate</th>
+                <th className="p-3 text-center">Qty</th>
+                <th className="p-3 text-right">Total</th>
                 <th className="p-3">Menu Items</th>
                 <th className="p-3">Issued Time</th>
                 <th className="p-3">Served Time</th>
@@ -455,8 +500,8 @@ export const KitchenAnalyticsView: React.FC = () => {
             <tbody className="divide-y divide-slate-100 font-medium">
               {filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-6 text-center text-xs text-slate-400 italic">
-                    No orders recorded for {selectedDate} matching the current search or filters.
+                  <td colSpan={12} className="p-6 text-center text-xs text-slate-400 italic">
+                    No orders recorded for the selected date range matching filters.
                   </td>
                 </tr>
               ) : (
@@ -464,10 +509,16 @@ export const KitchenAnalyticsView: React.FC = () => {
                   const itemSummary = Array.isArray(o.items) && o.items.length > 0
                     ? o.items.map(it => (typeof it === 'string' ? it : it?.description || it?.name || '')).join(', ')
                     : 'Standard Meal';
+                  const rateVal = o.rate ?? 40;
+                  const qtyVal = o.qty ?? 1;
+                  const total = rateVal * qtyVal;
                   return (
                     <tr key={o.id} className="hover:bg-slate-50 transition-colors">
                       <td className="p-3 font-mono font-bold text-slate-900">
                         #{o.token}
+                      </td>
+                      <td className="p-3 font-mono text-slate-600">
+                        {o.dateStr}
                       </td>
                       <td className="p-3">
                         <div className="font-bold text-slate-900">{o.name}</div>
@@ -475,7 +526,16 @@ export const KitchenAnalyticsView: React.FC = () => {
                       </td>
                       <td className="p-3 text-slate-600">{o.dept}</td>
                       <td className="p-3 font-semibold text-slate-900">{o.meal}</td>
-                      <td className="p-3 text-slate-600 max-w-[200px] truncate" title={itemSummary}>
+                      <td className="p-3 font-mono font-bold text-slate-900 text-right">
+                        ₹{rateVal}
+                      </td>
+                      <td className="p-3 font-mono font-bold text-slate-700 text-center">
+                        {qtyVal}
+                      </td>
+                      <td className="p-3 font-mono font-black text-emerald-800 text-right">
+                        ₹{total}
+                      </td>
+                      <td className="p-3 text-slate-600 max-w-[180px] truncate" title={itemSummary}>
                         {itemSummary}
                       </td>
                       <td className="p-3 font-mono text-slate-500">{o.issuedAt}</td>
@@ -500,9 +560,7 @@ export const KitchenAnalyticsView: React.FC = () => {
             </tbody>
           </table>
         </div>
-
       </div>
-
     </div>
   );
 };

@@ -26,7 +26,6 @@ import {
   Scan,
   ChevronUp,
   ChevronDown,
-  Flame,
 } from 'lucide-react';
 
 interface TabletKioskViewProps {
@@ -47,6 +46,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
   const [selectedMealSlot, setSelectedMealSlot] = useState<MealSlotName>('Lunch');
   const [duplicateOrder, setDuplicateOrder] = useState<Order | null>(null);
   const [lastPrintedOrder, setLastPrintedOrder] = useState<Order | null>(null);
+  const [lastPrintedOrders, setLastPrintedOrders] = useState<Order[]>([]);
   const [isDispensing, setIsDispensing] = useState<boolean>(false);
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   const [isProcessingScan, setIsProcessingScan] = useState<boolean>(false);
@@ -262,6 +262,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     setCapturedSnapshot(null);
     setVerificationError(null);
     setLastPrintedOrder(null);
+    setLastPrintedOrders([]);
     setSnacksQty(1);
     setAutoResetSeconds(10);
   }, []);
@@ -346,22 +347,33 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
         ? [{ name: chosenSlot.name, description: chosenSlot.description }]
         : [];
 
-      const isSnacks = selectedMealSlot.toLowerCase().includes('snacks');
-      const chosenQty = isSnacks ? snacksQty : 1;
+      const isQtyAvailable = selectedMealSlot === 'Tiffin' || selectedMealSlot === 'Tea/Snacks' || selectedMealSlot.toLowerCase().includes('tea') || selectedMealSlot.toLowerCase().includes('snack');
+      const chosenQty = isQtyAvailable ? Math.max(1, Math.min(10, snacksQty)) : 1;
       const chosenRate = chosenSlot?.rate ?? chosenSlot?.cost ?? 40;
 
-      // Zero artificial delay to print
-      const order = await canteenService.createOrder(
+      // Create batch of orders (e.g. qty = 3 creates 3 distinct tokens with different QRs)
+      const orders = await canteenService.createOrdersBatch(
         currentEmployee,
         selectedMealSlot,
         chosenItems,
         chosenQty,
         chosenRate
       );
-      setLastPrintedOrder(order);
+
+      setLastPrintedOrders(orders);
+      setLastPrintedOrder(orders[0]);
       setIsDispensing(false);
       soundEngine.playVerificationChime();
       checkDuplicate();
+
+      // Trigger print immediately: direct print if printer is available, or open print dialog
+      setTimeout(() => {
+        try {
+          window.print();
+        } catch (e) {
+          console.warn('Auto print trigger error:', e);
+        }
+      }, 150);
 
       const drawer = document.getElementById('printerDrawerSection');
       if (drawer) {
@@ -717,6 +729,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                 <div className="my-2 flex justify-center max-h-[320px] overflow-y-auto shadow-md rounded-xl bg-white p-2">
                   <ThermalReceipt
                     order={lastPrintedOrder}
+                    orders={lastPrintedOrders}
                     onSendToScanner={onNavigateToStaffScanner}
                     onPrint={() => window.print()}
                   />
@@ -822,24 +835,33 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                           }`}
                         >
                           <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center space-x-3 min-w-0">
+                            <div className="flex items-center space-x-3.5 min-w-0">
+                              {/* 1. AMOUNT FIRST IN BIG BOLD TEXT (Requirement 3) */}
                               <div
-                                className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 border transition-all ${
+                                className={`px-3 py-2 rounded-2xl flex flex-col items-center justify-center shrink-0 border transition-all ${
                                   isSelected
-                                    ? 'bg-emerald-100 border-emerald-300 shadow-xs'
-                                    : 'bg-slate-50 border-slate-100'
+                                    ? 'bg-emerald-600 text-white border-emerald-700 shadow-md'
+                                    : 'bg-emerald-50 text-emerald-950 border-emerald-200'
                                 }`}
                               >
-                                {slot.emoji}
+                                <span className="text-[10px] font-bold uppercase tracking-wider opacity-80 leading-none">
+                                  Price
+                                </span>
+                                <div className="flex items-baseline font-mono font-black text-2xl sm:text-3xl leading-tight">
+                                  <span className="text-sm mr-0.5">₹</span>
+                                  <span>{slot.rate ?? slot.cost ?? 40}</span>
+                                </div>
                               </div>
 
+                              {/* 2. FOOD TYPE & REMAINING DETAILS */}
                               <div className="min-w-0">
                                 <div className="flex items-center space-x-2 flex-wrap">
-                                  <h4 className="font-black text-slate-900 text-sm sm:text-base tracking-tight">
+                                  <span className="text-xl">{slot.emoji}</span>
+                                  <h4 className="font-black text-slate-900 text-base sm:text-lg tracking-tight">
                                     {slot.name}
                                   </h4>
                                   {slot.tamilDisplayName && (
-                                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                    <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                                       {slot.tamilDisplayName}
                                     </span>
                                   )}
@@ -855,19 +877,10 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                                   )}
                                 </div>
 
-                                <div className="flex items-center space-x-2 text-[11px] text-slate-500 font-mono mt-0.5">
-                                  <span className="flex items-center gap-1">
-                                    <Clock className="w-3 h-3 text-slate-400" />
+                                <div className="flex items-center space-x-2 text-[11px] text-slate-500 font-mono mt-1">
+                                  <span className="flex items-center gap-1 font-bold text-slate-600">
+                                    <Clock className="w-3.5 h-3.5 text-emerald-600" />
                                     <span>{slot.startTime} - {slot.endTime}</span>
-                                  </span>
-                                  <span>•</span>
-                                  <span className="flex items-center gap-0.5 text-amber-600 font-semibold">
-                                    <Flame className="w-3 h-3 text-amber-500" />
-                                    <span>{slot.calories} kcal</span>
-                                  </span>
-                                  <span>•</span>
-                                  <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
-                                    Rate: ₹{slot.rate ?? slot.cost ?? 40}
                                   </span>
                                 </div>
                               </div>
@@ -875,25 +888,25 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
 
                             <div className="flex items-center space-x-2 shrink-0">
                               <div
-                                className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all ${
+                                className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all ${
                                   isSelected
                                     ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
                                     : 'border-slate-300 bg-white text-transparent'
                                 }`}
                               >
-                                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                <Check className="w-4 h-4 stroke-[3]" />
                               </div>
                             </div>
                           </div>
 
                           {/* Menu Items description */}
-                          <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-baseline justify-between gap-2 text-xs">
-                            <p className="text-slate-600 text-xs truncate max-w-md font-sans">
-                              <strong className="text-slate-700 font-semibold">Menu:</strong> {slot.description}
+                          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-baseline justify-between gap-2 text-xs">
+                            <p className="text-slate-700 text-xs truncate max-w-md font-sans">
+                              <strong className="text-slate-900 font-semibold">Menu:</strong> {slot.description}
                             </p>
                             <span
                               className={`text-[10px] font-bold shrink-0 ${
-                                isSelected ? 'text-emerald-700' : 'text-slate-400'
+                                isSelected ? 'text-emerald-700 font-extrabold' : 'text-slate-400'
                               }`}
                             >
                               {isSelected ? '✓ Selected' : isAlreadyBooked ? 'Locked' : 'Tap to Select'}
@@ -905,30 +918,51 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                 </div>
 
                 {/* =========================================================== */}
-                {/* QUANTITY SELECTOR: Shown ONLY for Snacks                    */}
+                {/* QUANTITY SELECTOR: For Tiffin & Tea/Snacks (Min 1, Max 10)  */}
                 {/* =========================================================== */}
-                {selectedMealSlot.toLowerCase().includes('snacks') && (
-                  <div className="bg-amber-50/95 border-2 border-amber-300 rounded-2xl p-2.5 sm:p-3 flex items-center justify-between shadow-2xs animate-in fade-in slide-in-from-bottom-2 duration-300 shrink-0 my-1">
+                {(selectedMealSlot === 'Tiffin' || selectedMealSlot === 'Tea/Snacks' || selectedMealSlot.toLowerCase().includes('tea') || selectedMealSlot.toLowerCase().includes('snack')) && (
+                  <div className="bg-amber-50/95 border-2 border-amber-300 rounded-2xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in slide-in-from-bottom-2 duration-300 shrink-0 my-1">
                     <div className="flex items-center space-x-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs">
-                        <UtensilsCrossed className="w-4 h-4" />
+                      <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black text-sm shadow-xs">
+                        Qty
                       </div>
                       <div>
                         <div className="flex items-center space-x-2">
                           <span className="text-xs font-black text-slate-900 uppercase tracking-tight">
-                            Select Quantity / எண்ணிக்கை
+                            Select Quantity / எண்ணிக்கை (1 - 10)
                           </span>
                           <span className="text-[9px] font-mono font-bold bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full border border-amber-300">
-                            Snacks Only
+                            Prints {snacksQty} {snacksQty > 1 ? 'Individual Slips' : 'Slip'}
                           </span>
                         </div>
-                        <p className="text-[10px] text-amber-800 font-medium mt-0.5">
-                          Choose number of snack portions to dispense
+                        <p className="text-[10px] text-amber-900 font-medium mt-0.5">
+                          Each portion prints its own individual token slip with distinct QR code
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 shrink-0 self-end sm:self-center">
+                      {/* Direct Quick Pills */}
+                      <div className="hidden sm:flex items-center space-x-1 mr-1">
+                        {[1, 2, 3, 4, 5, 10].map((num) => (
+                          <button
+                            key={num}
+                            type="button"
+                            onClick={() => {
+                              soundEngine.playSelectSound();
+                              setSnacksQty(num);
+                            }}
+                            className={`w-7 h-7 rounded-lg text-xs font-black font-mono transition-all cursor-pointer ${
+                              snacksQty === num
+                                ? 'bg-amber-600 text-white shadow-xs'
+                                : 'bg-white hover:bg-amber-100 text-slate-700 border border-slate-200'
+                            }`}
+                          >
+                            {num}
+                          </button>
+                        ))}
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => {
@@ -936,14 +970,14 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                           setSnacksQty((q) => Math.max(1, q - 1));
                         }}
                         disabled={snacksQty <= 1}
-                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 font-black text-lg flex items-center justify-center shadow-2xs active:scale-95 disabled:opacity-30 cursor-pointer"
+                        className="w-9 h-9 rounded-xl bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 font-black text-lg flex items-center justify-center shadow-2xs active:scale-95 disabled:opacity-30 cursor-pointer"
                         title="Decrease quantity"
                       >
                         -
                       </button>
 
-                      <div className="w-9 text-center">
-                        <span className="font-black text-xl text-slate-950 font-mono">
+                      <div className="w-10 text-center">
+                        <span className="font-black text-2xl text-slate-950 font-mono">
                           {snacksQty}
                         </span>
                         <span className="text-[8px] text-slate-500 block -mt-1 font-bold">
@@ -958,7 +992,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                           setSnacksQty((q) => Math.min(10, q + 1));
                         }}
                         disabled={snacksQty >= 10}
-                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-lg flex items-center justify-center shadow-xs active:scale-95 disabled:opacity-30 cursor-pointer"
+                        className="w-9 h-9 rounded-xl bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 font-black text-lg flex items-center justify-center shadow-2xs active:scale-95 disabled:opacity-30 cursor-pointer"
                         title="Increase quantity"
                       >
                         +
@@ -966,6 +1000,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                     </div>
                   </div>
                 )}
+
 
                 {/* Bottom Row: Selected Meal Session & Confirm Print Button */}
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 sm:p-3 flex flex-row items-center justify-between gap-3 shrink-0">
@@ -977,13 +1012,13 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                       <span className="text-sm font-black text-slate-900 truncate">
                         {selectedMealSlot}
                       </span>
-                      {selectedMealSlot.toLowerCase().includes('snacks') && (
+                      {(selectedMealSlot === 'Tiffin' || selectedMealSlot === 'Tea/Snacks' || selectedMealSlot.toLowerCase().includes('tea') || selectedMealSlot.toLowerCase().includes('snack')) && snacksQty > 1 && (
                         <span className="text-[10px] font-mono bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full font-bold border border-amber-300">
-                          QTY: <strong>{snacksQty}</strong>
+                          {snacksQty} Slips
                         </span>
                       )}
                       <span className="text-[9px] font-mono bg-emerald-100 text-emerald-800 px-2 py-0.2 rounded-full font-bold border border-emerald-200">
-                        80mm Slip
+                        80mm Thermal
                       </span>
                     </div>
                   </div>
@@ -992,7 +1027,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                     id="btnConfirmAndPrintSlip"
                     onClick={handleConfirmAndPrint}
                     disabled={Boolean(duplicateOrder) || isDispensing}
-                    className={`px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-sm transition-all transform active:scale-95 flex items-center justify-center space-x-2 shrink-0 ${
+                    className={`px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-sm transition-all transform active:scale-95 flex items-center justify-center space-x-2 shrink-0 cursor-pointer ${
                       duplicateOrder || isDispensing
                         ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                         : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
@@ -1002,9 +1037,9 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                     <span>
                       {isDispensing
                         ? 'Dispensing...'
-                        : selectedMealSlot.toLowerCase().includes('snacks')
-                        ? `Confirm & Print Slip (${snacksQty} QTY)`
-                        : 'Confirm & Print Slip'}
+                        : (selectedMealSlot === 'Tiffin' || selectedMealSlot === 'Tea/Snacks' || selectedMealSlot.toLowerCase().includes('tea') || selectedMealSlot.toLowerCase().includes('snack')) && snacksQty > 1
+                        ? `Confirm & Print ${snacksQty} Slips (₹${(mealSlots.find(s => s.name === selectedMealSlot)?.rate ?? 40) * snacksQty})`
+                        : `Confirm & Print Slip (₹${mealSlots.find(s => s.name === selectedMealSlot)?.rate ?? 40})`}
                     </span>
                   </button>
                 </div>

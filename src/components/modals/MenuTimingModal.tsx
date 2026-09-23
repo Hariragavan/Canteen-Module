@@ -10,7 +10,6 @@ import {
   Sparkles,
   Save,
   CheckCircle2,
-  Flame,
 } from 'lucide-react';
 
 interface MenuTimingModalProps {
@@ -19,13 +18,11 @@ interface MenuTimingModalProps {
   onMenuUpdated?: () => void;
 }
 
-// Quick Tamil dishes suggestion chips
+// Quick Tamil dishes suggestion chips for 3 meal slots
 const TAMIL_DISH_SUGGESTIONS: Record<string, string[]> = {
-  Breakfast: ['இட்லி, சாம்பார், சட்னி', 'மெதுவடை', 'பொங்கல்', 'மசால் தோசை', 'ஃபில்டர் காபி'],
-  Lunch: ['சாம்பார் சாதம்', 'காய்கறி கூட்டு, பொரியல்', 'ரசம், மோர்', 'சப்பாத்தி குருமா', 'பாயாசம்'],
-  'Tea or Coffee': ['ஸ்பெஷல் மசாலா டீ', 'ஃபில்டர் காபி', 'சுக்கு காபி', 'பிஸ்கட்'],
-  Snacks: ['வெங்காய பக்கோடா', 'சூடான சமோசா', 'மெது பஜ்ஜி', 'புதினா சட்னி', 'கார மிக்சர்'],
-  Dinner: ['சப்பாத்தி, தட்கா தால்', 'வெஜ் பிரியாணி', 'தோசை, குருமா', 'ஜீரா ரைஸ்', 'தயிர் சாதம்'],
+  Tiffin: ['இட்லி, சாம்பார், சட்னி', 'மெதுவடை', 'வெண் பொங்கல்', 'பூரி மசாலா', 'மசால் தோசை', 'ஃபில்டர் காபி'],
+  Lunch: ['சாம்பார் சாதம்', 'காய்கறி கூட்டு, பொரியல்', 'ரசம், மோர்', 'அப்பளம்', 'சப்பாத்தி குருமா', 'பாயாசம்'],
+  'Tea/Snacks': ['ஸ்பெஷல் மசாலா டீ', 'ஃபில்டர் காபி', 'வெங்காய பக்கோடா', 'சூடான சமோசா', 'மெது பஜ்ஜி', 'புதினா சட்னி'],
 };
 
 export const MenuTimingModal: React.FC<MenuTimingModalProps> = ({
@@ -34,7 +31,7 @@ export const MenuTimingModal: React.FC<MenuTimingModalProps> = ({
   onMenuUpdated,
 }) => {
   const [slots, setSlots] = useState<MealSlotConfig[]>([]);
-  const [activeTab, setActiveTab] = useState<MealSlotName>('Breakfast');
+  const [activeTab, setActiveTab] = useState<MealSlotName>('Tiffin');
   const [isSaved, setIsSaved] = useState<boolean>(false);
 
   useEffect(() => {
@@ -244,52 +241,29 @@ export const MenuTimingModal: React.FC<MenuTimingModalProps> = ({
               </div>
             </div>
 
-            {/* Meal Cost / Rate & Calories */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Meal Cost (₹) */}
-              <div className="flex items-center space-x-3 bg-emerald-50/70 border border-emerald-200 rounded-2xl p-3.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-lg shadow-2xs font-mono">
-                  ₹
-                </div>
-                <div className="flex-1 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block">Meal Cost / Rate (விலை):</span>
-                    <span className="text-[10px] text-emerald-800 font-medium">Prints on thermal receipt slip</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <span className="text-sm font-bold text-slate-700 font-mono">₹</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={currentSlot.rate ?? currentSlot.cost ?? 40}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10) || 0;
-                        handleUpdateSlot(currentSlot.name, 'rate', val);
-                        handleUpdateSlot(currentSlot.name, 'cost', val);
-                      }}
-                      className="w-24 bg-white border border-emerald-300 rounded-xl px-2.5 py-1.5 text-sm font-mono font-black text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
-                    />
-                  </div>
-                </div>
+            {/* Meal Cost / Rate */}
+            <div className="flex items-center space-x-3 bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4">
+              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-xl shadow-2xs font-mono">
+                ₹
               </div>
-
-              {/* Calories / Approx Energy */}
-              <div className="flex items-center space-x-3 bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
-                <Flame className="w-5 h-5 text-amber-500 shrink-0" />
-                <div className="flex-1 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-700 block">Estimated Nutrition:</span>
-                    <span className="text-[10px] text-slate-400 font-medium">Approximate energy</span>
-                  </div>
-                  <div className="flex items-center space-x-1.5">
-                    <input
-                      type="number"
-                      value={currentSlot.calories || 400}
-                      onChange={(e) => handleUpdateSlot(currentSlot.name, 'calories', parseInt(e.target.value, 10) || 0)}
-                      className="w-20 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-sm font-mono font-bold text-slate-800 text-right focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                    <span className="text-xs text-slate-500 font-mono">kcal</span>
-                  </div>
+              <div className="flex-1 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <span className="text-sm font-bold text-slate-900 block">Meal Cost / Rate (விலை):</span>
+                  <span className="text-xs text-emerald-800 font-medium">Price printed on thermal receipt slip</span>
+                </div>
+                <div className="flex items-center space-x-1.5">
+                  <span className="text-base font-bold text-slate-700 font-mono">₹</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={currentSlot.rate ?? currentSlot.cost ?? 40}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10) || 0;
+                      handleUpdateSlot(currentSlot.name, 'rate', val);
+                      handleUpdateSlot(currentSlot.name, 'cost', val);
+                    }}
+                    className="w-28 bg-white border border-emerald-300 rounded-xl px-3 py-2 text-base font-mono font-black text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                  />
                 </div>
               </div>
             </div>

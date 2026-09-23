@@ -1,4 +1,4 @@
-export type MealSlotName = 'Breakfast' | 'Lunch' | 'Tea or Coffee' | 'Tea & Snacks' | 'Tea' | 'Snacks' | 'Dinner';
+export type MealSlotName = 'Tiffin' | 'Lunch' | 'Tea/Snacks' | 'Breakfast' | 'Tea or Coffee' | 'Snacks' | 'Dinner';
 
 export type UserRole = 'Employee' | 'Staff';
 
@@ -17,13 +17,13 @@ export interface Employee {
 export interface MealSlotConfig {
   name: MealSlotName;
   startTime: string;   // '07:30'
-  endTime: string;     // '10:30'
+  endTime: string;     // '11:00'
   displayName: string;
   tamilDisplayName?: string;
   emoji: string;
   category: 'Morning' | 'Active Now' | 'Afternoon' | 'Evening' | 'Night Slot';
   description: string;
-  calories: number;
+  calories?: number;
   rate?: number;       // Meal cost / rate e.g. 40
   cost?: number;       // Alias for rate
   isEligible: boolean;

@@ -4,20 +4,19 @@ import { supabaseManager } from './supabase';
 const STORAGE_ORDERS_KEY = 'canteen_local_orders_v3';
 const STORAGE_TOKEN_KEY = 'canteen_token_seq_v3';
 const STORAGE_EMPLOYEES_KEY = 'canteen_local_employees_v3';
-const STORAGE_MEAL_SLOTS_KEY = 'canteen_meal_slots_v5';
+const STORAGE_MEAL_SLOTS_KEY = 'canteen_meal_slots_v6';
 
-// Standard 5 Canteen Meal Slots: Breakfast, Lunch, Tea or Coffee, Snacks, Dinner with bilingual Tamil/English support
+// Strictly 3 Canteen Meal Slots: Tiffin, Lunch, Tea/Snacks with bilingual Tamil/English support
 export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
   {
-    name: 'Breakfast',
+    name: 'Tiffin',
     startTime: '07:30',
-    endTime: '10:30',
-    displayName: 'Breakfast Special',
-    tamilDisplayName: 'காலை உணவு',
+    endTime: '11:00',
+    displayName: 'Tiffin Special',
+    tamilDisplayName: 'டிபன் (Tiffin)',
     emoji: '🥞',
     category: 'Morning',
-    description: 'Steamed Idli, Crispy Medu Vada, Sambar & Filter Coffee / இட்லி, மெதுவடை, சாம்பார், காபி',
-    calories: 420,
+    description: 'Steamed Idli, Crispy Medu Vada, Pongal, Poori, Sambar & Filter Coffee / இட்லி, மெதுவடை, பொங்கல், பூரி, சாம்பார், காபி',
     rate: 40,
     cost: 40,
     isEligible: true,
@@ -26,60 +25,28 @@ export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
   {
     name: 'Lunch',
     startTime: '12:00',
-    endTime: '15:00',
+    endTime: '15:30',
     displayName: 'Executive Lunch Platter',
-    tamilDisplayName: 'மதிய உணவு',
+    tamilDisplayName: 'மதிய உணவு (Lunch)',
     emoji: '🍛',
     category: 'Active Now',
-    description: 'Executive Meals, Basmati Rice, Paneer Butter Masala, Dal, Phulka / மதிய உணவு சாப்பாடு, சாதம், சாம்பார், கூட்டு, பொரியல்',
-    calories: 740,
+    description: 'Executive Meals, Basmati Rice, Sambar, Rasam, Curd, Kootu, Poriyal, Appalam / மதிய சாப்பாடு, சாதம், சாம்பார், கூட்டு, பொரியல்',
     rate: 40,
     cost: 40,
     isEligible: true,
     isActive: true,
   },
   {
-    name: 'Tea or Coffee',
+    name: 'Tea/Snacks',
     startTime: '15:30',
-    endTime: '17:00',
-    displayName: 'Tea or Coffee',
-    tamilDisplayName: 'தேநீர் / காபி',
+    endTime: '18:30',
+    displayName: 'Tea & Evening Snacks',
+    tamilDisplayName: 'தேநீர் & ஸ்நாக்ஸ்',
     emoji: '☕',
     category: 'Evening',
-    description: 'Hot Cardamom Masala Chai, Special Filter Coffee & Biscuits / சுடச்சுட ஸ்பெஷல் டீ, ஃபில்டர் காபி',
-    calories: 180,
+    description: 'Special Masala Tea, Filter Coffee, Hot Samosa, Onion Pakoda, Medu Bajji / சுடச்சுட டீ, காபி, சமோசா, பக்கோடா',
     rate: 20,
     cost: 20,
-    isEligible: true,
-    isActive: true,
-  },
-  {
-    name: 'Snacks',
-    startTime: '16:30',
-    endTime: '18:30',
-    displayName: 'Evening Snacks',
-    tamilDisplayName: 'மாலை சிற்றுண்டி / ஸ்நாக்ஸ்',
-    emoji: '🥟',
-    category: 'Evening',
-    description: 'Crispy Samosa, Onion Pakoda, Mint Chutney / சமோசா, வெங்காய பக்கோடா, புதினா சட்னி',
-    calories: 320,
-    rate: 40,
-    cost: 40,
-    isEligible: true,
-    isActive: true,
-  },
-  {
-    name: 'Dinner',
-    startTime: '19:30',
-    endTime: '22:00',
-    displayName: 'Gourmet Dinner Feast',
-    tamilDisplayName: 'இரவு உணவு',
-    emoji: '🍲',
-    category: 'Night Slot',
-    description: 'Butter Roti, Dal Tadka, Seasonal Veg Curry, Jeera Rice & Curd / சப்பாத்தி, பருப்பு தட்கா, காய்கறி குருமா, சாதம்',
-    calories: 650,
-    rate: 40,
-    cost: 40,
     isEligible: true,
     isActive: true,
   },
@@ -138,7 +105,14 @@ class CanteenService {
       if (storedMealSlots) {
         try {
           const parsedSlots = JSON.parse(storedMealSlots);
-          if (Array.isArray(parsedSlots) && parsedSlots.length > 0) {
+          const hasLegacy = Array.isArray(parsedSlots) && parsedSlots.some(
+            ps => ps.name === 'Breakfast' || ps.name === 'Dinner' || ps.name === 'Snacks' || ps.name === 'Tea or Coffee'
+          );
+
+          if (hasLegacy || !Array.isArray(parsedSlots) || parsedSlots.length === 0) {
+            this.mealSlots = [...DEFAULT_MEAL_SLOTS];
+            this.saveMealSlotsLocal();
+          } else {
             this.mealSlots = parsedSlots.map(ps => {
               const def = DEFAULT_MEAL_SLOTS.find(d => d.name === ps.name);
               const r = ps.rate ?? ps.cost ?? def?.rate ?? 40;
@@ -148,8 +122,6 @@ class CanteenService {
                 cost: r,
               };
             });
-          } else {
-            this.mealSlots = [...DEFAULT_MEAL_SLOTS];
           }
         } catch {
           this.mealSlots = [...DEFAULT_MEAL_SLOTS];
@@ -280,16 +252,15 @@ class CanteenService {
         supabaseManager.broadcastChange('canteen_employees', 'UPDATE', this.employees);
       }
 
-      // 2. Fetch remote orders for today
-      const today = new Date().toISOString().slice(0, 10);
+      // 2. Fetch remote orders across all dates (up to 3000 records)
       const { data: remoteOrders, error: ordErr } = await client
         .from('canteen_orders')
         .select('*')
-        .eq('order_date', today)
-        .order('token_number', { ascending: true });
+        .order('created_at', { ascending: false })
+        .limit(3000);
 
       if (!ordErr && remoteOrders && remoteOrders.length > 0) {
-        this.orders = remoteOrders.map((rem: any) => ({
+        const mappedRemote: Order[] = remoteOrders.map((rem: any) => ({
           id: rem.id,
           token: rem.token_number,
           orderUuid: rem.order_uuid,
@@ -306,9 +277,27 @@ class CanteenService {
           timestamp: rem.created_at ? new Date(rem.created_at).getTime() : Date.now(),
           dateStr: rem.order_date,
         }));
-        const maxToken = Math.max(...this.orders.map((o) => o.token));
-        if (maxToken >= 100) {
-          this.tokenSeq = maxToken + 1;
+
+        // Merge local and remote orders without duplicates (keyed by orderUuid or id)
+        const orderMap = new Map<string, Order>();
+        this.orders.forEach(o => {
+          const key = (o.orderUuid || o.id).toLowerCase();
+          orderMap.set(key, o);
+        });
+        mappedRemote.forEach(o => {
+          const key = (o.orderUuid || o.id).toLowerCase();
+          orderMap.set(key, o);
+        });
+
+        // Store all merged historical orders sorted descending by timestamp
+        this.orders = Array.from(orderMap.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+        // Token sequence is based strictly on TODAY's orders so daily numbering is clean
+        const today = new Date().toISOString().slice(0, 10);
+        const todayTokens = this.orders.filter(o => o.dateStr === today).map(o => o.token);
+        const maxTodayToken = todayTokens.length > 0 ? Math.max(...todayTokens) : 100;
+        if (maxTodayToken >= 100) {
+          this.tokenSeq = maxTodayToken + 1;
         }
         this.saveLocal();
         supabaseManager.broadcastChange('canteen_orders', 'UPDATE', this.orders);
@@ -477,19 +466,108 @@ class CanteenService {
   }
 
   /**
-   * Duplicate Order Prevention: Checks if this user has already booked this slot today
+   * Duplicate Order Prevention: Only Lunch is restricted to 1 meal per employee per day.
+   * Tiffin and Tea/Snacks allow multiple quantities / orders.
    */
   public checkDuplicateBooking(userId: string, meal: MealSlotName): Order | undefined {
+    if (meal.toLowerCase() !== 'lunch') {
+      return undefined;
+    }
     const today = new Date().toISOString().slice(0, 10);
     return this.orders.find(o => 
       o.userId === userId && 
-      o.meal.toLowerCase() === meal.toLowerCase() && 
-      o.dateStr === today
+      o.meal.toLowerCase() === 'lunch' && 
+      o.dateStr === today &&
+      o.status !== 'CANCELLED'
     );
   }
 
   /**
-   * Creates new order, assigns incremental daily token, saves to store and Supabase
+   * Creates multiple sequential orders/tokens when quantity > 1
+   * Each token gets its own unique token number, order UUID, and QR code!
+   */
+  public async createOrdersBatch(
+    employee: Employee,
+    meal: MealSlotName,
+    items: any[] = [],
+    qty: number = 1,
+    rate?: number
+  ): Promise<Order[]> {
+    const existing = this.checkDuplicateBooking(employee.id, meal);
+    if (existing) {
+      throw new Error(`Duplicate Lock: ${meal} already issued for ${employee.name} at ${existing.issuedAt}`);
+    }
+
+    const count = Math.max(1, Math.min(10, qty || 1));
+    const configuredSlot = this.getMealSlots().find((s) => s.name === meal);
+    const resolvedRate = (rate !== undefined && rate !== null) 
+      ? rate 
+      : (configuredSlot?.rate ?? configuredSlot?.cost ?? 40);
+
+    const client = supabaseManager.getClient();
+    const createdOrders: Order[] = [];
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const dateStr = now.toISOString().slice(0, 10);
+
+    for (let i = 0; i < count; i++) {
+      let tokenNo = this.tokenSeq++;
+      const uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+      let orderUuid = `ORD-${Date.now().toString(36).toUpperCase()}-${tokenNo}-${uniqueSuffix}`;
+
+      if (client) {
+        try {
+          const { data: inserted, error } = await client.from('canteen_orders').insert({
+            user_id: employee.id,
+            user_name: employee.name,
+            department: employee.dept,
+            meal_slot: meal,
+            items: items || [],
+            rate: resolvedRate,
+            qty: 1,
+            status: 'PRINTED',
+            issued_at: new Date().toISOString(),
+            order_date: dateStr,
+          }).select().single();
+
+          if (!error && inserted) {
+            if (inserted.token_number) tokenNo = inserted.token_number;
+            if (inserted.order_uuid) orderUuid = inserted.order_uuid;
+          }
+        } catch (err) {
+          console.warn('Supabase remote insert fallback:', err);
+        }
+      }
+
+      const newOrder: Order = {
+        id: orderUuid.toLowerCase(),
+        token: tokenNo,
+        orderUuid,
+        userId: employee.id,
+        name: employee.name,
+        dept: employee.dept,
+        meal,
+        items: items || [],
+        rate: resolvedRate,
+        qty: 1,
+        status: 'PRINTED',
+        issuedAt: timeStr,
+        servedAt: null,
+        timestamp: now.getTime() + i,
+        dateStr,
+      };
+
+      createdOrders.push(newOrder);
+      this.orders.unshift(newOrder);
+      supabaseManager.broadcastChange('canteen_orders', 'INSERT', newOrder);
+    }
+
+    this.saveLocal();
+    return createdOrders;
+  }
+
+  /**
+   * Creates new single order, or delegates to createOrdersBatch if qty > 1
    */
   public async createOrder(
     employee: Employee,
@@ -498,74 +576,8 @@ class CanteenService {
     qty: number = 1,
     rate?: number
   ): Promise<Order> {
-    // 1. Guard against duplicate booking
-    const existing = this.checkDuplicateBooking(employee.id, meal);
-    if (existing) {
-      throw new Error(`Duplicate Lock: ${meal} already issued for ${employee.name} at ${existing.issuedAt}`);
-    }
-
-    // Dynamic rate resolution: use explicitly passed rate or lookup configured meal slot rate
-    const configuredSlot = this.getMealSlots().find((s) => s.name === meal);
-    const resolvedRate = (rate !== undefined && rate !== null) 
-      ? rate 
-      : (configuredSlot?.rate ?? configuredSlot?.cost ?? 40);
-
-    let tokenNo = this.tokenSeq++;
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const dateStr = now.toISOString().slice(0, 10);
-    let orderUuid = `ORD-${Date.now().toString(36).toUpperCase()}-${tokenNo}`;
-
-    // Sync to Supabase if connected (Supabase trigger set_daily_token_number generates atomic token)
-    const client = supabaseManager.getClient();
-    if (client) {
-      try {
-        const { data: inserted, error } = await client.from('canteen_orders').insert({
-          user_id: employee.id,
-          user_name: employee.name,
-          department: employee.dept,
-          meal_slot: meal,
-          items: items || [],
-          status: 'PRINTED',
-          issued_at: new Date().toISOString(),
-          order_date: dateStr,
-        }).select().single();
-
-        if (!error && inserted) {
-          if (inserted.token_number) tokenNo = inserted.token_number;
-          if (inserted.order_uuid) orderUuid = inserted.order_uuid;
-        }
-      } catch (err) {
-        console.warn('Supabase remote insert fallback:', err);
-      }
-    }
-
-    const newOrder: Order = {
-      id: orderUuid.toLowerCase(),
-      token: tokenNo,
-      orderUuid,
-      userId: employee.id,
-      name: employee.name,
-      dept: employee.dept,
-      meal,
-      items: items || [],
-      rate: resolvedRate,
-      qty,
-      status: 'PRINTED',
-      issuedAt: timeStr,
-      servedAt: null,
-      timestamp: now.getTime(),
-      dateStr,
-    };
-
-    // Save locally
-    this.orders.unshift(newOrder);
-    this.saveLocal();
-
-    // Broadcast change
-    supabaseManager.broadcastChange('canteen_orders', 'INSERT', newOrder);
-
-    return newOrder;
+    const orders = await this.createOrdersBatch(employee, meal, items, qty, rate);
+    return orders[0];
   }
 
   /**
@@ -682,13 +694,16 @@ class CanteenService {
     supabaseManager.broadcastChange('canteen_employees', 'DELETE', { type: 'RESET' });
   }
 
-  public exportAuditCSV(dateStr?: string): void {
-    const targetOrders = dateStr
-      ? this.orders.filter(o => o.dateStr === dateStr)
-      : this.orders;
+  public exportAuditCSV(fromDate?: string, toDate?: string): void {
+    let targetOrders = [...this.orders];
+    if (fromDate && toDate) {
+      targetOrders = targetOrders.filter(o => o.dateStr >= fromDate && o.dateStr <= toDate);
+    } else if (fromDate) {
+      targetOrders = targetOrders.filter(o => o.dateStr === fromDate);
+    }
 
     if (targetOrders.length === 0) {
-      alert(`No records found to export for ${dateStr ? `date ${dateStr}` : 'the ledger'}.`);
+      alert(`No records found to export for ${fromDate ? `date range ${fromDate} to ${toDate || fromDate}` : 'the ledger'}.`);
       return;
     }
 
@@ -699,6 +714,9 @@ class CanteenService {
       'Employee Name',
       'Department',
       'Meal Slot',
+      'Rate (₹)',
+      'Quantity',
+      'Total Amount (₹)',
       'Menu Items',
       'Status',
       'Issued Time',
@@ -710,6 +728,9 @@ class CanteenService {
       const itemDesc = Array.isArray(o.items) && o.items.length > 0
         ? o.items.map(it => (typeof it === 'string' ? it : it?.description || it?.name || '')).join('; ')
         : '';
+      const rateVal = o.rate ?? 40;
+      const qtyVal = o.qty ?? 1;
+      const totalAmount = rateVal * qtyVal;
       return [
         o.token,
         `"${o.orderUuid}"`,
@@ -717,6 +738,9 @@ class CanteenService {
         `"${o.name}"`,
         `"${o.dept}"`,
         `"${o.meal}"`,
+        rateVal,
+        qtyVal,
+        totalAmount,
         `"${itemDesc.replace(/"/g, '""')}"`,
         o.status,
         `"${o.issuedAt}"`,
@@ -730,9 +754,11 @@ class CanteenService {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    const fileName = dateStr
-      ? `Canteen_Audit_Ledger_${dateStr}.csv`
-      : `Canteen_Audit_Ledger_All_${new Date().toISOString().slice(0, 10)}.csv`;
+    const fileName = fromDate && toDate
+      ? `Canteen_Audit_${fromDate}_to_${toDate}.csv`
+      : fromDate
+      ? `Canteen_Audit_${fromDate}.csv`
+      : `Canteen_Audit_All_${new Date().toISOString().slice(0, 10)}.csv`;
     link.setAttribute('download', fileName);
     document.body.appendChild(link);
     link.click();
