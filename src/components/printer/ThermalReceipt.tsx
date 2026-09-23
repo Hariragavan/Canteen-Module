@@ -116,16 +116,19 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
           {/* Right Column: QTY, RS: [40], [Tamil Box], [English Box], Time */}
           <div className="flex-1 min-w-0 flex flex-col justify-start pl-1 text-left">
             
-            {/* Top Right: QTY: 1, RS: | 40 | */}
-            <div className="flex items-center justify-end gap-1.5 mb-2">
-              <span className="text-xs font-bold text-black tracking-tight whitespace-nowrap">
-                QTY: {qtyVal}, RS:
+            {/* Top Right: Big Amount Box [ RS: 40 ] */}
+            <div className="border-2 border-black px-2 py-1 flex items-baseline justify-between">
+              <span className="text-lg sm:text-xl font-bold text-black font-sans leading-none">
+                RS:
               </span>
-              <div className="border-2 border-black w-12 h-12 flex items-center justify-center shrink-0">
-                <span className="text-2xl font-black text-black leading-none">
-                  {rateVal}
-                </span>
-              </div>
+              <span className="text-5xl sm:text-6xl font-black text-black leading-none tracking-tight">
+                {rateVal}
+              </span>
+            </div>
+
+            {/* QTY Box directly below */}
+            <div className="border-2 border-black text-center py-0.5 px-1 font-bold text-xs sm:text-sm text-black mt-1 mb-1.5">
+              QTY: {qtyVal}
             </div>
 
             {/* Tamil Meal Name Box */}
