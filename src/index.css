@@ -79,7 +79,7 @@
 /* TVS RP 3230 ABW Thermal Printer 80mm Print Media Query */
 @media print {
   @page {
-    size: 72mm 68mm;
+    size: portrait;
     margin: 0mm !important;
   }
 
@@ -122,21 +122,19 @@
     color: #000000 !important;
   }
 
-  /* Discrete Page Cutting: Exact 68mm height and page-break-after triggers hardware cutter per slip */
+  /* Individual Slip Pagination: Strictly portrait, fits 80mm roll width, printed one by one separately */
   .tvs-slip-page {
     display: block !important;
     width: 68mm !important;
     max-width: 70mm !important;
-    height: 67mm !important;
-    max-height: 68mm !important;
-    overflow: hidden !important;
     page-break-before: auto !important;
     page-break-after: always !important;
     page-break-inside: avoid !important;
+    break-before: auto !important;
     break-after: page !important;
     break-inside: avoid !important;
-    margin: 0 !important;
-    padding: 1.5mm 1mm 2mm 1mm !important;
+    margin: 0 0 8mm 0 !important;
+    padding: 2mm 1mm 6mm 1mm !important;
     box-sizing: border-box !important;
     background: #ffffff !important;
     color: #000000 !important;
@@ -149,5 +147,6 @@
   .tvs-slip-page:last-child {
     page-break-after: auto !important;
     break-after: auto !important;
+    margin-bottom: 0 !important;
   }
 }

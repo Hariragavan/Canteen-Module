@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Star, CheckCircle2, MessageSquareHeart } from 'lucide-react';
 import type { MealSlotName } from '../../types';
 import { canteenService } from '../../services/canteenService';
@@ -24,51 +24,73 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
   const [selectedSlot, setSelectedSlot] = useState<MealSlotName>(defaultSlot);
   const [rating, setRating] = useState<number>(0);
   const [hoverRating, setHoverRating] = useState<number>(0);
-  const [comment, setComment] = useState<string>('');
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(10);
+
+  // 10-second auto-close timer when opened
+  useEffect(() => {
+    if (!isOpen) {
+      setRemainingSeconds(10);
+      return;
+    }
+
+    setRemainingSeconds(10);
+    const interval = setInterval(() => {
+      setRemainingSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          onClose();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
   const effectiveRating = hoverRating || rating;
 
-  // Star styling based on requirements:
-  // - 5th star: Gold
-  // - 3 or 4: Green
-  // - 1 or 2: Light Red
-  // - Blank: White fill with Green border
+  // Star styling strictly as requested:
+  // - Dark solid colors without shadows/shades
+  // - 5th star: Dark Gold
+  // - 3 or 4: Dark Green
+  // - 1 or 2: Dark Red
+  // - Blank: White fill with dark border
   const getStarClasses = (starIndex: number) => {
     const isFilled = starIndex <= effectiveRating;
     if (!isFilled) {
-      // Blank: White with Green border
-      return 'fill-white stroke-emerald-600 stroke-[2] text-transparent hover:scale-110';
+      return 'fill-white stroke-slate-400 stroke-[2] text-transparent hover:scale-105';
     }
 
     if (effectiveRating === 5) {
-      // 5th star: Gold
-      return 'fill-amber-400 stroke-amber-500 text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)] scale-105';
+      // 5th star: Dark Gold (No drop-shadow / shades)
+      return 'fill-amber-600 stroke-amber-700 text-amber-600';
     }
     if (effectiveRating === 3 || effectiveRating === 4) {
-      // 3 or 4: Green
-      return 'fill-emerald-500 stroke-emerald-600 text-emerald-500 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]';
+      // 3 or 4: Dark Green (No drop-shadow / shades)
+      return 'fill-emerald-700 stroke-emerald-800 text-emerald-700';
     }
-    // 1 or 2: Light Red
-    return 'fill-rose-400 stroke-rose-500 text-rose-400 drop-shadow-[0_0_8px_rgba(244,63,94,0.4)]';
+    // 1 or 2: Dark Red (No drop-shadow / shades)
+    return 'fill-rose-700 stroke-rose-800 text-rose-700';
   };
 
   const getRatingLabel = () => {
     switch (effectiveRating) {
       case 5:
-        return { text: 'Outstanding Quality & Taste! / அருமையான சுவை', color: 'text-amber-600 font-black' };
+        return { text: 'Outstanding Quality & Taste! / அருமையான சுவை', color: 'text-amber-700 font-black' };
       case 4:
-        return { text: 'Very Good & Fresh / மிக நன்று', color: 'text-emerald-700 font-bold' };
+        return { text: 'Very Good & Fresh / மிக நன்று', color: 'text-emerald-800 font-bold' };
       case 3:
-        return { text: 'Good & Satisfying / நன்று', color: 'text-emerald-600 font-bold' };
+        return { text: 'Good & Satisfying / நன்று', color: 'text-emerald-700 font-bold' };
       case 2:
-        return { text: 'Fair / சுமாரானது', color: 'text-rose-600 font-medium' };
+        return { text: 'Fair / சுமாரானது', color: 'text-rose-700 font-medium' };
       case 1:
-        return { text: 'Needs Improvement / மேம்படுத்த வேண்டும்', color: 'text-rose-700 font-semibold' };
+        return { text: 'Needs Improvement / மேம்படுத்த வேண்டும்', color: 'text-rose-800 font-semibold' };
       default:
-        return { text: 'Select rating stars / மதிப்பீட்டை தேர்வு செய்யவும்', color: 'text-slate-400 font-medium' };
+        return { text: 'Select rating stars / மதிப்பீட்டை தேர்வு செய்யவும்', color: 'text-slate-500 font-medium' };
     }
   };
 
@@ -87,7 +109,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
     await canteenService.submitFeedback({
       mealSlot: selectedSlot,
       rating,
-      comment: comment.trim(),
+      comment: '',
       timestamp: Date.now(),
       dateStr: new Date().toISOString().slice(0, 10),
     });
@@ -95,20 +117,19 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
     setTimeout(() => {
       setIsSubmitted(false);
       setRating(0);
-      setComment('');
       onClose();
-    }, 1400);
+    }, 1200);
   };
 
   const ratingLabel = getRatingLabel();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white border-2 border-emerald-500/40 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
+      <div className="bg-white border-2 border-emerald-600/40 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
         {/* Header */}
         <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
-            <div className="p-2 rounded-xl bg-emerald-600 text-white shadow-xs">
+            <div className="p-2 rounded-xl bg-emerald-700 text-white shadow-xs">
               <MessageSquareHeart className="w-5 h-5" />
             </div>
             <div>
@@ -121,20 +142,25 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
-            title="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-2">
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+              {remainingSeconds}s
+            </span>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
         {isSubmitted ? (
           <div className="p-8 flex flex-col items-center justify-center text-center animate-in zoom-in-95 duration-300">
-            <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-3">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mb-3">
               <CheckCircle2 className="w-10 h-10" />
             </div>
             <h4 className="text-lg font-black text-slate-900">
@@ -164,7 +190,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
                       }}
                       className={`p-2.5 rounded-2xl border-2 flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
                         isSelected
-                          ? 'border-emerald-600 bg-emerald-50 text-emerald-950 font-bold shadow-xs scale-[1.02]'
+                          ? 'border-emerald-700 bg-emerald-50 text-emerald-950 font-bold shadow-xs scale-[1.02]'
                           : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
                       }`}
                     >
@@ -177,14 +203,14 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
               </div>
             </div>
 
-            {/* Step 2: 5-Star Rating */}
+            {/* Step 2: 5-Star Rating (Dark Solid Colors, No Shades) */}
             <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 flex flex-col items-center justify-center text-center">
               <label className="text-xs font-bold text-slate-800 uppercase tracking-tight mb-2">
                 2. Rate Your Meal Experience:
               </label>
 
-              {/* 5 Stars */}
-              <div className="flex items-center space-x-2 sm:space-x-3 my-1">
+              {/* 5 Stars with solid dark colors and no drop-shadow */}
+              <div className="flex items-center space-x-2 sm:space-x-3 my-2">
                 {[1, 2, 3, 4, 5].map((starIndex) => (
                   <button
                     key={starIndex}
@@ -192,7 +218,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
                     onClick={() => handleSelectStar(starIndex)}
                     onMouseEnter={() => setHoverRating(starIndex)}
                     onMouseLeave={() => setHoverRating(0)}
-                    className="p-1 transition-transform active:scale-90 cursor-pointer"
+                    className="p-1 transition-transform active:scale-95 cursor-pointer"
                     title={`${starIndex} Star`}
                   >
                     <Star className={`w-8 h-8 sm:w-9 sm:h-9 transition-colors ${getStarClasses(starIndex)}`} />
@@ -206,26 +232,11 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
               </p>
             </div>
 
-            {/* Optional Comment */}
-            <div>
-              <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                Optional Comment / கூடுதல் கருத்து:
-              </label>
-              <input
-                type="text"
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder="e.g. Delicious idli, great chutney, hot coffee..."
-                className="w-full px-3.5 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-slate-900"
-                maxLength={120}
-              />
-            </div>
-
             {/* Submit Button */}
             <button
               type="submit"
               disabled={rating === 0}
-              className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-2xl font-bold text-sm shadow-md shadow-emerald-600/20 transition-all active:scale-[0.98] cursor-pointer disabled:cursor-not-allowed"
+              className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white rounded-2xl font-bold text-sm shadow-md shadow-emerald-800/20 transition-all active:scale-[0.98] cursor-pointer disabled:cursor-not-allowed"
             >
               Submit Feedback (கருத்தை அனுப்பவும்)
             </button>

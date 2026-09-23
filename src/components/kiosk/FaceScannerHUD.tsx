@@ -10,6 +10,9 @@ import {
 
 export interface FaceScannerHUDHandle {
   captureSnapshot: () => string;
+  startCamera: () => void;
+  stopCamera: (message?: string) => void;
+  isCameraRunning: () => boolean;
 }
 
 interface FaceScannerHUDProps {
@@ -18,6 +21,7 @@ interface FaceScannerHUDProps {
   isScanning?: boolean;
   isCapturing?: boolean;
   isVerified?: boolean;
+  autoStartCamera?: boolean;
   onUserIdentified?: (employee: Employee) => void;
   onFaceNotRegistered?: (reason: string) => void;
   onAutoScan?: () => void;
@@ -30,6 +34,7 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
       isScanning = false,
       isCapturing = false,
       isVerified = false,
+      autoStartCamera = false,
       onUserIdentified,
       onFaceNotRegistered,
     },
@@ -37,13 +42,12 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
   ) => {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const [modelLoaded, setModelLoaded] = useState<boolean>(false);
-    const [statusMessage, setStatusMessage] = useState<string>('Camera is closed. Click Open Camera to start.');
+    const [statusMessage, setStatusMessage] = useState<string>('Camera is closed. Tap to turn on.');
     // App opens with camera CLOSED by default as requested
     const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
     const [hasFaceInFrame, setHasFaceInFrame] = useState<boolean>(false);
     const [locallyVerified, setLocallyVerified] = useState<boolean>(false);
     const isMatching = useRef<boolean>(false);
-    const lastFaceSeenRef = useRef<number>(Date.now());
     const cameraOpenedAtRef = useRef<number>(Date.now());
     const hasDetectedFaceOnceRef = useRef<boolean>(false);
 
@@ -82,9 +86,10 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
       }
       setIsCameraActive(false);
       setHasFaceInFrame(false);
+      setLocallyVerified(false);
       hasDetectedFaceOnceRef.current = false;
       isMatching.current = false;
-      setStatusMessage(message || 'Camera is closed. Click Open Camera to start.');
+      setStatusMessage(message || 'Camera is closed. Tap to turn on.');
     }, []);
 
     const initCamera = useCallback(async () => {
@@ -93,9 +98,10 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
         await startTabletCamera(videoRef.current);
         setIsCameraActive(true);
         setHasFaceInFrame(false);
+        setLocallyVerified(false);
         hasDetectedFaceOnceRef.current = false;
+        isMatching.current = false;
         cameraOpenedAtRef.current = Date.now();
-        lastFaceSeenRef.current = Date.now();
         setStatusMessage('Align your face within the circle');
       } catch (err) {
         console.warn('Physical camera access error:', err);
@@ -103,6 +109,28 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
         setStatusMessage('Camera access denied or unavailable');
       }
     }, []);
+
+    // Auto-start camera when triggered by parent (after print or after 30s session timeout)
+    useEffect(() => {
+      if (autoStartCamera && !isCameraActive) {
+        initCamera();
+      }
+    }, [autoStartCamera, isCameraActive, initCamera]);
+
+    // 10-second auto-turn-off timer: turns off camera after 10sec when no one is verified
+    useEffect(() => {
+      if (!isCameraActive || isVerified || locallyVerified) return;
+
+      const timer = setInterval(() => {
+        if (!isCameraActive || isVerified || locallyVerified) return;
+        const elapsed = Date.now() - cameraOpenedAtRef.current;
+        if (elapsed >= 10000) {
+          stopCamera('Camera turned off (10s inactivity). Tap to turn on.');
+        }
+      }, 500);
+
+      return () => clearInterval(timer);
+    }, [isCameraActive, isVerified, locallyVerified, stopCamera]);
 
     // Clean up media tracks on unmount
     useEffect(() => {
@@ -119,13 +147,8 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
     // 3. Periodic Face Tracking Loop:
     // - Shows strictly "Align your face within the circle" during scanning
     // - Uses tablet-optimized dual detector with offscreen canvas conversion
-    // - Turns OFF camera after 5 seconds if face leaves frame (with 15s setup grace when opened)
     useEffect(() => {
       if (!modelLoaded || isVerified || locallyVerified || !isCameraActive) return;
-
-      lastFaceSeenRef.current = Date.now();
-      cameraOpenedAtRef.current = Date.now();
-      hasDetectedFaceOnceRef.current = false;
 
       const checkInterval = setInterval(async () => {
         if (!isCameraActive || isVerified || locallyVerified) return;
@@ -139,23 +162,6 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
 
           if (!detection) {
             setHasFaceInFrame(false);
-            const now = Date.now();
-            const elapsedSinceOpen = now - cameraOpenedAtRef.current;
-            const elapsedSinceFaceSeen = now - lastFaceSeenRef.current;
-
-            // Auto-off logic:
-            // 1. If a face was previously in frame and has now been absent for 5s -> TURN OFF CAMERA!
-            // 2. If camera was just opened, give 15 seconds initial grace window to step in front
-            const shouldAutoOff =
-              (hasDetectedFaceOnceRef.current && elapsedSinceFaceSeen >= 5000) ||
-              (!hasDetectedFaceOnceRef.current && elapsedSinceOpen >= 15000);
-
-            if (shouldAutoOff) {
-              console.log('No face detected in camera. Automatically turning off camera.');
-              stopCamera('Camera turned off (no face detected). Click Open Camera to start.');
-              return;
-            }
-
             // Strictly show "Align your face within the circle" while scanning
             if (!isMatching.current) {
               setStatusMessage('Align your face within the circle');
@@ -179,10 +185,9 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
           const isProperSize = box.width >= minDim * 0.20 && box.width <= minDim * 0.85;
           const isCenteredInCircle = distFromCenter <= minDim * 0.28;
 
-          // If a confident face is anywhere in frame, keep camera active (reset 5s inactivity timer)
+          // If a confident face is anywhere in frame, track detection
           if (isScoreGood) {
             hasDetectedFaceOnceRef.current = true;
-            lastFaceSeenRef.current = Date.now();
           }
 
           // If NOT centered inside the circle reticle or wrong size:
@@ -241,7 +246,7 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
       stopCamera,
     ]);
 
-    // Expose captureSnapshot for thermal ticket printing & manual capture
+    // Expose imperative methods for camera controls & thermal ticket capture
     useImperativeHandle(ref, () => ({
       captureSnapshot: () => {
         if (videoRef.current && isCameraActive) {
@@ -265,6 +270,13 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
         }
         return '';
       },
+      startCamera: () => {
+        initCamera();
+      },
+      stopCamera: (msg?: string) => {
+        stopCamera(msg);
+      },
+      isCameraRunning: () => isCameraActive,
     }));
 
     const verifiedActive = isVerified || locallyVerified;

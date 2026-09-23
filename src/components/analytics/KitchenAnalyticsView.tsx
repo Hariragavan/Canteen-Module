@@ -478,23 +478,23 @@ export const KitchenAnalyticsView: React.FC = () => {
           </div>
         </div>
 
-        {/* Ledger Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-700">
-            <thead className="text-slate-600 uppercase bg-slate-50 font-mono text-[10px] border-b border-slate-200">
+        {/* Ledger Table with Bordered Container and Internal Scroll */}
+        <div className="border-2 border-slate-300 rounded-2xl overflow-y-auto overflow-x-auto max-h-[440px] shadow-inner bg-white">
+          <table className="w-full text-left text-xs text-slate-700 relative">
+            <thead className="sticky top-0 z-10 text-slate-800 uppercase bg-slate-100 font-mono text-[10px] border-b-2 border-slate-300 shadow-xs">
               <tr>
-                <th className="p-3 rounded-l">Token</th>
-                <th className="p-3">Date</th>
-                <th className="p-3">Employee</th>
-                <th className="p-3">Department</th>
-                <th className="p-3">Meal Slot</th>
-                <th className="p-3 text-right">Rate</th>
-                <th className="p-3 text-center">Qty</th>
-                <th className="p-3 text-right">Total</th>
-                <th className="p-3">Menu Items</th>
-                <th className="p-3">Issued Time</th>
-                <th className="p-3">Served Time</th>
-                <th className="p-3 rounded-r">Status</th>
+                <th className="p-3 bg-slate-100">Token</th>
+                <th className="p-3 bg-slate-100">Date</th>
+                <th className="p-3 bg-slate-100">Employee</th>
+                <th className="p-3 bg-slate-100">Department</th>
+                <th className="p-3 bg-slate-100">Meal Slot</th>
+                <th className="p-3 bg-slate-100 text-right">Rate</th>
+                <th className="p-3 bg-slate-100 text-center">Qty</th>
+                <th className="p-3 bg-slate-100 text-right">Total</th>
+                <th className="p-3 bg-slate-100">Menu Items</th>
+                <th className="p-3 bg-slate-100">Issued Time</th>
+                <th className="p-3 bg-slate-100">Served Time</th>
+                <th className="p-3 bg-slate-100">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">

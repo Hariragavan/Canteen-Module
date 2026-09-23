@@ -331,33 +331,54 @@ class CanteenService {
         supabaseManager.broadcastChange('canteen_orders', 'UPDATE', this.orders);
       }
 
-      // 3. Sync Meal Slots from Supabase so all menu, price, and timing changes are live
-      const { data: remoteSlots, error: slotErr } = await client
-        .from('canteen_meal_slots')
-        .select('*');
+      // 3. Sync Meal Slots: Protect user custom menu data from being overwritten by stale defaults
+      const userHasSavedLocally = Boolean(localStorage.getItem('canteen_menu_last_saved'));
 
-      if (!slotErr && remoteSlots && remoteSlots.length > 0) {
-        this.mealSlots = this.mealSlots.map(localSlot => {
-          const rem = remoteSlots.find((r: any) => 
-            r.name?.toLowerCase() === localSlot.name.toLowerCase() ||
-            (localSlot.name === 'Tea/Snacks' && (r.id === 'TEASNACKS' || r.name === 'Tea/Snacks'))
-          );
-          if (rem) {
-            const p = rem.price !== undefined && rem.price !== null ? Number(rem.price) : (localSlot.rate ?? 40);
-            return {
-              ...localSlot,
-              description: rem.description || localSlot.description,
-              rate: p,
-              cost: p,
-              startTime: rem.start_time ? String(rem.start_time).slice(0, 5) : localSlot.startTime,
-              endTime: rem.end_time ? String(rem.end_time).slice(0, 5) : localSlot.endTime,
-            };
+      if (userHasSavedLocally) {
+        // User's local edits are authoritative: push to Supabase to keep remote updated
+        for (const s of this.mealSlots) {
+          const slotId = s.name === 'Tea/Snacks' ? 'TEASNACKS' : s.name.toUpperCase();
+          await client.from('canteen_meal_slots').upsert({
+            id: slotId,
+            name: s.name,
+            display_name: s.displayName,
+            start_time: s.startTime,
+            end_time: s.endTime,
+            emoji: s.emoji,
+            description: s.description,
+            price: s.rate ?? s.cost ?? 40,
+            is_active: s.isActive !== false,
+          });
+        }
+      } else {
+        // Only pull from Supabase if user has not yet customized slots locally
+        const { data: remoteSlots, error: slotErr } = await client
+          .from('canteen_meal_slots')
+          .select('*');
+
+        if (!slotErr && remoteSlots && remoteSlots.length > 0) {
+          this.mealSlots = this.mealSlots.map(localSlot => {
+            const rem = remoteSlots.find((r: any) => 
+              r.name?.toLowerCase() === localSlot.name.toLowerCase() ||
+              (localSlot.name === 'Tea/Snacks' && (r.id === 'TEASNACKS' || r.name === 'Tea/Snacks'))
+            );
+            if (rem) {
+              const p = rem.price !== undefined && rem.price !== null ? Number(rem.price) : (localSlot.rate ?? 40);
+              return {
+                ...localSlot,
+                description: rem.description || localSlot.description,
+                rate: p,
+                cost: p,
+                startTime: rem.start_time ? String(rem.start_time).slice(0, 5) : localSlot.startTime,
+                endTime: rem.end_time ? String(rem.end_time).slice(0, 5) : localSlot.endTime,
+              };
+            }
+            return localSlot;
+          });
+          this.saveMealSlotsLocal();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: this.mealSlots }));
           }
-          return localSlot;
-        });
-        this.saveMealSlotsLocal();
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: this.mealSlots }));
         }
       }
     } catch (err) {
@@ -500,6 +521,9 @@ class CanteenService {
       };
     });
     this.saveMealSlotsLocal();
+    try {
+      localStorage.setItem('canteen_menu_last_saved', Date.now().toString());
+    } catch {}
 
     // Persist to Supabase so menu changes survive across all devices and reloads
     try {
