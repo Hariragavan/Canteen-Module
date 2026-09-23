@@ -108,15 +108,36 @@ const ThermalSlipContent: React.FC<{
   );
 };
 
-export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
-  order,
-  orders,
-  onSendToScanner,
-  onPrint,
-}) => {
+export interface ThermalReceiptHandle {
+  printAll: () => Promise<void>;
+  printSlip: (ord: Order) => Promise<void>;
+}
+
+interface ThermalReceiptProps {
+  order?: Order;
+  orders?: Order[];
+  onSendToScanner?: (orderUuid: string) => void;
+  onPrint?: () => void;
+  onPrintingStateChange?: (isPrinting: boolean) => void;
+}
+
+export const ThermalReceipt = React.forwardRef<ThermalReceiptHandle, ThermalReceiptProps>((
+  {
+    order,
+    orders,
+    onSendToScanner,
+    onPrint,
+    onPrintingStateChange,
+  },
+  ref
+) => {
   const ordersList: Order[] = orders && orders.length > 0 
     ? orders 
     : (order ? [order] : []);
+
+  const [activePrintOrder, setActivePrintOrder] = React.useState<Order | null>(null);
+  const [isPrintingBatch, setIsPrintingBatch] = React.useState<boolean>(false);
+  const [printingIndex, setPrintingIndex] = React.useState<number>(0);
 
   // Hook body class for print isolation
   useEffect(() => {
@@ -130,13 +151,58 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
     };
   }, [ordersList.length]);
 
+  // Print a single specific slip
+  const printSingleSlip = async (ord: Order) => {
+    setActivePrintOrder(ord);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    try {
+      window.print();
+    } catch (e) {
+      console.warn('Single slip print error:', e);
+    }
+    setTimeout(() => setActivePrintOrder(null), 1000);
+  };
+
+  // Sequential Printing: Prints each slip in its own individual print job one by one
+  const printSequentially = async (listToPrint: Order[] = ordersList) => {
+    if (!listToPrint || listToPrint.length === 0) return;
+    setIsPrintingBatch(true);
+    if (onPrintingStateChange) onPrintingStateChange(true);
+
+    for (let i = 0; i < listToPrint.length; i++) {
+      setPrintingIndex(i + 1);
+      setActivePrintOrder(listToPrint[i]);
+      // Give React 250ms to render this exact single slip into #canteen-print-portal
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      try {
+        window.print();
+      } catch (err) {
+        console.warn(`Print error on slip ${i + 1}:`, err);
+      }
+      if (i < listToPrint.length - 1) {
+        // Pause between print dialogs so the printer driver queue processes each ticket
+        await new Promise((resolve) => setTimeout(resolve, 600));
+      }
+    }
+
+    setActivePrintOrder(null);
+    setIsPrintingBatch(false);
+    setPrintingIndex(0);
+    if (onPrintingStateChange) onPrintingStateChange(false);
+  };
+
+  React.useImperativeHandle(ref, () => ({
+    printAll: () => printSequentially(ordersList),
+    printSlip: (ord: Order) => printSingleSlip(ord),
+  }));
+
   if (ordersList.length === 0) return null;
 
-  const handlePrint = () => {
+  const handlePrintAll = () => {
     if (onPrint) {
       onPrint();
     } else {
-      window.print();
+      printSequentially(ordersList);
     }
   };
 
@@ -185,33 +251,51 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
       {/* On-Screen Receipt Preview Container (Hidden during physical print) */}
       <div
         id="tvsSlipPrintArea"
-        className="flex flex-col items-center gap-3 print:hidden"
+        className="flex flex-col items-center gap-3 print:hidden max-h-[360px] overflow-y-auto p-1 w-full"
       >
         {ordersList.map((ord, idx) => (
-          <ThermalSlipContent
-            key={`preview-${ord.id || ord.orderUuid || idx}`}
-            ord={ord}
-            rateVal={ord.rate ?? 40}
-            formattedDate={getFormattedDate(ord)}
-            formattedTime={getFormattedTime(ord)}
-            tamilMealName={getTamilMealName(ord.meal)}
-          />
-        ))}
-      </div>
-
-      {/* Dedicated Portal Directly on document.body for Physical Printing (Eliminates ancestor overflow/flex) */}
-      {typeof document !== 'undefined' && createPortal(
-        <div id="canteen-print-portal">
-          {ordersList.map((ord, idx) => (
+          <div key={`preview-wrap-${ord.id || ord.orderUuid || idx}`} className="flex flex-col items-center gap-1.5 w-full">
+            {ordersList.length > 1 && (
+              <div className="flex items-center justify-between w-[270px] px-1 text-[11px] font-mono text-slate-500 font-bold">
+                <span>Slip {idx + 1} of {ordersList.length}</span>
+                <button
+                  type="button"
+                  onClick={() => printSingleSlip(ord)}
+                  className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded text-[10px] font-bold border border-slate-300 transition-all cursor-pointer"
+                >
+                  Print Slip #{ord.token}
+                </button>
+              </div>
+            )}
             <ThermalSlipContent
-              key={`portal-${ord.id || ord.orderUuid || idx}`}
               ord={ord}
               rateVal={ord.rate ?? 40}
               formattedDate={getFormattedDate(ord)}
               formattedTime={getFormattedTime(ord)}
               tamilMealName={getTamilMealName(ord.meal)}
             />
-          ))}
+          </div>
+        ))}
+      </div>
+
+      {/* Dedicated Portal Directly on document.body for Physical Printing */}
+      {/* CRITICAL: ONLY 1 SLIP IS RENDERED PER PRINT JOB SO IT NEVER PRINTS SIDE-BY-SIDE */}
+      {typeof document !== 'undefined' && createPortal(
+        <div id="canteen-print-portal">
+          {(() => {
+            const ordToPrint = activePrintOrder || ordersList[0];
+            if (!ordToPrint) return null;
+            return (
+              <ThermalSlipContent
+                key={`portal-slip-${ordToPrint.id || ordToPrint.orderUuid}`}
+                ord={ordToPrint}
+                rateVal={ordToPrint.rate ?? 40}
+                formattedDate={getFormattedDate(ordToPrint)}
+                formattedTime={getFormattedTime(ordToPrint)}
+                tamilMealName={getTamilMealName(ordToPrint.meal)}
+              />
+            );
+          })()}
         </div>,
         document.body
       )}
@@ -219,11 +303,18 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
       {/* Quick Action buttons (hidden on physical print) */}
       <div className="flex flex-wrap items-center justify-center gap-2 print:hidden">
         <button
-          onClick={handlePrint}
-          className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold shadow-2xs flex items-center space-x-1.5 transition-colors cursor-pointer"
+          onClick={handlePrintAll}
+          disabled={isPrintingBatch}
+          className="px-4 py-2 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold shadow-2xs flex items-center space-x-1.5 transition-colors cursor-pointer"
         >
           <Printer className="w-3.5 h-3.5 text-slate-600" />
-          <span>Physical Print ({ordersList.length > 1 ? `${ordersList.length} Pages` : '80mm'})</span>
+          <span>
+            {isPrintingBatch
+              ? `Printing Slip ${printingIndex} of ${ordersList.length}...`
+              : ordersList.length > 1
+              ? `Print All ${ordersList.length} Slips (One by One)`
+              : 'Physical Print (80mm)'}
+          </span>
         </button>
 
         {onSendToScanner && (
@@ -241,10 +332,12 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
         <span>
           {ordersList.length > 1 
-            ? `${ordersList.length} Separate Pages Ready to Print (${ordersList.length} Unique QRs)` 
+            ? `${ordersList.length} Individual Slips Generated (${ordersList.length} Unique QRs • Prints One-by-One)` 
             : 'Compact Thermal Slip Ready'}
         </span>
       </div>
     </div>
   );
-};
+});
+
+ThermalReceipt.displayName = 'ThermalReceipt';

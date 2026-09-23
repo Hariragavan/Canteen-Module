@@ -7,7 +7,7 @@ import { faceMatcherService } from '../../services/faceMatcherService';
 import { FaceScannerHUD } from './FaceScannerHUD';
 import type { FaceScannerHUDHandle } from './FaceScannerHUD';
 import { CameraVerifyModal } from './CameraVerifyModal';
-import { ThermalReceipt } from '../printer/ThermalReceipt';
+import { ThermalReceipt, type ThermalReceiptHandle } from '../printer/ThermalReceipt';
 import {
   Printer,
   AlertTriangle,
@@ -98,7 +98,9 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     }
   }, [isQtyAvailable, remainingToday, selectedMealSlot, currentEmployee?.id]);
   const hudRef = useRef<FaceScannerHUDHandle | null>(null);
+  const receiptRef = useRef<ThermalReceiptHandle | null>(null);
   const carouselRef = useRef<HTMLDivElement | null>(null);
+  const [isPrintingActive, setIsPrintingActive] = useState<boolean>(false);
 
   // Initialize and sync roster from local/Supabase
   const loadRoster = useCallback(() => {
@@ -332,10 +334,9 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     return () => clearInterval(interval);
   }, [kioskStep, lastPrintedOrder, handleResetToScan]);
 
-  // Auto-reset timer when thermal slip is displayed (10 seconds timeout for closing UI, turns camera on)
+  // Auto-reset timer when thermal slip is displayed (pauses while printing is active, turns camera on)
   useEffect(() => {
-    if (!lastPrintedOrder) {
-      setAutoResetSeconds(10);
+    if (!lastPrintedOrder || isPrintingActive) {
       return;
     }
     const interval = setInterval(() => {
@@ -349,7 +350,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [lastPrintedOrder, handleResetToScan]);
+  }, [lastPrintedOrder, isPrintingActive, handleResetToScan]);
 
   // Auto-scroll selected meal card into view of vertical carousel
   useEffect(() => {
@@ -431,14 +432,14 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
       soundEngine.playVerificationChime();
       checkDuplicate();
 
-      // Trigger print immediately: direct print if printer is available, or open print dialog
+      // Trigger sequential printing: prints slips one by one separately (e.g. 3 quantity opens print 3 times)
       setTimeout(() => {
         try {
-          window.print();
+          receiptRef.current?.printAll();
         } catch (e) {
           console.warn('Auto print trigger error:', e);
         }
-      }, 300);
+      }, 350);
 
       const drawer = document.getElementById('printerDrawerSection');
       if (drawer) {
@@ -794,23 +795,31 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
 
                 <div className="my-2 flex justify-center max-h-[320px] overflow-y-auto shadow-md rounded-xl bg-white p-2">
                   <ThermalReceipt
+                    ref={receiptRef}
                     order={lastPrintedOrder}
                     orders={lastPrintedOrders}
                     onSendToScanner={onNavigateToStaffScanner}
-                    onPrint={() => window.print()}
+                    onPrintingStateChange={(isPrinting) => setIsPrintingActive(isPrinting)}
                   />
                 </div>
 
                 <div className="w-full flex items-center justify-between gap-3 pt-2.5 border-t border-emerald-200 shrink-0">
                   <span className="text-xs text-emerald-800 font-medium font-mono">
-                    Auto-resetting in {autoResetSeconds}s...
+                    {isPrintingActive
+                      ? 'Printing slips one by one...'
+                      : `Auto-resetting in ${autoResetSeconds}s...`}
                   </span>
                   <div className="flex items-center space-x-2">
                     <button
-                      onClick={() => window.print()}
-                      className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-xs"
+                      onClick={() => receiptRef.current?.printAll()}
+                      disabled={isPrintingActive}
+                      className="px-3.5 py-2 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
                     >
-                      Print Physical Slip
+                      {isPrintingActive
+                        ? 'Printing...'
+                        : lastPrintedOrders.length > 1
+                        ? `Print All (${lastPrintedOrders.length} Slips)`
+                        : 'Print Physical Slip'}
                     </button>
                     <button
                       onClick={() => handleResetToScan(true)}
@@ -1121,8 +1130,8 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
         onNavigateToStaffScanner={onNavigateToStaffScanner}
       />
 
-      {/* Floating Feedback Button in Right Down Corner: ONLY in camera scanning page, NOT when verified */}
-      {kioskStep === 'SCANNING' && (
+      {/* Floating Feedback Button in Right Down Corner: ONLY in first scanning page, disappears when verified */}
+      {kioskStep === 'SCANNING' && !isScanVerified && !currentEmployee && !lastPrintedOrder && (
         <div className="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 z-40 print:hidden">
           <button
             type="button"
