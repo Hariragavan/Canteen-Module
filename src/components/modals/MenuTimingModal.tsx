@@ -244,19 +244,52 @@ export const MenuTimingModal: React.FC<MenuTimingModalProps> = ({
               </div>
             </div>
 
-            {/* Calories / Approx Energy */}
-            <div className="flex items-center space-x-3 bg-slate-50 border border-slate-200 rounded-2xl p-3">
-              <Flame className="w-4 h-4 text-amber-500 shrink-0" />
-              <div className="flex-1 flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700">Estimated Nutrition (kcal):</span>
-                <div className="flex items-center space-x-1.5">
-                  <input
-                    type="number"
-                    value={currentSlot.calories || 400}
-                    onChange={(e) => handleUpdateSlot(currentSlot.name, 'calories', parseInt(e.target.value, 10) || 0)}
-                    className="w-20 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800 text-right focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  />
-                  <span className="text-xs text-slate-500 font-mono">kcal</span>
+            {/* Meal Cost / Rate & Calories */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Meal Cost (₹) */}
+              <div className="flex items-center space-x-3 bg-emerald-50/70 border border-emerald-200 rounded-2xl p-3.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-lg shadow-2xs font-mono">
+                  ₹
+                </div>
+                <div className="flex-1 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 block">Meal Cost / Rate (விலை):</span>
+                    <span className="text-[10px] text-emerald-800 font-medium">Prints on thermal receipt slip</span>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    <span className="text-sm font-bold text-slate-700 font-mono">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={currentSlot.rate ?? currentSlot.cost ?? 40}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10) || 0;
+                        handleUpdateSlot(currentSlot.name, 'rate', val);
+                        handleUpdateSlot(currentSlot.name, 'cost', val);
+                      }}
+                      className="w-24 bg-white border border-emerald-300 rounded-xl px-2.5 py-1.5 text-sm font-mono font-black text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Calories / Approx Energy */}
+              <div className="flex items-center space-x-3 bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
+                <Flame className="w-5 h-5 text-amber-500 shrink-0" />
+                <div className="flex-1 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-slate-700 block">Estimated Nutrition:</span>
+                    <span className="text-[10px] text-slate-400 font-medium">Approximate energy</span>
+                  </div>
+                  <div className="flex items-center space-x-1.5">
+                    <input
+                      type="number"
+                      value={currentSlot.calories || 400}
+                      onChange={(e) => handleUpdateSlot(currentSlot.name, 'calories', parseInt(e.target.value, 10) || 0)}
+                      className="w-20 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-sm font-mono font-bold text-slate-800 text-right focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <span className="text-xs text-slate-500 font-mono">kcal</span>
+                  </div>
                 </div>
               </div>
             </div>

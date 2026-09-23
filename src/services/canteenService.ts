@@ -18,6 +18,8 @@ export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
     category: 'Morning',
     description: 'Steamed Idli, Crispy Medu Vada, Sambar & Filter Coffee / இட்லி, மெதுவடை, சாம்பார், காபி',
     calories: 420,
+    rate: 40,
+    cost: 40,
     isEligible: true,
     isActive: true,
   },
@@ -31,6 +33,8 @@ export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
     category: 'Active Now',
     description: 'Executive Meals, Basmati Rice, Paneer Butter Masala, Dal, Phulka / மதிய உணவு சாப்பாடு, சாதம், சாம்பார், கூட்டு, பொரியல்',
     calories: 740,
+    rate: 40,
+    cost: 40,
     isEligible: true,
     isActive: true,
   },
@@ -44,6 +48,8 @@ export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
     category: 'Evening',
     description: 'Hot Cardamom Masala Chai, Special Filter Coffee & Biscuits / சுடச்சுட ஸ்பெஷல் டீ, ஃபில்டர் காபி',
     calories: 180,
+    rate: 20,
+    cost: 20,
     isEligible: true,
     isActive: true,
   },
@@ -57,6 +63,8 @@ export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
     category: 'Evening',
     description: 'Crispy Samosa, Onion Pakoda, Mint Chutney / சமோசா, வெங்காய பக்கோடா, புதினா சட்னி',
     calories: 320,
+    rate: 40,
+    cost: 40,
     isEligible: true,
     isActive: true,
   },
@@ -70,6 +78,8 @@ export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
     category: 'Night Slot',
     description: 'Butter Roti, Dal Tadka, Seasonal Veg Curry, Jeera Rice & Curd / சப்பாத்தி, பருப்பு தட்கா, காய்கறி குருமா, சாதம்',
     calories: 650,
+    rate: 40,
+    cost: 40,
     isEligible: true,
     isActive: true,
   },
@@ -129,7 +139,15 @@ class CanteenService {
         try {
           const parsedSlots = JSON.parse(storedMealSlots);
           if (Array.isArray(parsedSlots) && parsedSlots.length > 0) {
-            this.mealSlots = parsedSlots;
+            this.mealSlots = parsedSlots.map(ps => {
+              const def = DEFAULT_MEAL_SLOTS.find(d => d.name === ps.name);
+              const r = ps.rate ?? ps.cost ?? def?.rate ?? 40;
+              return {
+                ...ps,
+                rate: r,
+                cost: r,
+              };
+            });
           } else {
             this.mealSlots = [...DEFAULT_MEAL_SLOTS];
           }
@@ -420,11 +438,18 @@ class CanteenService {
   }
 
   public updateMealSlots(newSlots: MealSlotConfig[]): void {
-    this.mealSlots = [...newSlots];
+    this.mealSlots = newSlots.map(s => {
+      const r = s.rate !== undefined ? s.rate : (s.cost !== undefined ? s.cost : 40);
+      return {
+        ...s,
+        rate: r,
+        cost: r,
+      };
+    });
     this.saveMealSlotsLocal();
-    supabaseManager.broadcastChange('canteen_meal_slots', 'UPDATE', newSlots);
+    supabaseManager.broadcastChange('canteen_meal_slots', 'UPDATE', this.mealSlots);
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: newSlots }));
+      window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: this.mealSlots }));
     }
   }
 
@@ -471,13 +496,19 @@ class CanteenService {
     meal: MealSlotName,
     items: any[] = [],
     qty: number = 1,
-    rate: number = 40
+    rate?: number
   ): Promise<Order> {
     // 1. Guard against duplicate booking
     const existing = this.checkDuplicateBooking(employee.id, meal);
     if (existing) {
       throw new Error(`Duplicate Lock: ${meal} already issued for ${employee.name} at ${existing.issuedAt}`);
     }
+
+    // Dynamic rate resolution: use explicitly passed rate or lookup configured meal slot rate
+    const configuredSlot = this.getMealSlots().find((s) => s.name === meal);
+    const resolvedRate = (rate !== undefined && rate !== null) 
+      ? rate 
+      : (configuredSlot?.rate ?? configuredSlot?.cost ?? 40);
 
     let tokenNo = this.tokenSeq++;
     const now = new Date();
@@ -518,7 +549,7 @@ class CanteenService {
       dept: employee.dept,
       meal,
       items: items || [],
-      rate,
+      rate: resolvedRate,
       qty,
       status: 'PRINTED',
       issuedAt: timeStr,

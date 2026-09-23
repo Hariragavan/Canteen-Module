@@ -124,7 +124,15 @@ export const CameraVerifyModal: React.FC<CameraVerifyModalProps> = ({
       setIsDispensing(true);
       soundEngine.playThermalMotorSound();
 
-      const order = await canteenService.createOrder(employee, selectedMealSlot);
+      const slot = canteenService.getMealSlots().find((s) => s.name === selectedMealSlot);
+      const items = slot ? [{ name: slot.name, description: slot.description }] : [];
+      const order = await canteenService.createOrder(
+        employee,
+        selectedMealSlot,
+        items,
+        1,
+        slot?.rate ?? slot?.cost ?? 40
+      );
 
       setTimeout(() => {
         setLastPrintedOrder(order);

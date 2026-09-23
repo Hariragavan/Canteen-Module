@@ -1437,18 +1437,38 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Calories & Save Button */}
+                    {/* Meal Cost & Nutrition & Save Button */}
                     <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
-                      <div className="flex items-center space-x-2 text-xs font-bold text-slate-600">
-                        <Flame className="w-4 h-4 text-amber-500" />
-                        <span>Approx. Nutrition:</span>
-                        <input
-                          type="number"
-                          value={currentSlot.calories || 400}
-                          onChange={(e) => updateCurrent('calories', parseInt(e.target.value, 10) || 0)}
-                          className="w-18 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800 text-right"
-                        />
-                        <span className="font-mono text-[11px]">kcal</span>
+                      <div className="flex flex-wrap items-center gap-4">
+                        {/* Meal Cost / Rate */}
+                        <div className="flex items-center space-x-2 text-xs font-bold text-slate-800 bg-emerald-50/70 border border-emerald-200 px-3 py-1.5 rounded-xl">
+                          <span className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-black text-xs font-mono">₹</span>
+                          <span>Meal Cost (விலை):</span>
+                          <span className="font-bold text-slate-700 font-mono">₹</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={currentSlot.rate ?? currentSlot.cost ?? 40}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10) || 0;
+                              updateCurrent('rate', val);
+                              updateCurrent('cost', val);
+                            }}
+                            className="w-20 bg-white border border-emerald-300 rounded-lg px-2 py-1 text-xs font-mono font-black text-slate-900 text-right focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-2xs"
+                          />
+                        </div>
+
+                        <div className="flex items-center space-x-2 text-xs font-bold text-slate-600">
+                          <Flame className="w-4 h-4 text-amber-500" />
+                          <span>Approx. Nutrition:</span>
+                          <input
+                            type="number"
+                            value={currentSlot.calories || 400}
+                            onChange={(e) => updateCurrent('calories', parseInt(e.target.value, 10) || 0)}
+                            className="w-18 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800 text-right"
+                          />
+                          <span className="font-mono text-[11px]">kcal</span>
+                        </div>
                       </div>
 
                       <button

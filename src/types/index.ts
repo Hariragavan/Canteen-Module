@@ -24,6 +24,8 @@ export interface MealSlotConfig {
   category: 'Morning' | 'Active Now' | 'Afternoon' | 'Evening' | 'Night Slot';
   description: string;
   calories: number;
+  rate?: number;       // Meal cost / rate e.g. 40
+  cost?: number;       // Alias for rate
   isEligible: boolean;
   isActive?: boolean;
 }

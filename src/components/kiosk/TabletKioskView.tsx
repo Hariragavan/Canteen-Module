@@ -348,7 +348,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
 
       const isSnacks = selectedMealSlot.toLowerCase().includes('snacks');
       const chosenQty = isSnacks ? snacksQty : 1;
-      const chosenRate = 40;
+      const chosenRate = chosenSlot?.rate ?? chosenSlot?.cost ?? 40;
 
       // Zero artificial delay to print
       const order = await canteenService.createOrder(
@@ -448,9 +448,15 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] font-mono text-slate-600 font-bold flex items-center gap-1.5 mt-0.5">
-                        <Clock className="w-3 h-3 text-emerald-600" />
-                        <span>Serving Timing: <strong>From {activeSlot.startTime} to {activeSlot.endTime}</strong></span>
+                      <div className="text-[11px] font-mono text-slate-600 font-bold flex flex-wrap items-center gap-2 mt-0.5">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-emerald-600" />
+                          <span>Serving Timing: <strong>From {activeSlot.startTime} to {activeSlot.endTime}</strong></span>
+                        </span>
+                        <span>•</span>
+                        <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          Meal Cost: <strong>₹{activeSlot.rate ?? activeSlot.cost ?? 40}</strong>
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -861,7 +867,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                                   </span>
                                   <span>•</span>
                                   <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
-                                    Rate: 40
+                                    Rate: ₹{slot.rate ?? slot.cost ?? 40}
                                   </span>
                                 </div>
                               </div>
