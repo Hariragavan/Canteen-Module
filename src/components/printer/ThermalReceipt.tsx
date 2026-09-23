@@ -23,7 +23,7 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
     }
   };
 
-  // Format Date to DD-MM-YYYY (e.g. 22-09-2026) matching reference photo
+  // Format Date to DD-MM-YYYY (e.g. 23-09-2026) matching Image 1
   const formattedDate = (() => {
     if (order.dateStr && /^\d{4}-\d{2}-\d{2}$/.test(order.dateStr)) {
       const [y, m, d] = order.dateStr.split('-');
@@ -35,31 +35,32 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
     return `${day}-${month}-${d.getFullYear()}`;
   })();
 
-  // Format Time to 12hr hh:mm AM/PM (e.g. 11:18 AM) matching reference photo
+  // Format Time to 12hr hh:mm am/pm (e.g. 11:21 am) matching Image 1
   const formattedTime = (() => {
     if (order.issuedAt) {
       const match = order.issuedAt.match(/^(\d{1,2}:\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
       if (match) {
-        return `${match[1]} ${match[2] || ''}`.trim();
+        return `${match[1]} ${(match[2] || '').toLowerCase()}`.trim();
       }
       return order.issuedAt;
     }
     const d = order.timestamp ? new Date(order.timestamp) : new Date();
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toLowerCase();
   })();
 
-  // Get menu items text (Tamil / English)
-  const menuText = (() => {
-    if (Array.isArray(order.items) && order.items.length > 0) {
-      return order.items
-        .map((it) => (typeof it === 'string' ? it : it?.description || it?.name || ''))
-        .filter(Boolean)
-        .join(', ');
+  // Get Tamil Meal Name matching Image 1
+  const tamilMealName = (() => {
+    const slot = canteenService.getMealSlots().find((s) => s.name === order.meal);
+    if (slot?.tamilDisplayName) {
+      return slot.tamilDisplayName.split('/')[0].trim();
     }
-    return (
-      canteenService.getMealSlots().find((s) => s.name === order.meal)?.description ||
-      'Standard Meal Serving'
-    );
+    const lower = (order.meal || '').toLowerCase();
+    if (lower.includes('breakfast')) return 'காலை உணவு';
+    if (lower.includes('lunch')) return 'மதிய உணவு';
+    if (lower.includes('tea') || lower.includes('coffee')) return 'தேநீர் / காபி';
+    if (lower.includes('snack')) return 'மாலை சிற்றுண்டி';
+    if (lower.includes('dinner')) return 'இரவு உணவு';
+    return order.meal;
   })();
 
   const rateVal = order.rate ?? 40;
@@ -67,24 +68,24 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
 
   return (
     <div className="flex flex-col items-center gap-4">
-      {/* 80mm ESC/POS Compact Thermal Slip matching reference photo */}
+      {/* 80mm/58mm ESC/POS Ultra-Compact Thermal Slip matching Image 1 */}
       <div
         id="tvsSlipPrintArea"
-        className="w-[330px] sm:w-[350px] bg-white text-slate-950 font-sans p-3 sm:p-4 rounded shadow-md border border-slate-300 select-none"
+        className="w-[270px] max-w-[275px] bg-white text-black font-sans p-2.5 rounded shadow-sm border border-slate-300 select-none"
       >
         {/* Main 2-Column Side-by-Side Content */}
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-2">
           
-          {/* Left Column: Campus Canteen + QR Code + Order UUID */}
-          <div className="w-[125px] flex flex-col items-center justify-start shrink-0 text-center">
-            <span className="font-bold text-slate-900 text-sm tracking-tight mb-1 whitespace-nowrap">
+          {/* Left Column: Campus Canteen, QR Code, ORD UUID, Token, Name, ID */}
+          <div className="w-[118px] shrink-0 flex flex-col items-start text-left">
+            <span className="font-bold text-black text-[13px] tracking-tight mb-1 whitespace-nowrap">
               Campus Canteen
             </span>
 
-            <div className="p-1 bg-white border border-slate-900 rounded-xs flex items-center justify-center">
+            <div className="p-0.5 bg-white border border-black rounded-none flex items-center justify-center">
               <QRCodeSVG
                 value={order.orderUuid}
-                size={110}
+                size={95}
                 level="M"
                 includeMargin={false}
                 fgColor="#000000"
@@ -92,63 +93,66 @@ export const ThermalReceipt: React.FC<ThermalReceiptProps> = ({
               />
             </div>
 
-            <div className="text-[9px] font-mono font-bold text-slate-900 tracking-tighter text-center mt-1 select-all break-all leading-tight">
+            <div className="text-[9px] font-mono font-medium text-black tracking-tighter mt-1 select-all break-all leading-tight">
               {order.orderUuid}
             </div>
-          </div>
 
-          {/* Right Column: Token, Rate, QTY, Name, ID/Dept, Boxed Meal, Menu, Time */}
-          <div className="flex-1 min-w-0 flex flex-col justify-start text-left pl-1">
-            {/* Token Number */}
-            <div className="text-xl sm:text-2xl font-black text-slate-950 tracking-tight leading-none mb-1">
+            {/* Token # 101 */}
+            <div className="text-[15px] font-black text-black mt-1 leading-tight tracking-tight">
               Token # {order.token}
             </div>
 
-            {/* Rate & QTY (Both numbers bold as requested) */}
-            <div className="text-xs sm:text-sm text-slate-900 flex items-center gap-4 mb-1">
-              <span>
-                Rate: <strong className="font-black text-slate-950 text-sm sm:text-base">{rateVal}</strong>
+            {/* Name: Hari */}
+            <div className="text-xs font-semibold text-black mt-0.5 leading-tight truncate max-w-[115px]">
+              Name: {order.name}
+            </div>
+
+            {/* ID: EMP-1004 */}
+            <div className="text-xs font-semibold text-black mt-0.5 leading-tight truncate max-w-[115px]">
+              ID: {order.userId}
+            </div>
+          </div>
+
+          {/* Right Column: QTY, RS: [40], [Tamil Box], [English Box], Time */}
+          <div className="flex-1 min-w-0 flex flex-col justify-start pl-1 text-left">
+            
+            {/* Top Right: QTY: 1, RS: | 40 | */}
+            <div className="flex items-center justify-end gap-1.5 mb-2">
+              <span className="text-xs font-bold text-black tracking-tight whitespace-nowrap">
+                QTY: {qtyVal}, RS:
               </span>
-              <span>
-                QTY: <strong className="font-black text-slate-950 text-sm sm:text-base">{qtyVal}</strong>
-              </span>
+              <div className="border-2 border-black w-12 h-12 flex items-center justify-center shrink-0">
+                <span className="text-2xl font-black text-black leading-none">
+                  {rateVal}
+                </span>
+              </div>
             </div>
 
-            {/* Employee Name */}
-            <div className="text-xs text-slate-900 font-medium truncate leading-snug">
-              Name: <span className="font-semibold text-slate-950">{order.name}</span>
+            {/* Tamil Meal Name Box */}
+            <div className="border-2 border-black text-center py-0.5 px-1 font-bold text-xs text-black leading-tight">
+              {tamilMealName}
             </div>
 
-            {/* ID & Dept */}
-            <div className="text-[11px] text-slate-800 font-medium truncate leading-snug">
-              ID: {order.userId} | Dept: {order.dept}
-            </div>
-
-            {/* Framed Meal Slot Box */}
-            <div className="border-2 border-slate-950 px-2 py-0.5 my-1 text-center font-black tracking-wider uppercase text-xs sm:text-sm text-slate-950">
+            {/* English Meal Name Box (Stacked directly below) */}
+            <div className="border-2 border-t-0 border-black text-center py-0.5 px-1 font-black text-base text-black leading-tight">
               {order.meal}
             </div>
 
-            {/* Menu Items */}
-            <div className="text-[10px] text-slate-900 leading-tight line-clamp-2 mt-0.5">
-              <span className="font-medium">Menu: </span>
-              <span className="font-normal">{menuText}</span>
-            </div>
-
-            {/* Time & Date */}
-            <div className="text-[10px] text-slate-900 font-mono font-medium mt-1 leading-none">
+            {/* Time: 11:21 am | 23-09-2026 */}
+            <div className="text-[9px] sm:text-[9.5px] text-black font-sans font-medium mt-1.5 leading-tight whitespace-nowrap">
               Time: {formattedTime} | {formattedDate}
             </div>
+
           </div>
 
         </div>
 
         {/* Bottom Dashed Separator Line */}
-        <div className="w-full border-t border-dashed border-slate-700 my-1.5" />
+        <div className="w-full border-t border-dashed border-black my-1.5" />
 
-        {/* Footer Notice */}
-        <div className="w-full text-right text-[10px] font-medium text-slate-800 tracking-tight">
-          Present slip at food counter
+        {/* Footer Notice (Centered matching Image 1) */}
+        <div className="w-full text-center text-[10px] font-sans font-medium text-black tracking-tight">
+          Present the slip at canteen counter
         </div>
       </div>
 

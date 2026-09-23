@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { Order, VerificationResult } from '../../types';
 import { canteenService } from '../../services/canteenService';
 import { supabaseManager } from '../../services/supabase';
 import { soundEngine } from '../../services/soundEngine';
 import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
+import { startCameraWithFacingMode } from '../../services/faceMatcherService';
+import jsQR from 'jsqr';
 import confetti from 'canvas-confetti';
 import {
-  QrCode,
   CheckCircle2,
   AlertOctagon,
   HelpCircle,
@@ -14,7 +15,9 @@ import {
   ArrowRight,
   Clock,
   Utensils,
-  Cpu,
+  Camera,
+  CameraOff,
+  SwitchCamera,
 } from 'lucide-react';
 
 interface StaffScannerViewProps {
@@ -31,6 +34,18 @@ export const StaffScannerView: React.FC<StaffScannerViewProps> = ({
     type: 'IDLE',
   });
   const [manualInput, setManualInput] = useState<string>('');
+
+  // Camera QR Scanner states
+  const [isCameraActive, setIsCameraActive] = useState<boolean>(true);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
+  const [lastScannedQr, setLastScannedQr] = useState<string | null>(null);
+  const [isCapturingFrame, setIsCapturingFrame] = useState<boolean>(false);
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const lastScanTimestampRef = useRef<number>(0);
+  const lastVerifiedTimeRef = useRef<number>(0);
 
   // Load orders and subscribe to real-time events
   const loadOrders = useCallback(() => {
@@ -69,6 +84,160 @@ export const StaffScannerView: React.FC<StaffScannerViewProps> = ({
 
     loadOrders();
   }, [loadOrders]);
+
+  // Start webcam with selected facing mode (front or rear camera)
+  const startCamera = async (mode: 'user' | 'environment' = facingMode) => {
+    try {
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+      }
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => track.stop());
+        videoRef.current.srcObject = null;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      if (!videoRef.current) return;
+
+      const result = await startCameraWithFacingMode(videoRef.current, mode);
+      mediaStreamRef.current = result.stream;
+      setIsCameraActive(true);
+      setFacingMode(result.actualFacingMode);
+    } catch (err) {
+      console.warn('QR camera start error:', err);
+      setIsCameraActive(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraActive(false);
+  };
+
+  const toggleFacingMode = async () => {
+    const nextMode = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(nextMode);
+    if (isCameraActive) {
+      await startCamera(nextMode);
+    }
+  };
+
+  // Sync stream to video element
+  useEffect(() => {
+    if (isCameraActive && videoRef.current && mediaStreamRef.current) {
+      if (videoRef.current.srcObject !== mediaStreamRef.current) {
+        videoRef.current.srcObject = mediaStreamRef.current;
+        videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.muted = true;
+        videoRef.current.play().catch(() => {});
+      }
+    }
+  }, [isCameraActive]);
+
+  // Start camera on mount for immediate testing on phone
+  useEffect(() => {
+    startCamera(facingMode);
+    return () => stopCamera();
+  }, []);
+
+  // Continuous real-time frame scan with jsQR
+  useEffect(() => {
+    let animId: number;
+    let isActive = true;
+
+    const scanFrame = () => {
+      if (!isActive) return;
+
+      const video = videoRef.current;
+      if (
+        isCameraActive &&
+        video &&
+        video.readyState >= 2 &&
+        video.videoWidth > 0 &&
+        video.videoHeight > 0
+      ) {
+        const now = Date.now();
+        // Scan every 110ms for fast QR recognition
+        if (now - lastScanTimestampRef.current > 110) {
+          lastScanTimestampRef.current = now;
+
+          const canvas = canvasRef.current || document.createElement('canvas');
+          const width = 360;
+          const height = Math.round((video.videoHeight / video.videoWidth) * 360);
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, width, height);
+            const imageData = ctx.getImageData(0, 0, width, height);
+            const qrCode = jsQR(imageData.data, imageData.width, imageData.height, {
+              inversionAttempts: 'dontInvert',
+            });
+
+            if (qrCode && qrCode.data) {
+              const scannedText = qrCode.data.trim();
+              if (scannedText) {
+                const timeSinceLastVerify = now - lastVerifiedTimeRef.current;
+                if (scannedText !== lastScannedQr || timeSinceLastVerify > 2500) {
+                  lastVerifiedTimeRef.current = now;
+                  setLastScannedQr(scannedText);
+                  soundEngine.playScannerBeep();
+                  handleVerify(scannedText);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      animId = requestAnimationFrame(scanFrame);
+    };
+
+    if (isCameraActive) {
+      animId = requestAnimationFrame(scanFrame);
+    }
+
+    return () => {
+      isActive = false;
+      cancelAnimationFrame(animId);
+    };
+  }, [isCameraActive, handleVerify, lastScannedQr]);
+
+  // Manual snap & scan button
+  const handleManualCaptureScan = () => {
+    const video = videoRef.current;
+    if (!video || video.readyState < 2) return;
+    setIsCapturingFrame(true);
+
+    const canvas = canvasRef.current || document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const qrCode = jsQR(imageData.data, imageData.width, imageData.height);
+      if (qrCode && qrCode.data) {
+        soundEngine.playScannerBeep();
+        setLastScannedQr(qrCode.data);
+        handleVerify(qrCode.data);
+      } else {
+        soundEngine.playWarningBuzzer();
+      }
+    }
+    setTimeout(() => setIsCapturingFrame(false), 250);
+  };
 
   // Global Hardware Wedge Hook for Fingers 2D QuickScan W9
   const { diagnostic } = useBarcodeScanner({
@@ -119,7 +288,7 @@ export const StaffScannerView: React.FC<StaffScannerViewProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Scan student/staff 80mm thermal QR slips using the <strong>2D Barcode Scanner</strong> reader.
+              Scan student/staff QR slips via <strong>Live Camera</strong> or <strong>2D Barcode Scanner</strong> hardware.
             </p>
           </div>
         </div>
@@ -127,49 +296,164 @@ export const StaffScannerView: React.FC<StaffScannerViewProps> = ({
         <div className="flex items-center space-x-3 text-xs">
           <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-xl font-mono font-bold flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            Barcode Scanner [USB HID Active]
+            Camera + Barcode Scanner Active
           </span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
-        {/* LEFT COLUMN: Hardware Wedge Listener & Unclaimed Slips (5 cols) */}
-        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-4">
+        {/* LEFT COLUMN: Live Camera QR Scanner + Hardware Wedge (5 cols) */}
+        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col gap-3.5">
           
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
             <div className="flex items-center space-x-2 text-slate-800">
-              <Cpu className="w-4 h-4 text-emerald-600" />
-              <h3 className="font-bold text-sm text-slate-900">Hardware Wedge Listener</h3>
+              <Camera className="w-4 h-4 text-emerald-600" />
+              <h3 className="font-bold text-sm text-slate-900">Live Camera QR Scanner</h3>
             </div>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold border border-slate-200">
-              Zero-Focus Wedge
-            </span>
+            <div className="flex items-center space-x-2">
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold border ${
+                isCameraActive ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'
+              }`}>
+                {isCameraActive ? '● Live Scanning' : 'Camera Off'}
+              </span>
+            </div>
           </div>
 
-          {/* Illustrated Hardware Guidance Card */}
-          <div className="p-4 bg-slate-50 border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center text-center">
-            <div className="w-12 h-12 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-emerald-600 mb-2 shadow-2xs">
-              <QrCode className="w-6 h-6" />
-            </div>
-            <h4 className="text-xs font-bold text-slate-900">Point Barcode Scanner at 80mm Slip</h4>
-            <p className="text-[11px] text-slate-500 mt-1 max-w-xs">
-              The wireless scanner reads the encrypted QR code and types the characters into the app at hardware speed (&lt;50ms/char) ending with [Enter].
-            </p>
+          {/* Camera Viewfinder Box with Viewfinder Grid & Target Frame */}
+          <div className="relative w-full aspect-4/3 rounded-2xl overflow-hidden bg-slate-950 border-2 border-slate-800 shadow-inner flex items-center justify-center">
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              autoPlay
+              onLoadedMetadata={() => videoRef.current?.play().catch(() => {})}
+              className={`w-full h-full object-cover transition-opacity duration-300 ${
+                isCameraActive ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              } ${facingMode === 'user' ? 'mirror' : ''}`}
+            />
+
+            {!isCameraActive ? (
+              <div className="flex flex-col items-center justify-center p-4 text-center z-10">
+                <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-400 mb-2">
+                  <CameraOff className="w-6 h-6" />
+                </div>
+                <p className="text-xs font-bold text-slate-200">Camera is Turned Off</p>
+                <p className="text-[11px] text-slate-400 mt-0.5 mb-3 font-sans">
+                  Click below to activate camera for instant QR scanning
+                </p>
+                <button
+                  type="button"
+                  onClick={() => startCamera(facingMode)}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/30 flex items-center space-x-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>Start Camera Scanner</span>
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Viewfinder Target Framing Box */}
+                <div className="absolute inset-8 border-2 border-dashed border-emerald-400/60 rounded-2xl pointer-events-none z-20 flex flex-col justify-between items-center p-2">
+                  <div className="w-full flex justify-between">
+                    <div className="w-4 h-4 border-t-2 border-l-2 border-emerald-400" />
+                    <div className="w-4 h-4 border-t-2 border-r-2 border-emerald-400" />
+                  </div>
+                  {/* Laser Scan Line */}
+                  <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" />
+                  <div className="w-full flex justify-between">
+                    <div className="w-4 h-4 border-b-2 border-l-2 border-emerald-400" />
+                    <div className="w-4 h-4 border-b-2 border-r-2 border-emerald-400" />
+                  </div>
+                </div>
+
+                {/* Top Corner controls inside video: Switch Camera & Close */}
+                <div className="absolute top-2.5 right-2.5 z-30 flex items-center space-x-1.5">
+                  <button
+                    type="button"
+                    onClick={toggleFacingMode}
+                    className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-white border border-slate-700 backdrop-blur-xs text-[10px] font-bold shadow flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                    title="Flip between Front and Rear Camera"
+                  >
+                    <SwitchCamera className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{facingMode === 'user' ? 'Back Cam' : 'Front Cam'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={stopCamera}
+                    className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-rose-900/80 text-rose-300 border border-slate-700 backdrop-blur-xs text-[10px] font-bold shadow flex items-center cursor-pointer transition-all active:scale-95"
+                    title="Turn Off Camera"
+                  >
+                    <CameraOff className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div className="absolute bottom-2.5 left-2.5 right-2.5 z-20 flex items-center justify-between pointer-events-none">
+                  <span className="px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-xs text-[10px] font-mono text-emerald-400 font-bold">
+                    Target QR inside frame
+                  </span>
+                  {lastScannedQr && (
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-mono font-bold truncate max-w-[150px]">
+                      {lastScannedQr}
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+
+            {isCapturingFrame && (
+              <div className="absolute inset-0 bg-white animate-out fade-out duration-200 z-30" />
+            )}
           </div>
 
-          {/* Scanner Telemetry Monitor */}
-          <div className="bg-slate-900 text-slate-200 p-3 rounded-xl font-mono text-[10px] space-y-1 shadow-inner">
+          {/* Quick Camera Action Toolbar */}
+          <div className="flex items-center gap-2">
+            {isCameraActive ? (
+              <button
+                type="button"
+                onClick={handleManualCaptureScan}
+                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center space-x-2 transition-all active:scale-95 cursor-pointer"
+              >
+                <Scan className="w-3.5 h-3.5" />
+                <span>Snap & Scan QR</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => startCamera(facingMode)}
+                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center space-x-2 transition-all active:scale-95 cursor-pointer"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                <span>Open Camera Scanner</span>
+              </button>
+            )}
+            
+            <button
+              type="button"
+              onClick={toggleFacingMode}
+              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold flex items-center space-x-1 transition-all active:scale-95 cursor-pointer"
+              title="Flip between Front and Rear Camera"
+            >
+              <SwitchCamera className="w-3.5 h-3.5 text-slate-700" />
+              <span>{facingMode === 'user' ? 'Back' : 'Front'}</span>
+            </button>
+          </div>
+
+          {/* Scanner Telemetry & Hardware Wedge Monitor */}
+          <div className="bg-slate-900 text-slate-200 p-2.5 rounded-xl font-mono text-[10px] space-y-1 shadow-inner">
             <div className="flex justify-between text-slate-400">
-              <span>SCANNER LATENCY:</span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                <span>HARDWARE WEDGE + CAMERA:</span>
+              </span>
               <span className="text-emerald-400 font-bold">
-                {diagnostic.lastScanLatencyMs > 0 ? `${diagnostic.lastScanLatencyMs} ms / char` : 'IDLE (Ready)'}
+                {diagnostic.lastScanLatencyMs > 0 ? `${diagnostic.lastScanLatencyMs} ms (HID Gun)` : isCameraActive ? 'Camera Live' : 'HID Ready'}
               </span>
             </div>
             <div className="flex justify-between text-slate-400">
-              <span>LAST WEDGE PAYLOAD:</span>
+              <span>LAST SCANNED PAYLOAD:</span>
               <span className="text-slate-100 font-bold truncate max-w-[170px]">
-                {diagnostic.lastScannedPayload || 'None'}
+                {lastScannedQr || diagnostic.lastScannedPayload || 'None'}
               </span>
             </div>
           </div>
