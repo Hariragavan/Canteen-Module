@@ -26,7 +26,9 @@ import {
   Scan,
   ChevronUp,
   ChevronDown,
+  Star,
 } from 'lucide-react';
+import { FeedbackModal } from '../modals/FeedbackModal';
 
 interface TabletKioskViewProps {
   onNavigateToStaffScanner?: (orderUuid: string) => void;
@@ -61,8 +63,38 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
   const [isVerifyModalOpen, setIsVerifyModalOpen] = useState<boolean>(false);
   const [autoResetSeconds, setAutoResetSeconds] = useState<number>(10);
   const [snacksQty, setSnacksQty] = useState<number>(1);
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState<boolean>(false);
 
-  // HUD and Carousel refs
+  // Daily 10-token limit per person per food type (Tiffin and Tea/Snacks)
+  const isQtyAvailable = (
+    selectedMealSlot === 'Tiffin' ||
+    selectedMealSlot === 'Tea/Snacks' ||
+    selectedMealSlot.toLowerCase().includes('tea') ||
+    selectedMealSlot.toLowerCase().includes('snack')
+  );
+
+  const alreadyTakenToday = (currentEmployee && isQtyAvailable)
+    ? canteenService.getEmployeeMealTokensCountToday(currentEmployee.id, selectedMealSlot)
+    : 0;
+
+  const maxAllowedToday = 10;
+  const remainingToday = isQtyAvailable ? Math.max(0, maxAllowedToday - alreadyTakenToday) : 1;
+  const isDailyLimitReached = isQtyAvailable && remainingToday === 0;
+
+  // Auto-adjust snacksQty when food slot or employee changes
+  useEffect(() => {
+    if (isQtyAvailable) {
+      if (remainingToday === 0) {
+        setSnacksQty(0);
+      } else if (snacksQty > remainingToday) {
+        setSnacksQty(remainingToday);
+      } else if (snacksQty < 1 && remainingToday > 0) {
+        setSnacksQty(1);
+      }
+    } else {
+      setSnacksQty(1);
+    }
+  }, [isQtyAvailable, remainingToday, selectedMealSlot, currentEmployee?.id]);
   const hudRef = useRef<FaceScannerHUDHandle | null>(null);
   const carouselRef = useRef<HTMLDivElement | null>(null);
 
@@ -919,58 +951,45 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
 
                 {/* =========================================================== */}
                 {/* QUANTITY SELECTOR: For Tiffin & Tea/Snacks (Min 1, Max 10)  */}
+                {/* Enforces 10 tokens maximum per employee per food type today */}
                 {/* =========================================================== */}
-                {(selectedMealSlot === 'Tiffin' || selectedMealSlot === 'Tea/Snacks' || selectedMealSlot.toLowerCase().includes('tea') || selectedMealSlot.toLowerCase().includes('snack')) && (
-                  <div className="bg-amber-50/95 border-2 border-amber-300 rounded-2xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in slide-in-from-bottom-2 duration-300 shrink-0 my-1">
-                    <div className="flex items-center space-x-2.5">
-                      <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black text-sm shadow-xs">
+                {isQtyAvailable && (
+                  <div className="bg-amber-50/95 border-2 border-amber-300 rounded-2xl p-3 flex flex-row items-center justify-between gap-3 shadow-2xs animate-in fade-in slide-in-from-bottom-2 duration-300 shrink-0 my-1">
+                    <div className="flex items-center space-x-2.5 min-w-0">
+                      <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black text-sm shadow-xs shrink-0">
                         Qty
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center space-x-2">
-                          <span className="text-xs font-black text-slate-900 uppercase tracking-tight">
-                            Select Quantity / எண்ணிக்கை (1 - 10)
+                          <span className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-tight">
+                            Select Quantity
                           </span>
-                          <span className="text-[9px] font-mono font-bold bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full border border-amber-300">
-                            Prints {snacksQty} {snacksQty > 1 ? 'Individual Slips' : 'Slip'}
+                          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                            isDailyLimitReached
+                              ? 'bg-rose-100 text-rose-800 border-rose-300'
+                              : 'bg-amber-200 text-amber-900 border-amber-300'
+                          }`}>
+                            {isDailyLimitReached ? 'Daily Limit Reached (10/10)' : `Remaining: ${remainingToday} of 10`}
                           </span>
                         </div>
-                        <p className="text-[10px] text-amber-900 font-medium mt-0.5">
-                          Each portion prints its own individual token slip with distinct QR code
+                        <p className="text-[10px] text-amber-900 font-medium mt-0.5 truncate">
+                          {alreadyTakenToday > 0
+                            ? `Taken today: ${alreadyTakenToday} tokens • Max 10 per day`
+                            : 'Maximum 10 tokens per day for this food type'}
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-2 shrink-0 self-end sm:self-center">
-                      {/* Direct Quick Pills */}
-                      <div className="hidden sm:flex items-center space-x-1 mr-1">
-                        {[1, 2, 3, 4, 5, 10].map((num) => (
-                          <button
-                            key={num}
-                            type="button"
-                            onClick={() => {
-                              soundEngine.playSelectSound();
-                              setSnacksQty(num);
-                            }}
-                            className={`w-7 h-7 rounded-lg text-xs font-black font-mono transition-all cursor-pointer ${
-                              snacksQty === num
-                                ? 'bg-amber-600 text-white shadow-xs'
-                                : 'bg-white hover:bg-amber-100 text-slate-700 border border-slate-200'
-                            }`}
-                          >
-                            {num}
-                          </button>
-                        ))}
-                      </div>
-
+                    {/* Plus and Minus buttons to select quantity: min 1, max remainingToday */}
+                    <div className="flex items-center space-x-2 shrink-0">
                       <button
                         type="button"
                         onClick={() => {
                           soundEngine.playSelectSound();
                           setSnacksQty((q) => Math.max(1, q - 1));
                         }}
-                        disabled={snacksQty <= 1}
-                        className="w-9 h-9 rounded-xl bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 font-black text-lg flex items-center justify-center shadow-2xs active:scale-95 disabled:opacity-30 cursor-pointer"
+                        disabled={snacksQty <= 1 || isDailyLimitReached}
+                        className="w-10 h-10 rounded-xl bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 font-black text-xl flex items-center justify-center shadow-2xs active:scale-95 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                         title="Decrease quantity"
                       >
                         -
@@ -978,7 +997,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
 
                       <div className="w-10 text-center">
                         <span className="font-black text-2xl text-slate-950 font-mono">
-                          {snacksQty}
+                          {isDailyLimitReached ? 0 : snacksQty}
                         </span>
                         <span className="text-[8px] text-slate-500 block -mt-1 font-bold">
                           QTY
@@ -989,10 +1008,10 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                         type="button"
                         onClick={() => {
                           soundEngine.playSelectSound();
-                          setSnacksQty((q) => Math.min(10, q + 1));
+                          setSnacksQty((q) => Math.min(remainingToday, q + 1));
                         }}
-                        disabled={snacksQty >= 10}
-                        className="w-9 h-9 rounded-xl bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 font-black text-lg flex items-center justify-center shadow-2xs active:scale-95 disabled:opacity-30 cursor-pointer"
+                        disabled={snacksQty >= remainingToday || isDailyLimitReached}
+                        className="w-10 h-10 rounded-xl bg-white hover:bg-slate-100 text-slate-900 border border-slate-300 font-black text-xl flex items-center justify-center shadow-2xs active:scale-95 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                         title="Increase quantity"
                       >
                         +
@@ -1012,7 +1031,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                       <span className="text-sm font-black text-slate-900 truncate">
                         {selectedMealSlot}
                       </span>
-                      {(selectedMealSlot === 'Tiffin' || selectedMealSlot === 'Tea/Snacks' || selectedMealSlot.toLowerCase().includes('tea') || selectedMealSlot.toLowerCase().includes('snack')) && snacksQty > 1 && (
+                      {isQtyAvailable && snacksQty > 1 && !isDailyLimitReached && (
                         <span className="text-[10px] font-mono bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full font-bold border border-amber-300">
                           {snacksQty} Slips
                         </span>
@@ -1026,9 +1045,9 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                   <button
                     id="btnConfirmAndPrintSlip"
                     onClick={handleConfirmAndPrint}
-                    disabled={Boolean(duplicateOrder) || isDispensing}
+                    disabled={Boolean(duplicateOrder) || isDispensing || (isQtyAvailable && isDailyLimitReached)}
                     className={`px-6 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-sm transition-all transform active:scale-95 flex items-center justify-center space-x-2 shrink-0 cursor-pointer ${
-                      duplicateOrder || isDispensing
+                      duplicateOrder || isDispensing || (isQtyAvailable && isDailyLimitReached)
                         ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                         : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
                     }`}
@@ -1037,7 +1056,9 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                     <span>
                       {isDispensing
                         ? 'Dispensing...'
-                        : (selectedMealSlot === 'Tiffin' || selectedMealSlot === 'Tea/Snacks' || selectedMealSlot.toLowerCase().includes('tea') || selectedMealSlot.toLowerCase().includes('snack')) && snacksQty > 1
+                        : isDailyLimitReached
+                        ? 'Daily Limit Reached (10/10)'
+                        : isQtyAvailable && snacksQty > 1
                         ? `Confirm & Print ${snacksQty} Slips (₹${(mealSlots.find(s => s.name === selectedMealSlot)?.rate ?? 40) * snacksQty})`
                         : `Confirm & Print Slip (₹${mealSlots.find(s => s.name === selectedMealSlot)?.rate ?? 40})`}
                     </span>
@@ -1061,6 +1082,33 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
         employee={currentEmployee}
         capturedSnapshot={capturedSnapshot}
         onNavigateToStaffScanner={onNavigateToStaffScanner}
+      />
+
+      {/* Floating Feedback Button in Right Down Corner of First Page */}
+      <div className="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 z-40 print:hidden">
+        <button
+          type="button"
+          onClick={() => {
+            soundEngine.playSelectSound();
+            setIsFeedbackModalOpen(true);
+          }}
+          className="group px-4 py-2.5 bg-white hover:bg-emerald-50 text-slate-800 hover:text-emerald-900 border-2 border-emerald-500 rounded-full font-bold shadow-lg shadow-emerald-900/10 flex items-center space-x-2 transition-all transform active:scale-95 cursor-pointer backdrop-blur"
+          title="Give Food & Service Feedback"
+        >
+          <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+            <Star className="w-3.5 h-3.5 fill-amber-300 stroke-amber-400" />
+          </div>
+          <span className="text-xs sm:text-sm font-black tracking-tight">
+            Feedback <span className="text-[11px] text-emerald-700 font-sans hidden sm:inline">(கருத்து)</span>
+          </span>
+        </button>
+      </div>
+
+      {/* Food Feedback Modal */}
+      <FeedbackModal
+        isOpen={isFeedbackModalOpen}
+        onClose={() => setIsFeedbackModalOpen(false)}
+        defaultSlot={selectedMealSlot}
       />
 
     </div>

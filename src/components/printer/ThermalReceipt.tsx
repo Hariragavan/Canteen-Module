@@ -100,9 +100,9 @@ const ThermalSlipContent: React.FC<{
       {/* Bottom Dashed Separator Line */}
       <div className="w-full border-t border-dashed border-black my-1.5" />
 
-      {/* Footer Notice */}
-      <div className="w-full text-center text-[10px] font-sans font-medium text-black tracking-tight">
-        Present slip at counter • Token valid today
+      {/* Footer Notice: User requirement: 'in token in botom mention only present the slip aat canteen counter' */}
+      <div className="w-full text-center text-[10px] font-sans font-bold text-black tracking-tight">
+        Present the slip at canteen counter
       </div>
     </div>
   );

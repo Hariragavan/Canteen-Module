@@ -233,3 +233,20 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
+
+-- ------------------------------------------------------------------------------
+-- 10. CUSTOMER FOOD & SERVICE FEEDBACK TABLE
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS canteen_feedback (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  meal_slot TEXT NOT NULL,
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  comment TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE canteen_feedback ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public all on feedback" ON canteen_feedback;
+CREATE POLICY "Allow public all on feedback" ON canteen_feedback FOR ALL USING (true) WITH CHECK (true);
+

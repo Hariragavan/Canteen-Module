@@ -1326,8 +1326,8 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                   updateCurrent('description', curr ? `${curr}, ${dish}` : dish);
                 };
 
-                const handleSaveMenu = () => {
-                  canteenService.updateMealSlots(adminMealSlots);
+                const handleSaveMenu = async () => {
+                  await canteenService.updateMealSlots(adminMealSlots);
                   soundEngine.playVerificationChime();
                   setIsMenuSavedToast(true);
                   setTimeout(() => setIsMenuSavedToast(false), 3000);

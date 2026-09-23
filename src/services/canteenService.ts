@@ -1,10 +1,11 @@
-import type { Employee, MealSlotConfig, MealSlotName, Order, VerificationResult } from '../types';
+import type { Employee, MealFeedback, MealSlotConfig, MealSlotName, Order, VerificationResult } from '../types';
 import { supabaseManager } from './supabase';
 
 const STORAGE_ORDERS_KEY = 'canteen_local_orders_v3';
 const STORAGE_TOKEN_KEY = 'canteen_token_seq_v3';
 const STORAGE_EMPLOYEES_KEY = 'canteen_local_employees_v3';
-const STORAGE_MEAL_SLOTS_KEY = 'canteen_meal_slots_v8';
+const STORAGE_MEAL_SLOTS_KEY = 'canteen_custom_menu_slots_permanent';
+const STORAGE_FEEDBACK_KEY = 'canteen_customer_feedbacks_v1';
 
 // Strictly 3 Canteen Meal Slots: Tiffin, Lunch, Tea/Snacks with pure Tamil text (no brackets)
 export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
@@ -100,33 +101,55 @@ class CanteenService {
       const storedOrders = localStorage.getItem(STORAGE_ORDERS_KEY);
       const storedSeq = localStorage.getItem(STORAGE_TOKEN_KEY);
       const storedEmployees = localStorage.getItem(STORAGE_EMPLOYEES_KEY);
-      const storedMealSlots = localStorage.getItem(STORAGE_MEAL_SLOTS_KEY);
+      // Load custom menu slots from permanent key, or fallback to any previously stored keys
+      let rawSlots = localStorage.getItem(STORAGE_MEAL_SLOTS_KEY);
+      if (!rawSlots) {
+        rawSlots = localStorage.getItem('canteen_meal_slots_v8') ||
+                   localStorage.getItem('canteen_meal_slots_v7') ||
+                   localStorage.getItem('canteen_meal_slots_v6') ||
+                   localStorage.getItem('canteen_meal_slots');
+      }
 
-      if (storedMealSlots) {
+      if (rawSlots) {
         try {
-          const parsedSlots = JSON.parse(storedMealSlots);
-          const hasLegacy = Array.isArray(parsedSlots) && parsedSlots.some(
-            ps => ps.name === 'Breakfast' || ps.name === 'Dinner' || ps.name === 'Snacks' || ps.name === 'Tea or Coffee'
-          );
+          const parsedSlots: any[] = JSON.parse(rawSlots);
+          if (Array.isArray(parsedSlots) && parsedSlots.length > 0) {
+            const slotNames: MealSlotName[] = ['Tiffin', 'Lunch', 'Tea/Snacks'];
+            this.mealSlots = slotNames.map(name => {
+              const def = DEFAULT_MEAL_SLOTS.find(d => d.name === name)!;
+              const existing = parsedSlots.find(ps => 
+                ps.name === name ||
+                (name === 'Tiffin' && ps.name === 'Breakfast') ||
+                (name === 'Tea/Snacks' && (ps.name === 'Tea or Coffee' || ps.name === 'Snacks' || ps.name === 'Tea'))
+              );
 
-          if (hasLegacy || !Array.isArray(parsedSlots) || parsedSlots.length === 0) {
-            this.mealSlots = [...DEFAULT_MEAL_SLOTS];
+              if (existing) {
+                // Preserve exact user settings (what was typed, what amount fixed, what times fixed)
+                const userRate = existing.rate !== undefined ? existing.rate : (existing.cost !== undefined ? existing.cost : def.rate);
+                const cleanTamil = (existing.tamilDisplayName || def.tamilDisplayName || '')
+                  .replace(/\(.*?\)/g, '')
+                  .replace(/[a-zA-Z]/g, '')
+                  .trim();
+                return {
+                  ...def,
+                  ...existing,
+                  name,
+                  displayName: existing.displayName || def.displayName,
+                  description: existing.description !== undefined ? existing.description : def.description,
+                  startTime: existing.startTime || def.startTime,
+                  endTime: existing.endTime || def.endTime,
+                  rate: userRate,
+                  cost: userRate,
+                  tamilDisplayName: cleanTamil || def.tamilDisplayName,
+                  isActive: existing.isActive !== false,
+                };
+              }
+              return { ...def };
+            });
             this.saveMealSlotsLocal();
           } else {
-            this.mealSlots = parsedSlots.map(ps => {
-              const def = DEFAULT_MEAL_SLOTS.find(d => d.name === ps.name);
-              const r = ps.rate ?? ps.cost ?? def?.rate ?? 40;
-              const cleanTamil = (ps.tamilDisplayName || def?.tamilDisplayName || '')
-                .replace(/\(.*?\)/g, '')
-                .replace(/[a-zA-Z]/g, '')
-                .trim();
-              return {
-                ...ps,
-                rate: r,
-                cost: r,
-                tamilDisplayName: cleanTamil || def?.tamilDisplayName,
-              };
-            });
+            this.mealSlots = [...DEFAULT_MEAL_SLOTS];
+            this.saveMealSlotsLocal();
           }
         } catch {
           this.mealSlots = [...DEFAULT_MEAL_SLOTS];
@@ -307,6 +330,36 @@ class CanteenService {
         this.saveLocal();
         supabaseManager.broadcastChange('canteen_orders', 'UPDATE', this.orders);
       }
+
+      // 3. Sync Meal Slots from Supabase so all menu, price, and timing changes are live
+      const { data: remoteSlots, error: slotErr } = await client
+        .from('canteen_meal_slots')
+        .select('*');
+
+      if (!slotErr && remoteSlots && remoteSlots.length > 0) {
+        this.mealSlots = this.mealSlots.map(localSlot => {
+          const rem = remoteSlots.find((r: any) => 
+            r.name?.toLowerCase() === localSlot.name.toLowerCase() ||
+            (localSlot.name === 'Tea/Snacks' && (r.id === 'TEASNACKS' || r.name === 'Tea/Snacks'))
+          );
+          if (rem) {
+            const p = rem.price !== undefined && rem.price !== null ? Number(rem.price) : (localSlot.rate ?? 40);
+            return {
+              ...localSlot,
+              description: rem.description || localSlot.description,
+              rate: p,
+              cost: p,
+              startTime: rem.start_time ? String(rem.start_time).slice(0, 5) : localSlot.startTime,
+              endTime: rem.end_time ? String(rem.end_time).slice(0, 5) : localSlot.endTime,
+            };
+          }
+          return localSlot;
+        });
+        this.saveMealSlotsLocal();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: this.mealSlots }));
+        }
+      }
     } catch (err) {
       console.warn('Sync from Supabase fallback:', err);
     }
@@ -431,20 +484,71 @@ class CanteenService {
     }
   }
 
-  public updateMealSlots(newSlots: MealSlotConfig[]): void {
+  public async updateMealSlots(newSlots: MealSlotConfig[]): Promise<void> {
     this.mealSlots = newSlots.map(s => {
-      const r = s.rate !== undefined ? s.rate : (s.cost !== undefined ? s.cost : 40);
+      const def = DEFAULT_MEAL_SLOTS.find(d => d.name === s.name);
+      const r = s.rate !== undefined ? s.rate : (s.cost !== undefined ? s.cost : (def?.rate ?? 40));
+      const cleanTamil = (s.tamilDisplayName || def?.tamilDisplayName || '')
+        .replace(/\(.*?\)/g, '')
+        .replace(/[a-zA-Z]/g, '')
+        .trim();
       return {
         ...s,
         rate: r,
         cost: r,
+        tamilDisplayName: cleanTamil || def?.tamilDisplayName,
       };
     });
     this.saveMealSlotsLocal();
+
+    // Persist to Supabase so menu changes survive across all devices and reloads
+    try {
+      const client = supabaseManager.getClient();
+      if (client) {
+        for (const s of this.mealSlots) {
+          const slotId = s.name === 'Tea/Snacks' ? 'TEASNACKS' : s.name.toUpperCase();
+          await client.from('canteen_meal_slots').upsert({
+            id: slotId,
+            name: s.name,
+            display_name: s.displayName,
+            start_time: s.startTime,
+            end_time: s.endTime,
+            emoji: s.emoji,
+            description: s.description,
+            price: s.rate ?? s.cost ?? 40,
+            is_active: s.isActive !== false,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Failed saving meal slots to Supabase:', e);
+    }
+
     supabaseManager.broadcastChange('canteen_meal_slots', 'UPDATE', this.mealSlots);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: this.mealSlots }));
     }
+  }
+
+  public getTodayDateString(): string {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  /**
+   * Calculates total tokens already taken by an employee for a specific food type today.
+   * Maximum allowed is 10 tokens per day per food type.
+   */
+  public getEmployeeMealTokensCountToday(userId: string, meal: MealSlotName): number {
+    const today = this.getTodayDateString();
+    const userOrdersToday = this.orders.filter(
+      o => o.userId === userId && 
+           (o.meal === meal || 
+            (meal === 'Tiffin' && (o.meal === 'Tiffin' || o.meal === 'Breakfast')) ||
+            (meal === 'Tea/Snacks' && (o.meal === 'Tea/Snacks' || o.meal === 'Snacks' || (o.meal as string) === 'Tea' || o.meal === 'Tea or Coffee'))) &&
+           o.dateStr === today &&
+           o.status !== 'CANCELLED'
+    );
+    return userOrdersToday.reduce((sum, o) => sum + (o.qty ?? 1), 0);
   }
 
   /**
@@ -472,7 +576,7 @@ class CanteenService {
 
   /**
    * Duplicate Order Prevention: Only Lunch is restricted to 1 meal per employee per day.
-   * Tiffin and Tea/Snacks allow multiple quantities / orders.
+   * Tiffin and Tea/Snacks allow multiple quantities / orders up to 10 per day.
    */
   public checkDuplicateBooking(userId: string, meal: MealSlotName): Order | undefined {
     if (meal.toLowerCase() !== 'lunch') {
@@ -490,6 +594,7 @@ class CanteenService {
   /**
    * Creates multiple sequential orders/tokens when quantity > 1
    * Each token gets its own unique token number, order UUID, and QR code!
+   * Enforces 10 tokens maximum per day per person for Tiffin / Tea/Snacks.
    */
   public async createOrdersBatch(
     employee: Employee,
@@ -504,6 +609,17 @@ class CanteenService {
     }
 
     const count = Math.max(1, Math.min(10, qty || 1));
+
+    // Non-lunch tokens daily limit check (10 max per employee per day)
+    if (meal.toLowerCase() !== 'lunch') {
+      const alreadyTaken = this.getEmployeeMealTokensCountToday(employee.id, meal);
+      if (alreadyTaken + count > 10) {
+        const remaining = Math.max(0, 10 - alreadyTaken);
+        throw new Error(
+          `Daily Limit Exceeded: Maximum 10 tokens per day for ${meal}. You have already taken ${alreadyTaken}, only ${remaining} remaining today.`
+        );
+      }
+    }
     const configuredSlot = this.getMealSlots().find((s) => s.name === meal);
     const resolvedRate = (rate !== undefined && rate !== null) 
       ? rate 
@@ -769,6 +885,39 @@ class CanteenService {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  }
+
+  /**
+   * Save customer feedback locally and sync to Supabase
+   */
+  public async submitFeedback(feedback: MealFeedback): Promise<void> {
+    try {
+      const stored = localStorage.getItem(STORAGE_FEEDBACK_KEY);
+      const list: MealFeedback[] = stored ? JSON.parse(stored) : [];
+      list.unshift(feedback);
+      localStorage.setItem(STORAGE_FEEDBACK_KEY, JSON.stringify(list));
+
+      const client = supabaseManager.getClient();
+      if (client) {
+        await client.from('canteen_feedback').insert({
+          meal_slot: feedback.mealSlot,
+          rating: feedback.rating,
+          comment: feedback.comment || null,
+          created_at: new Date(feedback.timestamp).toISOString(),
+        });
+      }
+    } catch (e) {
+      console.warn('Feedback save fallback:', e);
+    }
+  }
+
+  public getFeedbacks(): MealFeedback[] {
+    try {
+      const stored = localStorage.getItem(STORAGE_FEEDBACK_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
   }
 }
 

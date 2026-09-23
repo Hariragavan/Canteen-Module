@@ -278,12 +278,13 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
               initCamera();
             }
           }}
-          className={`relative w-full max-w-lg aspect-4/3 sm:aspect-16/10 h-[240px] sm:h-[270px] md:h-[290px] bg-slate-950 rounded-3xl overflow-hidden shadow-inner flex items-center justify-center mx-auto transition-all duration-300 ${
-            !isCameraActive ? 'cursor-pointer group hover:border-emerald-500' : ''
-          } ${
-            verifiedActive
-              ? 'border-4 border-emerald-500 ring-4 ring-emerald-400/50 shadow-[0_0_35px_rgba(16,185,129,0.6)]'
-              : 'border-2 border-slate-300'
+          className={`relative w-full max-w-lg aspect-4/3 sm:aspect-16/10 h-[240px] sm:h-[270px] md:h-[290px] rounded-3xl overflow-hidden shadow-inner flex items-center justify-center mx-auto transition-all duration-300 ${
+            !isCameraActive
+              ? 'bg-slate-100 hover:bg-slate-200/80 border-2 border-dashed border-slate-300 hover:border-emerald-500 cursor-pointer group'
+              : 'bg-slate-950 ' +
+                (verifiedActive
+                  ? 'border-4 border-emerald-500 ring-4 ring-emerald-400/50 shadow-[0_0_35px_rgba(16,185,129,0.6)]'
+                  : 'border-2 border-slate-300')
           }`}
         >
           {/* Live Tablet Camera Feed with mirror styling */}
@@ -317,20 +318,18 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
             </div>
           )}
 
-          {/* Camera Closed Viewfinder Placeholder: Touch anywhere to start */}
+          {/* Camera Closed Viewfinder: White-Grey Screen, Shows ONLY "Tap to turn on", button removed */}
           {!isCameraActive && (
-            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 bg-slate-950/95 text-center transition-all group-hover:bg-slate-950/90">
-              <div className="w-16 h-16 rounded-3xl bg-slate-900 border border-slate-800 group-hover:border-emerald-500/50 group-hover:scale-105 flex items-center justify-center text-slate-400 group-hover:text-emerald-400 mb-3 shadow-inner transition-all">
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 bg-slate-100/95 text-center transition-all group-hover:bg-slate-200/80">
+              <div className="w-16 h-16 rounded-3xl bg-white border border-slate-300 group-hover:border-emerald-500 group-hover:scale-105 flex items-center justify-center text-slate-500 group-hover:text-emerald-600 mb-2.5 shadow-sm transition-all">
                 <Camera className="w-8 h-8" />
               </div>
-              <h4 className="text-base font-black text-slate-100 tracking-tight">Touch Anywhere to Turn On Camera</h4>
-              <p className="text-xs text-emerald-400 font-semibold max-w-xs mt-1 mb-3 font-sans">
-                கேமராவை இயக்க எங்கு வேண்டுமானாலும் தொடவும்
+              <h4 className="text-base sm:text-lg font-black text-slate-800 tracking-tight">
+                Tap to turn on
+              </h4>
+              <p className="text-xs text-slate-500 font-medium mt-0.5 font-sans">
+                கேமராவை இயக்க தொடவும்
               </p>
-              <div className="px-5 py-2.5 bg-emerald-600 group-hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-600/30 flex items-center space-x-2 transition-all">
-                <Camera className="w-4 h-4" />
-                <span>Turn On Camera (தொடவும்)</span>
-              </div>
             </div>
           )}
 

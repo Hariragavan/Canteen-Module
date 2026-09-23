@@ -59,8 +59,8 @@ export const MenuTimingModal: React.FC<MenuTimingModalProps> = ({
     handleUpdateSlot(currentSlot.name, 'description', updated);
   };
 
-  const handleSaveAll = () => {
-    canteenService.updateMealSlots(slots);
+  const handleSaveAll = async () => {
+    await canteenService.updateMealSlots(slots);
     soundEngine.playVerificationChime();
     setIsSaved(true);
     if (onMenuUpdated) {

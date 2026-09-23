@@ -74,3 +74,12 @@ export interface ScannerStatus {
   lastScanLatencyMs: number;
   lastRawPayload: string;
 }
+
+export interface MealFeedback {
+  id?: string;
+  mealSlot: MealSlotName;
+  rating: number; // 1 to 5
+  comment?: string;
+  timestamp: number;
+  dateStr: string;
+}
