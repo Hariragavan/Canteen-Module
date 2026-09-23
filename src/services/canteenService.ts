@@ -4,16 +4,16 @@ import { supabaseManager } from './supabase';
 const STORAGE_ORDERS_KEY = 'canteen_local_orders_v3';
 const STORAGE_TOKEN_KEY = 'canteen_token_seq_v3';
 const STORAGE_EMPLOYEES_KEY = 'canteen_local_employees_v3';
-const STORAGE_MEAL_SLOTS_KEY = 'canteen_meal_slots_v6';
+const STORAGE_MEAL_SLOTS_KEY = 'canteen_meal_slots_v8';
 
-// Strictly 3 Canteen Meal Slots: Tiffin, Lunch, Tea/Snacks with bilingual Tamil/English support
+// Strictly 3 Canteen Meal Slots: Tiffin, Lunch, Tea/Snacks with pure Tamil text (no brackets)
 export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
   {
     name: 'Tiffin',
     startTime: '07:30',
     endTime: '11:00',
     displayName: 'Tiffin Special',
-    tamilDisplayName: 'டிபன் (Tiffin)',
+    tamilDisplayName: 'டிபன்',
     emoji: '🥞',
     category: 'Morning',
     description: 'Steamed Idli, Crispy Medu Vada, Pongal, Poori, Sambar & Filter Coffee / இட்லி, மெதுவடை, பொங்கல், பூரி, சாம்பார், காபி',
@@ -27,7 +27,7 @@ export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
     startTime: '12:00',
     endTime: '15:30',
     displayName: 'Executive Lunch Platter',
-    tamilDisplayName: 'மதிய உணவு (Lunch)',
+    tamilDisplayName: 'மதிய உணவு',
     emoji: '🍛',
     category: 'Active Now',
     description: 'Executive Meals, Basmati Rice, Sambar, Rasam, Curd, Kootu, Poriyal, Appalam / மதிய சாப்பாடு, சாதம், சாம்பார், கூட்டு, பொரியல்',
@@ -116,10 +116,15 @@ class CanteenService {
             this.mealSlots = parsedSlots.map(ps => {
               const def = DEFAULT_MEAL_SLOTS.find(d => d.name === ps.name);
               const r = ps.rate ?? ps.cost ?? def?.rate ?? 40;
+              const cleanTamil = (ps.tamilDisplayName || def?.tamilDisplayName || '')
+                .replace(/\(.*?\)/g, '')
+                .replace(/[a-zA-Z]/g, '')
+                .trim();
               return {
                 ...ps,
                 rate: r,
                 cost: r,
+                tamilDisplayName: cleanTamil || def?.tamilDisplayName,
               };
             });
           }

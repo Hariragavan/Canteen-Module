@@ -373,7 +373,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
         } catch (e) {
           console.warn('Auto print trigger error:', e);
         }
-      }, 150);
+      }, 300);
 
       const drawer = document.getElementById('printerDrawerSection');
       if (drawer) {

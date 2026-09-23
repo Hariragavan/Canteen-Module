@@ -71,54 +71,80 @@
   background: #94a3b8;
 }
 
+/* Hide print portal on regular screen */
+#canteen-print-portal {
+  display: none;
+}
+
 /* TVS RP 3230 ABW Thermal Printer 80mm Print Media Query */
 @media print {
-  /* Hide all regular UI when browser print triggers */
-  body * {
-    visibility: hidden !important;
+  @page {
+    size: auto;
+    margin: 0mm !important;
   }
 
-  /* Only display the dedicated 80mm thermal container */
-  #tvsSlipPrintArea,
-  #tvsSlipPrintArea * {
-    visibility: visible !important;
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    width: 100% !important;
+    overflow: visible !important;
   }
 
-  #tvsSlipPrintArea {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+  /* When printing receipts, hide everything except the dedicated print portal */
+  body.has-receipt-print > *:not(#canteen-print-portal) {
+    display: none !important;
+  }
+
+  body.has-receipt-print #canteen-print-portal {
+    display: block !important;
+    position: static !important;
     width: 68mm !important;
     max-width: 70mm !important;
     margin: 0 !important;
     padding: 0 !important;
-    box-sizing: border-box !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
     border: none !important;
   }
 
-  .tvs-slip-page {
+  /* Fallback if class wasn't set */
+  #canteen-print-portal {
+    display: block !important;
+    position: static !important;
     width: 68mm !important;
     max-width: 70mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Each slip is guaranteed to be its own independent page with ZERO outer outline border */
+  .tvs-slip-page {
+    display: block !important;
+    width: 68mm !important;
+    max-width: 70mm !important;
+    page-break-before: auto !important;
     page-break-after: always !important;
+    page-break-inside: avoid !important;
     break-after: page !important;
-    margin: 0 0 5mm 0 !important;
-    padding: 2mm !important;
+    break-inside: avoid !important;
+    margin: 0 !important;
+    padding: 2mm 1mm 4mm 1mm !important;
     box-sizing: border-box !important;
     background: #ffffff !important;
     color: #000000 !important;
-    border: 1px solid #000 !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
   }
 
+  /* Last page prevents unnecessary extra blank feed */
   .tvs-slip-page:last-child {
     page-break-after: auto !important;
     break-after: auto !important;
-  }
-
-  @page {
-    size: auto;
-    margin: 0mm;
   }
 }
