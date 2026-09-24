@@ -11,7 +11,7 @@ interface FeedbackModalProps {
 }
 
 const FOOD_TYPES: { id: MealSlotName; label: string; tamil: string; emoji: string }[] = [
-  { id: 'Tiffin', label: 'Tiffin', tamil: 'டிபன்', emoji: '🥞' },
+  { id: 'Tiffin', label: 'Tiffin', tamil: 'காலை உணவு', emoji: '🥞' },
   { id: 'Lunch', label: 'Lunch', tamil: 'மதிய உணவு', emoji: '🍛' },
   { id: 'Tea/Snacks', label: 'Tea/Snacks', tamil: 'தேநீர் & ஸ்நாக்ஸ்', emoji: '☕' },
 ];

@@ -237,11 +237,12 @@ export const ThermalReceipt = React.forwardRef<ThermalReceiptHandle, ThermalRece
     let name = slot?.tamilDisplayName;
     if (!name) {
       const lower = (meal || '').toLowerCase();
-      if (lower.includes('tiffin') || lower.includes('breakfast')) name = 'டிபன்';
+      if (lower.includes('tiffin') || lower.includes('breakfast')) name = 'காலை உணவு';
       else if (lower.includes('lunch')) name = 'மதிய உணவு';
       else if (lower.includes('tea') || lower.includes('snack')) name = 'தேநீர் & ஸ்நாக்ஸ்';
       else name = meal;
     }
+    if (name === 'டிபன்') name = 'காலை உணவு';
     // Strictly remove any parentheses, brackets, or English alphabet characters
     return name.replace(/\(.*?\)/g, '').replace(/[a-zA-Z]/g, '').trim();
   };

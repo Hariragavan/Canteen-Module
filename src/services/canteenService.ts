@@ -15,7 +15,7 @@ export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
     startTime: '07:30',
     endTime: '11:00',
     displayName: 'Tiffin',
-    tamilDisplayName: 'டிபன்',
+    tamilDisplayName: 'காலை உணவு',
     emoji: '🥞',
     category: 'Morning',
     description: '',
@@ -87,16 +87,14 @@ export const INITIAL_EMPLOYEES: Employee[] = [];
 
 export const isStaleDummyDescription = (desc?: string): boolean => {
   if (!desc) return false;
-  const d = desc.toLowerCase();
+  const d = desc.toLowerCase().trim();
   return (
-    d.includes('steamed idli') ||
-    d.includes('crispy medu vada') ||
-    d.includes('crispy vada') ||
-    d.includes('executive lunch') ||
-    d.includes('executive meals') ||
-    d.includes('special masala tea') ||
-    d.includes('complete south indian') ||
-    d.includes('special masala chai')
+    d.includes('steamed idli, crispy medu vada') ||
+    d.includes('executive lunch platter') ||
+    d.includes('executive meals, basmati rice') ||
+    d.includes('special masala tea, filter coffee, hot samosa') ||
+    d.includes('complete south indian veg thali') ||
+    d.includes('special masala chai & hot snacks')
   );
 };
 
@@ -143,10 +141,13 @@ class CanteenService {
               if (existing) {
                 // Preserve exact user settings (what was typed, what amount fixed, what times fixed)
                 const userRate = existing.rate !== undefined ? existing.rate : (existing.cost !== undefined ? existing.cost : def.rate);
-                const cleanTamil = (existing.tamilDisplayName || def.tamilDisplayName || '')
+                let cleanTamil = (existing.tamilDisplayName || def.tamilDisplayName || '')
                   .replace(/\(.*?\)/g, '')
                   .replace(/[a-zA-Z]/g, '')
                   .trim();
+                if (name === 'Tiffin' && (!cleanTamil || cleanTamil === 'டிபன்')) {
+                  cleanTamil = 'காலை உணவு';
+                }
                 
                 // If existing description had legacy hardcoded dummy strings, purge it to empty string
                 let userDesc = existing.description;
@@ -355,54 +356,67 @@ class CanteenService {
         supabaseManager.broadcastChange('canteen_orders', 'UPDATE', this.orders);
       }
 
-      // 3. Sync Meal Slots: Protect user custom menu data from being overwritten by stale defaults
-      const userHasSavedLocally = Boolean(localStorage.getItem('canteen_menu_last_saved'));
+      // 3. Sync Meal Slots: Load lastly edited menu data from SQL (canteen_meal_slots)
+      // and ensure changes persist permanently across reloads and devices
+      const { data: remoteSlots, error: slotErr } = await client
+        .from('canteen_meal_slots')
+        .select('*');
 
-      if (userHasSavedLocally) {
-        // User's local edits are authoritative: push to Supabase to keep remote updated
+      if (!slotErr && remoteSlots && remoteSlots.length > 0) {
+        this.mealSlots = this.mealSlots.map(localSlot => {
+          const rem = remoteSlots.find((r: any) => 
+            r.name?.toLowerCase() === localSlot.name.toLowerCase() ||
+            (localSlot.name === 'Tea/Snacks' && (r.id === 'TEASNACKS' || r.name === 'Tea/Snacks')) ||
+            (localSlot.name === 'Tiffin' && (r.id === 'TIFFIN' || r.id === 'BREAKFAST' || r.name?.toLowerCase() === 'breakfast'))
+          );
+          if (rem) {
+            const p = rem.price !== undefined && rem.price !== null ? Number(rem.price) : (localSlot.rate ?? 40);
+            const remoteDesc = rem.description !== undefined && rem.description !== null && !isStaleDummyDescription(rem.description)
+              ? rem.description
+              : '';
+            // If remote has description, use remote; if remote is empty but local has description, use local
+            const finalDesc = remoteDesc !== '' ? remoteDesc : (localSlot.description || '');
+            const finalTamil = localSlot.name === 'Tiffin' ? 'காலை உணவு' : localSlot.tamilDisplayName;
+            return {
+              ...localSlot,
+              description: finalDesc,
+              rate: p,
+              cost: p,
+              tamilDisplayName: finalTamil,
+              startTime: rem.start_time ? String(rem.start_time).slice(0, 5) : localSlot.startTime,
+              endTime: rem.end_time ? String(rem.end_time).slice(0, 5) : localSlot.endTime,
+              isActive: rem.is_active !== false,
+            };
+          }
+          return localSlot;
+        });
+
+        this.saveMealSlotsLocal();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: this.mealSlots }));
+        }
+
+        // Two-way synchronization: If local has descriptions not yet updated in remote SQL, push them
         for (const s of this.mealSlots) {
           const slotId = s.name === 'Tea/Snacks' ? 'TEASNACKS' : s.name.toUpperCase();
-          await client.from('canteen_meal_slots').upsert({
-            id: slotId,
-            name: s.name,
-            display_name: s.displayName,
-            start_time: s.startTime,
-            end_time: s.endTime,
-            emoji: s.emoji,
-            description: s.description || '',
-            price: s.rate ?? s.cost ?? 40,
-            is_active: s.isActive !== false,
-          }, { onConflict: 'id' });
-        }
-      } else {
-        // Only pull from Supabase if user has not yet customized slots locally
-        const { data: remoteSlots, error: slotErr } = await client
-          .from('canteen_meal_slots')
-          .select('*');
-
-        if (!slotErr && remoteSlots && remoteSlots.length > 0) {
-          this.mealSlots = this.mealSlots.map(localSlot => {
-            const rem = remoteSlots.find((r: any) => 
-              r.name?.toLowerCase() === localSlot.name.toLowerCase() ||
-              (localSlot.name === 'Tea/Snacks' && (r.id === 'TEASNACKS' || r.name === 'Tea/Snacks'))
-            );
-            if (rem) {
-              const p = rem.price !== undefined && rem.price !== null ? Number(rem.price) : (localSlot.rate ?? 40);
-              const remDesc = isStaleDummyDescription(rem.description) ? '' : (rem.description ?? localSlot.description);
-              return {
-                ...localSlot,
-                description: remDesc || '',
-                rate: p,
-                cost: p,
-                startTime: rem.start_time ? String(rem.start_time).slice(0, 5) : localSlot.startTime,
-                endTime: rem.end_time ? String(rem.end_time).slice(0, 5) : localSlot.endTime,
-              };
-            }
-            return localSlot;
-          });
-          this.saveMealSlotsLocal();
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: this.mealSlots }));
+          const rem = remoteSlots.find((r: any) => 
+            r.name?.toLowerCase() === s.name.toLowerCase() ||
+            r.id === slotId ||
+            (s.name === 'Tiffin' && (r.id === 'BREAKFAST' || r.name?.toLowerCase() === 'breakfast'))
+          );
+          if (rem && rem.description !== s.description && s.description) {
+            await client
+              .from('canteen_meal_slots')
+              .update({
+                name: s.name,
+                description: s.description || '',
+                price: s.rate ?? s.cost ?? 40,
+                start_time: s.startTime,
+                end_time: s.endTime,
+                display_name: s.displayName,
+                is_active: s.isActive !== false,
+              })
+              .eq('id', rem.id);
           }
         }
       }
@@ -534,16 +548,19 @@ class CanteenService {
     this.mealSlots = newSlots.map(s => {
       const def = DEFAULT_MEAL_SLOTS.find(d => d.name === s.name);
       const r = s.rate !== undefined ? s.rate : (s.cost !== undefined ? s.cost : (def?.rate ?? 40));
-      const cleanTamil = (s.tamilDisplayName || def?.tamilDisplayName || '')
+      let cleanTamil = (s.tamilDisplayName || def?.tamilDisplayName || '')
         .replace(/\(.*?\)/g, '')
         .replace(/[a-zA-Z]/g, '')
         .trim();
+      if (s.name === 'Tiffin' && (!cleanTamil || cleanTamil === 'டிபன்')) {
+        cleanTamil = 'காலை உணவு';
+      }
       return {
         ...s,
-        description: s.description || '',
+        description: s.description !== undefined ? s.description : (def?.description ?? ''),
         rate: r,
         cost: r,
-        tamilDisplayName: cleanTamil || def?.tamilDisplayName,
+        tamilDisplayName: cleanTamil || (s.name === 'Tiffin' ? 'காலை உணவு' : def?.tamilDisplayName || ''),
       };
     });
     this.saveMealSlotsLocal();
@@ -551,23 +568,58 @@ class CanteenService {
       localStorage.setItem('canteen_menu_last_saved', Date.now().toString());
     } catch {}
 
-    // Persist to Supabase so menu changes survive across all devices and reloads
+    // Persist to Supabase SQL so menu changes survive across all devices and reloads
     try {
       const client = supabaseManager.getClient();
       if (client) {
         for (const s of this.mealSlots) {
           const slotId = s.name === 'Tea/Snacks' ? 'TEASNACKS' : s.name.toUpperCase();
-          await client.from('canteen_meal_slots').upsert({
-            id: slotId,
-            name: s.name,
-            display_name: s.displayName,
-            start_time: s.startTime,
-            end_time: s.endTime,
-            emoji: s.emoji,
-            description: s.description || '',
-            price: s.rate ?? s.cost ?? 40,
-            is_active: s.isActive !== false,
-          }, { onConflict: 'id' });
+          
+          // Match by name or legacy id to safely update existing row in SQL without unique violation
+          const { data: existingSlots } = await client
+            .from('canteen_meal_slots')
+            .select('id, name')
+            .or(`name.eq.${s.name},id.eq.${slotId}${s.name === 'Tiffin' ? ',id.eq.BREAKFAST' : ''}`)
+            .limit(1);
+
+          if (existingSlots && existingSlots.length > 0) {
+            const rowId = existingSlots[0].id;
+            const { error: updErr } = await client
+              .from('canteen_meal_slots')
+              .update({
+                name: s.name,
+                display_name: s.displayName,
+                start_time: s.startTime,
+                end_time: s.endTime,
+                emoji: s.emoji,
+                description: s.description || '',
+                price: s.rate ?? s.cost ?? 40,
+                is_active: s.isActive !== false,
+              })
+              .eq('id', rowId);
+
+            if (updErr) {
+              console.warn(`Error updating ${s.name} in Supabase:`, updErr);
+            }
+          } else {
+            const { error: insErr } = await client
+              .from('canteen_meal_slots')
+              .insert({
+                id: slotId,
+                name: s.name,
+                display_name: s.displayName,
+                start_time: s.startTime,
+                end_time: s.endTime,
+                emoji: s.emoji,
+                description: s.description || '',
+                price: s.rate ?? s.cost ?? 40,
+                is_active: s.isActive !== false,
+              });
+
+            if (insErr) {
+              console.warn(`Error inserting ${s.name} in Supabase:`, insErr);
+            }
+          }
         }
       }
     } catch (e) {

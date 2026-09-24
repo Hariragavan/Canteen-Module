@@ -971,7 +971,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                                   </h4>
                                   {slot.tamilDisplayName && (
                                     <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                      {slot.tamilDisplayName}
+                                      {slot.name === 'Tiffin' || slot.tamilDisplayName === 'டிபன்' ? 'காலை உணவு' : slot.tamilDisplayName}
                                     </span>
                                   )}
                                   {isCurrentTimeSlot && (
@@ -1008,21 +1008,22 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                             </div>
                           </div>
 
-                          {/* Menu Items description (rendered only if set) */}
-                          {slot.description && (
-                            <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-baseline justify-between gap-2 text-xs">
-                              <p className="text-slate-700 text-xs truncate max-w-md font-sans">
-                                <strong className="text-slate-900 font-semibold">Menu:</strong> {slot.description}
-                              </p>
-                              <span
-                                className={`text-[10px] font-bold shrink-0 ${
-                                  isSelected ? 'text-emerald-700 font-extrabold' : 'text-slate-400'
-                                }`}
-                              >
-                                {isSelected ? '✓ Selected' : isAlreadyBooked ? 'Locked' : 'Tap to Select'}
+                          {/* Menu Items description displayed in small text */}
+                          <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px]">
+                            <p className="text-slate-600 text-[11px] leading-tight font-sans line-clamp-1 sm:line-clamp-2 max-w-[340px]">
+                              <strong className="text-slate-900 font-semibold">Menu / உணவு:</strong>{' '}
+                              <span className={slot.description ? 'text-slate-700 font-medium' : 'text-slate-400 italic'}>
+                                {slot.description ? slot.description : 'Menu items available at counter'}
                               </span>
-                            </div>
-                          )}
+                            </p>
+                            <span
+                              className={`text-[10px] font-bold shrink-0 ${
+                                isSelected ? 'text-emerald-700 font-extrabold' : 'text-slate-400'
+                              }`}
+                            >
+                              {isSelected ? '✓ Selected' : isAlreadyBooked ? 'Locked' : 'Tap to Select'}
+                            </span>
+                          </div>
                         </div>
                       );
                     });
