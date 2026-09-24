@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { Employee, MealSlotConfig, MealSlotName, Order } from '../../types';
-import { canteenService } from '../../services/canteenService';
+import { canteenService, DEFAULT_MEAL_SLOTS } from '../../services/canteenService';
 import { supabaseManager } from '../../services/supabase';
 import { soundEngine } from '../../services/soundEngine';
 import { faceMatcherService } from '../../services/faceMatcherService';
@@ -164,24 +164,65 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // Track fullscreen state
+  // Track fullscreen state across all browsers (including iOS webkit, Android WebView, tablets)
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement));
+      const doc = document as any;
+      setIsFullscreen(Boolean(
+        doc.fullscreenElement ||
+        doc.webkitFullscreenElement ||
+        doc.mozFullScreenElement ||
+        doc.msFullscreenElement
+      ));
     };
+
     document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
   }, []);
 
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch((err) => {
-        console.warn('Fullscreen error:', err);
-      });
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen();
+  const toggleFullscreen = async () => {
+    try {
+      const doc = document as any;
+      const docEl = document.documentElement as any;
+      const isFs = Boolean(
+        doc.fullscreenElement ||
+        doc.webkitFullscreenElement ||
+        doc.mozFullScreenElement ||
+        doc.msFullscreenElement
+      );
+
+      if (!isFs) {
+        if (docEl.requestFullscreen) {
+          await docEl.requestFullscreen();
+        } else if (docEl.webkitRequestFullscreen) {
+          docEl.webkitRequestFullscreen();
+        } else if (docEl.mozRequestFullScreen) {
+          docEl.mozRequestFullScreen();
+        } else if (docEl.msRequestFullscreen) {
+          docEl.msRequestFullscreen();
+        }
+      } else {
+        if (doc.exitFullscreen) {
+          await doc.exitFullscreen();
+        } else if (doc.webkitExitFullscreen) {
+          doc.webkitExitFullscreen();
+        } else if (doc.mozCancelFullScreen) {
+          doc.mozCancelFullScreen();
+        } else if (doc.msExitFullscreen) {
+          doc.msExitFullscreen();
+        }
       }
+    } catch (err) {
+      console.warn('Fullscreen toggle failed:', err);
     }
   };
 
@@ -195,19 +236,6 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
   useEffect(() => {
     checkDuplicate();
   }, [checkDuplicate]);
-
-  // Scroll active meal card into view when opening Verified view
-  useEffect(() => {
-    if (kioskStep === 'VERIFIED') {
-      const timer = setTimeout(() => {
-        const activeCard = document.getElementById(`slide-meal-${selectedMealSlot}`);
-        if (activeCard) {
-          activeCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-  }, [kioskStep, selectedMealSlot]);
 
   // =========================================================================
   // CAMERA VERIFY MODEL: Checks if Person is Registered or Not
@@ -552,7 +580,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                     <span>Menu / உணவு:</span>
                   </span>
                   <p className="font-semibold text-slate-800 text-xs sm:text-sm leading-snug font-sans">
-                    {activeSlot.description}
+                    {activeSlot.description ? activeSlot.description : 'Menu ready • Available at counter'}
                   </p>
                 </div>
               </div>
@@ -656,13 +684,13 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
       {/* Optimized for Lenovo Tab K11 Gen 2 (16:10 aspect ratio landscape)  */}
       {/* ================================================================= */}
       {kioskStep === 'VERIFIED' && currentEmployee && (
-        <div className="w-full flex-1 grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-3.5 items-stretch min-h-0 overflow-y-auto md:overflow-hidden animate-in fade-in duration-200">
+        <div className="w-full flex-1 grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-3.5 items-stretch min-h-0 overflow-y-auto animate-in fade-in duration-200">
           
           {/* ============================================================= */}
           {/* LEFT COLUMN: Exactly matching sketch:                         */}
           {/* Name, Id, Dept., Date & Time                                  */}
           {/* ============================================================= */}
-          <div className="md:col-span-5 bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-xs min-h-0 overflow-y-auto">
+          <div className="md:col-span-4 bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-xs min-h-0 overflow-y-auto">
             
             <div className="flex flex-col gap-2.5">
               {/* Top Verified Header & Live Photo */}
@@ -774,9 +802,9 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
 
           {/* ============================================================= */}
           {/* RIGHT COLUMN: Food Type Selection Slide / Scroll View         */}
-          {/* Shows Breakfast, Lunch, Tea & Snacks, Dinner matching sketch! */}
+          {/* Shows Tiffin, Lunch, Tea & Snacks - Spacious Free Scrolling    */}
           {/* ============================================================= */}
-          <div className="md:col-span-7 bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-xs min-h-0 overflow-hidden relative">
+          <div className="md:col-span-8 bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 flex flex-col justify-between shadow-xs min-h-0 relative">
             
             {/* When Thermal Slip is Dispensed: Dedicated High-Fidelity Slip Showcase */}
             {lastPrintedOrder ? (
@@ -881,17 +909,20 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                 )}
 
                 {/* =========================================================== */}
-                {/* CENTER FOOD SELECTION: Vertical Carousel / List              */}
-                {/* Smooth vertical scroll-snap with clean animated cards       */}
+                {/* CENTER FOOD SELECTION: Free-Scrolling Spacious Selection Area */}
+                {/* Cards have compact width and are never clipped             */}
                 {/* =========================================================== */}
                 <div
                   ref={carouselRef}
-                  className="flex-1 flex flex-col gap-2.5 overflow-y-auto py-1 px-1 my-1 min-h-0 select-none snap-y snap-mandatory scroll-smooth max-h-[340px]"
+                  className="flex-1 flex flex-col gap-3 overflow-y-auto py-2 px-1 sm:px-2 my-1 min-h-[220px] select-none scroll-smooth"
                   style={{ scrollbarWidth: 'thin' }}
                 >
-                  {mealSlots
-                    .filter((s) => s.isActive !== false)
-                    .map((slot, index) => {
+                  {(() => {
+                    const validSlots: MealSlotConfig[] = (mealSlots && mealSlots.length > 0 ? mealSlots : DEFAULT_MEAL_SLOTS)
+                      .filter((s: MealSlotConfig) => s.isActive !== false);
+                    const slotsToShow: MealSlotConfig[] = validSlots.length > 0 ? validSlots : DEFAULT_MEAL_SLOTS;
+
+                    return slotsToShow.map((slot: MealSlotConfig, index: number) => {
                       const isSelected = selectedMealSlot === slot.name;
                       const isCurrentTimeSlot = activeSlotName === slot.name;
                       const isAlreadyBooked = Boolean(
@@ -904,7 +935,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                           id={`kiosk-meal-card-${slot.name}`}
                           onClick={() => !isAlreadyBooked && handleSelectMealSlot(slot.name)}
                           style={{ animationDelay: `${index * 50}ms` }}
-                          className={`w-full snap-start rounded-2xl border-2 transition-all duration-250 p-3 sm:p-3.5 cursor-pointer relative shadow-2xs animate-in fade-in slide-in-from-bottom-2 duration-300 fill-mode-both ${
+                          className={`w-full max-w-xl mx-auto rounded-2xl border-2 transition-all duration-250 p-3 sm:p-3.5 cursor-pointer relative shadow-2xs animate-in fade-in slide-in-from-bottom-2 duration-300 fill-mode-both ${
                             isSelected
                               ? 'border-emerald-600 bg-gradient-to-r from-emerald-50/90 via-emerald-50/40 to-white ring-2 ring-emerald-500/20 shadow-md scale-[1.008]'
                               : isAlreadyBooked
@@ -914,7 +945,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center space-x-3.5 min-w-0">
-                              {/* 1. AMOUNT FIRST IN BIG BOLD TEXT (Requirement 3) */}
+                              {/* 1. AMOUNT FIRST IN BIG BOLD TEXT */}
                               <div
                                 className={`px-3 py-2 rounded-2xl flex flex-col items-center justify-center shrink-0 border transition-all ${
                                   isSelected
@@ -977,22 +1008,25 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                             </div>
                           </div>
 
-                          {/* Menu Items description */}
-                          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-baseline justify-between gap-2 text-xs">
-                            <p className="text-slate-700 text-xs truncate max-w-md font-sans">
-                              <strong className="text-slate-900 font-semibold">Menu:</strong> {slot.description}
-                            </p>
-                            <span
-                              className={`text-[10px] font-bold shrink-0 ${
-                                isSelected ? 'text-emerald-700 font-extrabold' : 'text-slate-400'
-                              }`}
-                            >
-                              {isSelected ? '✓ Selected' : isAlreadyBooked ? 'Locked' : 'Tap to Select'}
-                            </span>
-                          </div>
+                          {/* Menu Items description (rendered only if set) */}
+                          {slot.description && (
+                            <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-baseline justify-between gap-2 text-xs">
+                              <p className="text-slate-700 text-xs truncate max-w-md font-sans">
+                                <strong className="text-slate-900 font-semibold">Menu:</strong> {slot.description}
+                              </p>
+                              <span
+                                className={`text-[10px] font-bold shrink-0 ${
+                                  isSelected ? 'text-emerald-700 font-extrabold' : 'text-slate-400'
+                                }`}
+                              >
+                                {isSelected ? '✓ Selected' : isAlreadyBooked ? 'Locked' : 'Tap to Select'}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       );
-                    })}
+                    });
+                  })()}
                 </div>
 
                 {/* =========================================================== */}
@@ -1000,7 +1034,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                 {/* Enforces 10 tokens maximum per employee per food type today */}
                 {/* =========================================================== */}
                 {isQtyAvailable && (
-                  <div className="bg-amber-50/95 border-2 border-amber-300 rounded-2xl p-3 flex flex-row items-center justify-between gap-3 shadow-2xs animate-in fade-in slide-in-from-bottom-2 duration-300 shrink-0 my-1">
+                  <div className="bg-amber-50/95 border-2 border-amber-300 rounded-2xl p-3 flex flex-row items-center justify-between gap-3 shadow-2xs animate-in fade-in slide-in-from-bottom-2 duration-300 shrink-0 my-1 w-full max-w-xl mx-auto">
                     <div className="flex items-center space-x-2.5 min-w-0">
                       <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black text-sm shadow-xs shrink-0">
                         Qty
@@ -1068,7 +1102,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
 
 
                 {/* Bottom Row: Selected Meal Session & Confirm Print Button */}
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 sm:p-3 flex flex-row items-center justify-between gap-3 shrink-0">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 sm:p-3 flex flex-row items-center justify-between gap-3 shrink-0 w-full max-w-xl mx-auto">
                   <div className="min-w-0">
                     <span className="text-[10px] text-slate-400 font-semibold uppercase block">
                       Selected Session

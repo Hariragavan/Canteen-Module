@@ -65,12 +65,12 @@ CREATE TABLE IF NOT EXISTS canteen_meal_slots (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Active 3 meal slots: Tiffin, Lunch, Tea/Snacks
+-- Active 3 meal slots: Tiffin, Lunch, Tea/Snacks (no default placeholder menu data)
 INSERT INTO canteen_meal_slots (id, name, display_name, start_time, end_time, emoji, description, price)
 VALUES 
-  ('TIFFIN', 'Tiffin', 'Tiffin Special', '07:30', '10:30', '🥞', 'Steamed Idli, Crispy Vada & Sambar', 35.00),
-  ('LUNCH', 'Lunch', 'Executive Lunch Platter', '12:00', '15:00', '🍛', 'Complete South Indian Veg Thali', 60.00),
-  ('TEASNACKS', 'Tea/Snacks', 'Tea & Evening Snacks', '15:30', '18:30', '☕', 'Special Masala Chai & Hot Snacks', 20.00)
+  ('TIFFIN', 'Tiffin', 'Tiffin', '07:30', '11:00', '🥞', '', 40.00),
+  ('LUNCH', 'Lunch', 'Lunch', '12:00', '15:30', '🍛', '', 40.00),
+  ('TEASNACKS', 'Tea/Snacks', 'Tea/Snacks', '15:30', '18:30', '☕', '', 20.00)
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   start_time = EXCLUDED.start_time,
@@ -164,7 +164,7 @@ ALTER TABLE canteen_face_scan_logs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow public read on departments" ON canteen_departments FOR SELECT USING (true);
 CREATE POLICY "Allow public all on employees" ON canteen_employees FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public read on meal slots" ON canteen_meal_slots FOR SELECT USING (true);
+CREATE POLICY "Allow public all on meal slots" ON canteen_meal_slots FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public all on daily counter" ON canteen_daily_counter FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public all on orders" ON canteen_orders FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public all on scan logs" ON canteen_face_scan_logs FOR ALL USING (true) WITH CHECK (true);

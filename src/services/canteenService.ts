@@ -8,16 +8,17 @@ const STORAGE_MEAL_SLOTS_KEY = 'canteen_custom_menu_slots_permanent';
 const STORAGE_FEEDBACK_KEY = 'canteen_customer_feedbacks_v1';
 
 // Strictly 3 Canteen Meal Slots: Tiffin, Lunch, Tea/Snacks with pure Tamil text (no brackets)
+// Clean slate: description starts empty so user menu updates are saved without default placeholder data
 export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
   {
     name: 'Tiffin',
     startTime: '07:30',
     endTime: '11:00',
-    displayName: 'Tiffin Special',
+    displayName: 'Tiffin',
     tamilDisplayName: 'டிபன்',
     emoji: '🥞',
     category: 'Morning',
-    description: 'Steamed Idli, Crispy Medu Vada, Pongal, Poori, Sambar & Filter Coffee / இட்லி, மெதுவடை, பொங்கல், பூரி, சாம்பார், காபி',
+    description: '',
     rate: 40,
     cost: 40,
     isEligible: true,
@@ -27,11 +28,11 @@ export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
     name: 'Lunch',
     startTime: '12:00',
     endTime: '15:30',
-    displayName: 'Executive Lunch Platter',
+    displayName: 'Lunch',
     tamilDisplayName: 'மதிய உணவு',
     emoji: '🍛',
     category: 'Active Now',
-    description: 'Executive Meals, Basmati Rice, Sambar, Rasam, Curd, Kootu, Poriyal, Appalam / மதிய சாப்பாடு, சாதம், சாம்பார், கூட்டு, பொரியல்',
+    description: '',
     rate: 40,
     cost: 40,
     isEligible: true,
@@ -41,11 +42,11 @@ export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
     name: 'Tea/Snacks',
     startTime: '15:30',
     endTime: '18:30',
-    displayName: 'Tea & Evening Snacks',
+    displayName: 'Tea/Snacks',
     tamilDisplayName: 'தேநீர் & ஸ்நாக்ஸ்',
     emoji: '☕',
     category: 'Evening',
-    description: 'Special Masala Tea, Filter Coffee, Hot Samosa, Onion Pakoda, Medu Bajji / சுடச்சுட டீ, காபி, சமோசா, பக்கோடா',
+    description: '',
     rate: 20,
     cost: 20,
     isEligible: true,
@@ -84,6 +85,21 @@ export function normalizeDescriptor(val: unknown): number[] | null {
 // Clean Slate: Empty initial employees so admin can register new users
 export const INITIAL_EMPLOYEES: Employee[] = [];
 
+export const isStaleDummyDescription = (desc?: string): boolean => {
+  if (!desc) return false;
+  const d = desc.toLowerCase();
+  return (
+    d.includes('steamed idli') ||
+    d.includes('crispy medu vada') ||
+    d.includes('crispy vada') ||
+    d.includes('executive lunch') ||
+    d.includes('executive meals') ||
+    d.includes('special masala tea') ||
+    d.includes('complete south indian') ||
+    d.includes('special masala chai')
+  );
+};
+
 class CanteenService {
   private employees: Employee[] = [];
   private orders: Order[] = [];
@@ -101,6 +117,7 @@ class CanteenService {
       const storedOrders = localStorage.getItem(STORAGE_ORDERS_KEY);
       const storedSeq = localStorage.getItem(STORAGE_TOKEN_KEY);
       const storedEmployees = localStorage.getItem(STORAGE_EMPLOYEES_KEY);
+
       // Load custom menu slots from permanent key, or fallback to any previously stored keys
       let rawSlots = localStorage.getItem(STORAGE_MEAL_SLOTS_KEY);
       if (!rawSlots) {
@@ -130,12 +147,19 @@ class CanteenService {
                   .replace(/\(.*?\)/g, '')
                   .replace(/[a-zA-Z]/g, '')
                   .trim();
+                
+                // If existing description had legacy hardcoded dummy strings, purge it to empty string
+                let userDesc = existing.description;
+                if (userDesc === undefined || userDesc === null || isStaleDummyDescription(userDesc)) {
+                  userDesc = '';
+                }
+
                 return {
                   ...def,
                   ...existing,
                   name,
                   displayName: existing.displayName || def.displayName,
-                  description: existing.description !== undefined ? existing.description : def.description,
+                  description: userDesc,
                   startTime: existing.startTime || def.startTime,
                   endTime: existing.endTime || def.endTime,
                   rate: userRate,
@@ -345,10 +369,10 @@ class CanteenService {
             start_time: s.startTime,
             end_time: s.endTime,
             emoji: s.emoji,
-            description: s.description,
+            description: s.description || '',
             price: s.rate ?? s.cost ?? 40,
             is_active: s.isActive !== false,
-          });
+          }, { onConflict: 'id' });
         }
       } else {
         // Only pull from Supabase if user has not yet customized slots locally
@@ -364,9 +388,10 @@ class CanteenService {
             );
             if (rem) {
               const p = rem.price !== undefined && rem.price !== null ? Number(rem.price) : (localSlot.rate ?? 40);
+              const remDesc = isStaleDummyDescription(rem.description) ? '' : (rem.description ?? localSlot.description);
               return {
                 ...localSlot,
-                description: rem.description || localSlot.description,
+                description: remDesc || '',
                 rate: p,
                 cost: p,
                 startTime: rem.start_time ? String(rem.start_time).slice(0, 5) : localSlot.startTime,
@@ -515,6 +540,7 @@ class CanteenService {
         .trim();
       return {
         ...s,
+        description: s.description || '',
         rate: r,
         cost: r,
         tamilDisplayName: cleanTamil || def?.tamilDisplayName,
@@ -538,10 +564,10 @@ class CanteenService {
             start_time: s.startTime,
             end_time: s.endTime,
             emoji: s.emoji,
-            description: s.description,
+            description: s.description || '',
             price: s.rate ?? s.cost ?? 40,
             is_active: s.isActive !== false,
-          });
+          }, { onConflict: 'id' });
         }
       }
     } catch (e) {

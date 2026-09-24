@@ -21,13 +21,13 @@ const ThermalSlipContent: React.FC<{
   tamilMealName: string;
 }> = ({ ord, rateVal, formattedDate, formattedTime, tamilMealName }) => {
   return (
-    <div className="tvs-slip-page w-[270px] max-w-[275px] bg-white text-black font-sans p-2 select-none border-0 shadow-none outline-none">
+    <div className="tvs-slip-page w-[275px] max-w-[280px] bg-white text-black font-sans p-2 select-none border-0 shadow-none outline-none">
       {/* Main 2-Column Side-by-Side Content */}
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-stretch justify-between gap-2">
         {/* Left Column: Campus Canteen, QR Code, ORD UUID, Token, Name, ID */}
-        <div className="w-[118px] shrink-0 flex flex-col items-start text-left">
+        <div className="w-[124px] shrink-0 flex flex-col items-start text-left">
           <div className="flex items-center justify-between w-full mb-1">
-            <span className="font-bold text-black text-[13px] tracking-tight whitespace-nowrap">
+            <span className="font-bold text-black text-[13.5px] tracking-tight whitespace-nowrap">
               Campus Canteen
             </span>
           </div>
@@ -35,7 +35,7 @@ const ThermalSlipContent: React.FC<{
           <div className="p-0.5 bg-white border border-black rounded-none flex items-center justify-center">
             <QRCodeSVG
               value={ord.orderUuid}
-              size={95}
+              size={106}
               level="M"
               includeMargin={false}
               fgColor="#000000"
@@ -53,45 +53,45 @@ const ThermalSlipContent: React.FC<{
           </div>
 
           {/* Name */}
-          <div className="text-xs font-semibold text-black mt-0.5 leading-tight truncate max-w-[115px]">
+          <div className="text-xs font-semibold text-black mt-0.5 leading-tight truncate max-w-[122px]">
             Name: {ord.name}
           </div>
 
           {/* ID */}
-          <div className="text-xs font-semibold text-black mt-0.5 leading-tight truncate max-w-[115px]">
+          <div className="text-xs font-semibold text-black mt-0.5 leading-tight truncate max-w-[122px]">
             ID: {ord.userId}
           </div>
         </div>
 
-        {/* Right Column: QTY, RS: [40], [Tamil Box], [English Box], Time */}
-        <div className="flex-1 min-w-0 flex flex-col justify-start pl-1 text-left">
-          {/* Top Right: Big Amount Box [ RS: 40 ] */}
-          <div className="border-2 border-black px-2 py-1 flex items-baseline justify-between">
-            <span className="text-lg sm:text-xl font-bold text-black font-sans leading-none">
+        {/* Right Column: Rate Box, QTY, Food Type Box (Tamil & English), Time & Date */}
+        <div className="flex-1 min-w-0 flex flex-col justify-between pl-1 text-left">
+          {/* Top Right: Big Amount Box [ RS: 40 ] - Number centered even for single digit */}
+          <div className="border-2 border-black py-1 px-1.5 flex items-center justify-center relative min-h-[66px] w-full">
+            <span className="absolute top-1 left-1.5 text-xs sm:text-sm font-black text-black font-sans leading-none tracking-tight">
               RS:
             </span>
-            <span className="text-5xl sm:text-6xl font-black text-black leading-none tracking-tight">
+            <span className="text-[52px] sm:text-[58px] font-black text-black leading-none tracking-tight text-center">
               {rateVal}
             </span>
           </div>
 
           {/* QTY Box: only number, no (Slip 1 of 3) */}
-          <div className="border-2 border-black text-center py-0.5 px-1 font-black text-xs sm:text-sm text-black mt-1 mb-1.5">
+          <div className="border-2 border-black text-center py-0.5 px-1 font-black text-xs sm:text-sm text-black my-1">
             QTY: 1
           </div>
 
-          {/* Tamil Meal Name Box: pure Tamil text, no brackets */}
-          <div className="border-2 border-black text-center py-0.5 px-1 font-bold text-xs text-black leading-tight">
-            {tamilMealName}
+          {/* Food Type Box: Bold Tamil & English stacked together */}
+          <div className="border-2 border-black text-center py-0.5 px-1 flex flex-col justify-center">
+            <div className="font-black text-[13px] sm:text-sm text-black leading-tight">
+              {tamilMealName}
+            </div>
+            <div className="border-t border-black font-black text-sm sm:text-base text-black leading-tight pt-0.5 mt-0.5">
+              {ord.meal}
+            </div>
           </div>
 
-          {/* English Meal Name Box (Stacked directly below) */}
-          <div className="border-2 border-t-0 border-black text-center py-0.5 px-1 font-black text-base text-black leading-tight">
-            {ord.meal}
-          </div>
-
-          {/* Time & Date: only time and date, no text for 'Time:' */}
-          <div className="text-[9px] sm:text-[9.5px] text-black font-sans font-semibold mt-1.5 leading-tight whitespace-nowrap">
+          {/* Time & Date: to bottom directly above the dashed line */}
+          <div className="mt-auto pt-1.5 text-[9.5px] sm:text-[10px] text-black font-sans font-bold leading-tight whitespace-nowrap">
             {formattedTime} | {formattedDate}
           </div>
         </div>
