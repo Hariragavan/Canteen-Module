@@ -510,14 +510,35 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
   // Delete Employee
   const handleDeleteEmployee = async (id: string, name: string) => {
-    if (window.confirm(`Are you sure you want to remove ${name} (${id}) from the biometric roster?`)) {
+    let confirmed = true;
+    try {
+      confirmed = window.confirm(`Are you sure you want to permanently delete user ${name} (${id})?`);
+    } catch {
+      confirmed = true;
+    }
+
+    if (confirmed) {
       try {
+        // Immediate UI removal for instant feedback
+        setEmployees((prev) =>
+          prev.filter(
+            (e) =>
+              e.id !== id &&
+              String(e.id).trim().toLowerCase() !== String(id).trim().toLowerCase()
+          )
+        );
         await canteenService.deleteEmployee(id);
         soundEngine.playWarningBuzzer();
-        loadEmployees();
+        setSuccessMessage(`User ${name} (${id}) permanently deleted.`);
+        setTimeout(() => setSuccessMessage(null), 3000);
+        await loadEmployees();
         if (onRosterUpdated) onRosterUpdated();
       } catch (err) {
         console.error('Delete employee error:', err);
+        setErrorMessage(
+          'Failed to delete employee: ' +
+            (err instanceof Error ? err.message : String(err))
+        );
       }
     }
   };

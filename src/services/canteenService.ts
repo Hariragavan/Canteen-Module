@@ -6,6 +6,8 @@ const STORAGE_TOKEN_KEY = 'canteen_token_seq_v3';
 const STORAGE_EMPLOYEES_KEY = 'canteen_local_employees_v3';
 const STORAGE_MEAL_SLOTS_KEY = 'canteen_custom_menu_slots_permanent';
 const STORAGE_FEEDBACK_KEY = 'canteen_customer_feedbacks_v1';
+const STORAGE_DELETED_EMPLOYEES_KEY = 'canteen_deleted_employees_tombstone_v1';
+export const HARD_PURGED_USER_IDS = new Set<string>(['1212', '1234']);
 
 // Strictly 3 Canteen Meal Slots: Tiffin, Lunch, Tea/Snacks with pure Tamil text (no brackets)
 // Clean slate: description starts empty so user menu updates are saved without default placeholder data
@@ -109,6 +111,47 @@ class CanteenService {
     this.init();
   }
 
+  public getDeletedEmployeeIds(): Set<string> {
+    const s = new Set<string>(['1212', '1234']);
+    try {
+      const raw = localStorage.getItem(STORAGE_DELETED_EMPLOYEES_KEY);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          arr.forEach((id: string) => s.add(String(id).trim().toLowerCase()));
+        }
+      }
+    } catch {}
+    return s;
+  }
+
+  public addDeletedEmployeeId(id: string) {
+    const s = this.getDeletedEmployeeIds();
+    s.add(String(id).trim().toLowerCase());
+    s.add('1212');
+    s.add('1234');
+    try {
+      localStorage.setItem(STORAGE_DELETED_EMPLOYEES_KEY, JSON.stringify(Array.from(s)));
+    } catch {}
+  }
+
+  public removeDeletedEmployeeId(id: string) {
+    const s = this.getDeletedEmployeeIds();
+    s.delete(String(id).trim().toLowerCase());
+    try {
+      localStorage.setItem(STORAGE_DELETED_EMPLOYEES_KEY, JSON.stringify(Array.from(s)));
+    } catch {}
+  }
+
+  public isDeletedOrSystemId(id: string): boolean {
+    if (!id) return true;
+    const clean = String(id).trim().toLowerCase();
+    if (clean.startsWith('__system_')) return true;
+    if (HARD_PURGED_USER_IDS.has(clean)) return true;
+    if (this.getDeletedEmployeeIds().has(clean)) return true;
+    return false;
+  }
+
   private init() {
     if (this.isLoaded) return;
     try {
@@ -192,17 +235,20 @@ class CanteenService {
 
       if (storedEmployees) {
         // Normalize any legacy department names to strictly 'Staff' or 'Employee'
-        this.employees = JSON.parse(storedEmployees).map((emp: Employee) => {
-          const isStaff = emp.dept?.toLowerCase().includes('staff') || emp.role === 'Staff';
-          const descriptor = normalizeDescriptor(emp.face_descriptor || emp.embedding);
-          return {
-            ...emp,
-            dept: isStaff ? 'Staff' : 'Employee',
-            role: isStaff ? 'Staff' : 'Employee',
-            face_descriptor: descriptor,
-            embedding: descriptor,
-          };
-        });
+        // and strictly filter out deleted or system IDs (such as 1212 and 1234)
+        this.employees = JSON.parse(storedEmployees)
+          .filter((emp: any) => !this.isDeletedOrSystemId(emp.id))
+          .map((emp: Employee) => {
+            const isStaff = emp.dept?.toLowerCase().includes('staff') || emp.role === 'Staff';
+            const descriptor = normalizeDescriptor(emp.face_descriptor || emp.embedding);
+            return {
+              ...emp,
+              dept: isStaff ? 'Staff' : 'Employee',
+              role: isStaff ? 'Staff' : 'Employee',
+              face_descriptor: descriptor,
+              embedding: descriptor,
+            };
+          });
         this.saveEmployeesLocal();
       } else {
         this.employees = [...INITIAL_EMPLOYEES];
@@ -213,8 +259,50 @@ class CanteenService {
         this.tokenSeq = parseInt(storedSeq, 10) || 101;
       }
       this.isLoaded = true;
-      // Also try syncing from remote Supabase tables if connected
+
+      // Realtime listener for cross-device changes (Menu update, employee deletion/update)
+      supabaseManager.onRealtimeChange((event) => {
+        if (event.table === 'canteen_meal_slots') {
+          if (event.payload && typeof event.payload === 'object' && 'slots' in event.payload) {
+            this.applyRemoteMenuSlots((event.payload as any).slots);
+          } else {
+            this.syncFromSupabase().catch(() => {});
+          }
+        }
+        if (event.table === 'canteen_employees') {
+          if (event.eventType === 'DELETE' && event.payload) {
+            const delId = (event.payload as any).id;
+            if (delId) {
+              const tid = String(delId).trim().toLowerCase();
+              this.employees = this.employees.filter((e) => String(e.id).trim().toLowerCase() !== tid);
+              this.saveEmployeesLocal();
+            }
+          } else if (event.eventType === 'UPDATE' && event.payload) {
+            const p = event.payload as any;
+            if (p.id === '__SYSTEM_MENU_CONFIG__' && p.photo_url) {
+              try {
+                const config = JSON.parse(p.photo_url);
+                if (config && Array.isArray(config.slots)) {
+                  this.applyRemoteMenuSlots(config.slots);
+                }
+              } catch {}
+            }
+          }
+        }
+      });
+
+      // Also try syncing immediately from remote Supabase tables if connected
       this.syncFromSupabase().catch(() => {});
+
+      // Instant synchronization when window is focused or periodically
+      if (typeof window !== 'undefined') {
+        window.addEventListener('focus', () => {
+          this.syncFromSupabase().catch(() => {});
+        });
+        setInterval(() => {
+          this.syncFromSupabase().catch(() => {});
+        }, 20000);
+      }
     } catch (e) {
       console.warn('Failed loading local canteen data:', e);
       this.orders = [];
@@ -246,39 +334,109 @@ class CanteenService {
   }
 
   /**
-   * Synchronize live data from separate Supabase tables: canteen_employees & canteen_orders
+   * Applies and normalizes remote menu slots to local state and localStorage
+   */
+  public applyRemoteMenuSlots(remoteSlots: MealSlotConfig[]): void {
+    if (!Array.isArray(remoteSlots) || remoteSlots.length === 0) return;
+    const slotNames: MealSlotName[] = ['Tiffin', 'Lunch', 'Tea/Snacks'];
+    this.mealSlots = slotNames.map(name => {
+      const def = DEFAULT_MEAL_SLOTS.find(d => d.name === name)!;
+      const remote = remoteSlots.find(s => s.name === name);
+      if (remote) {
+        const rate = remote.rate !== undefined ? remote.rate : (remote.cost !== undefined ? remote.cost : def.rate);
+        let cleanTamil = (remote.tamilDisplayName || def.tamilDisplayName || '')
+          .replace(/\(.*?\)/g, '')
+          .replace(/[a-zA-Z]/g, '')
+          .trim();
+        if (name === 'Tiffin' && (!cleanTamil || cleanTamil === 'டிபன்')) {
+          cleanTamil = 'காலை உணவு';
+        }
+        return {
+          ...def,
+          ...remote,
+          name,
+          displayName: remote.displayName || def.displayName,
+          description: remote.description !== undefined ? remote.description : '',
+          rate,
+          cost: rate,
+          tamilDisplayName: cleanTamil || def.tamilDisplayName,
+          startTime: remote.startTime || def.startTime,
+          endTime: remote.endTime || def.endTime,
+          isActive: remote.isActive !== false,
+        };
+      }
+      return { ...def };
+    });
+
+    this.saveMealSlotsLocal();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: this.mealSlots }));
+    }
+  }
+
+  /**
+   * Synchronize live data across ALL devices: Menu configuration, employees & orders
    */
   public async syncFromSupabase(): Promise<void> {
     const client = supabaseManager.getClient();
     if (!client) return;
 
     try {
-      // 1. Fetch remote employees
+      // 1. Fetch remote employees & system menu configuration
       const { data: remoteEmployees, error: empErr } = await client
         .from('canteen_employees')
         .select('*');
 
       if (!empErr && remoteEmployees) {
-        const remoteList: Employee[] = remoteEmployees.map((rem: any) => {
-          const descriptor = normalizeDescriptor(rem.face_descriptor);
-          return {
-            id: rem.id,
-            name: rem.name,
-            dept: rem.dept,
-            photo: rem.photo_url,
-            confidence: rem.confidence_score ?? 0.98,
-            subsidyRate: rem.subsidy_rate ?? 1.0,
-            role: rem.role || (rem.dept?.toLowerCase().includes('staff') ? 'Staff' : 'Employee'),
-            face_descriptor: descriptor,
-            embedding: descriptor,
-          };
-        });
+        // A. Extract and apply cloud-saved Menu Configuration (__SYSTEM_MENU_CONFIG__)
+        const systemMenuRow = remoteEmployees.find((r: any) => r.id === '__SYSTEM_MENU_CONFIG__');
+        if (systemMenuRow && systemMenuRow.photo_url) {
+          try {
+            const config = JSON.parse(systemMenuRow.photo_url);
+            if (config && Array.isArray(config.slots) && config.slots.length > 0) {
+              this.applyRemoteMenuSlots(config.slots);
+            }
+          } catch (e) {
+            console.warn('Error reading cloud menu configuration:', e);
+          }
+        }
 
-        // Two-way synchronization: If local storage has employees not yet in Supabase, auto-upload them!
+        // B. Permanently delete any blacklisted or tombstoned users (including 1212 & 1234) from Supabase
+        for (const rem of remoteEmployees) {
+          if (this.isDeletedOrSystemId(rem.id) && rem.id !== '__SYSTEM_MENU_CONFIG__') {
+            client.from('canteen_employees').delete().eq('id', rem.id).then(() => {});
+          }
+        }
+
+        // C. Filter out system records and deleted IDs
+        const remoteList: Employee[] = remoteEmployees
+          .filter((rem: any) => !this.isDeletedOrSystemId(rem.id))
+          .map((rem: any) => {
+            const descriptor = normalizeDescriptor(rem.face_descriptor);
+            return {
+              id: rem.id,
+              name: rem.name,
+              dept: rem.dept,
+              photo: rem.photo_url,
+              confidence: rem.confidence_score ?? 0.98,
+              subsidyRate: rem.subsidy_rate ?? 1.0,
+              role: rem.role || (rem.dept?.toLowerCase().includes('staff') ? 'Staff' : 'Employee'),
+              face_descriptor: descriptor,
+              embedding: descriptor,
+            };
+          });
+
+        // The remote Supabase database is the authoritative roster.
+        // DO NOT blindly auto-upload local employees that were deleted from remote!
+        // Only upload employees if they were created offline and marked with _isPendingRemoteSync: true
         const remoteIds = new Set(remoteList.map((r) => r.id.toLowerCase()));
-        const missingFromRemote = this.employees.filter((loc) => !remoteIds.has(loc.id.toLowerCase()));
+        const pendingSync = this.employees.filter((loc) => 
+          (loc as any)._isPendingRemoteSync === true && 
+          !remoteIds.has(loc.id.toLowerCase()) && 
+          !this.isDeletedOrSystemId(loc.id)
+        );
 
-        for (const loc of missingFromRemote) {
+        for (const loc of pendingSync) {
           try {
             const { error: insErr } = await client.from('canteen_employees').insert({
               id: loc.id,
@@ -291,16 +449,15 @@ class CanteenService {
               face_descriptor: loc.face_descriptor || loc.embedding || null,
             });
             if (!insErr) {
+              delete (loc as any)._isPendingRemoteSync;
               remoteList.unshift(loc);
-            } else {
-              console.warn('Auto-upload local employee error:', insErr);
             }
           } catch (e) {
-            console.warn('Failed auto-uploading local employee to Supabase:', e);
+            console.warn('Failed uploading pending local employee:', e);
           }
         }
 
-        this.employees = remoteList;
+        this.employees = remoteList.filter(e => !this.isDeletedOrSystemId(e.id));
         this.saveEmployeesLocal();
         supabaseManager.broadcastChange('canteen_employees', 'UPDATE', this.employees);
       }
@@ -331,7 +488,6 @@ class CanteenService {
           dateStr: rem.order_date,
         }));
 
-        // Merge local and remote orders without duplicates (keyed by orderUuid or id)
         const orderMap = new Map<string, Order>();
         this.orders.forEach(o => {
           const key = (o.orderUuid || o.id).toLowerCase();
@@ -342,10 +498,8 @@ class CanteenService {
           orderMap.set(key, o);
         });
 
-        // Store all merged historical orders sorted descending by timestamp
         this.orders = Array.from(orderMap.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-        // Token sequence is based strictly on TODAY's orders so daily numbering is clean
         const today = new Date().toISOString().slice(0, 10);
         const todayTokens = this.orders.filter(o => o.dateStr === today).map(o => o.token);
         const maxTodayToken = todayTokens.length > 0 ? Math.max(...todayTokens) : 100;
@@ -356,67 +510,40 @@ class CanteenService {
         supabaseManager.broadcastChange('canteen_orders', 'UPDATE', this.orders);
       }
 
-      // 3. Sync Meal Slots: Load lastly edited menu data from SQL (canteen_meal_slots)
-      // and ensure changes persist permanently across reloads and devices
-      const { data: remoteSlots, error: slotErr } = await client
-        .from('canteen_meal_slots')
-        .select('*');
-
-      if (!slotErr && remoteSlots && remoteSlots.length > 0) {
-        this.mealSlots = this.mealSlots.map(localSlot => {
-          const rem = remoteSlots.find((r: any) => 
-            r.name?.toLowerCase() === localSlot.name.toLowerCase() ||
-            (localSlot.name === 'Tea/Snacks' && (r.id === 'TEASNACKS' || r.name === 'Tea/Snacks')) ||
-            (localSlot.name === 'Tiffin' && (r.id === 'TIFFIN' || r.id === 'BREAKFAST' || r.name?.toLowerCase() === 'breakfast'))
-          );
-          if (rem) {
-            const p = rem.price !== undefined && rem.price !== null ? Number(rem.price) : (localSlot.rate ?? 40);
-            const remoteDesc = rem.description !== undefined && rem.description !== null && !isStaleDummyDescription(rem.description)
-              ? rem.description
-              : '';
-            // If remote has description, use remote; if remote is empty but local has description, use local
-            const finalDesc = remoteDesc !== '' ? remoteDesc : (localSlot.description || '');
-            const finalTamil = localSlot.name === 'Tiffin' ? 'காலை உணவு' : localSlot.tamilDisplayName;
-            return {
-              ...localSlot,
-              description: finalDesc,
-              rate: p,
-              cost: p,
-              tamilDisplayName: finalTamil,
-              startTime: rem.start_time ? String(rem.start_time).slice(0, 5) : localSlot.startTime,
-              endTime: rem.end_time ? String(rem.end_time).slice(0, 5) : localSlot.endTime,
-              isActive: rem.is_active !== false,
-            };
-          }
-          return localSlot;
-        });
-
-        this.saveMealSlotsLocal();
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: this.mealSlots }));
-        }
-
-        // Two-way synchronization: If local has descriptions not yet updated in remote SQL, push them
-        for (const s of this.mealSlots) {
-          const slotId = s.name === 'Tea/Snacks' ? 'TEASNACKS' : s.name.toUpperCase();
-          const rem = remoteSlots.find((r: any) => 
-            r.name?.toLowerCase() === s.name.toLowerCase() ||
-            r.id === slotId ||
-            (s.name === 'Tiffin' && (r.id === 'BREAKFAST' || r.name?.toLowerCase() === 'breakfast'))
-          );
-          if (rem && rem.description !== s.description && s.description) {
-            await client
-              .from('canteen_meal_slots')
-              .update({
-                name: s.name,
-                description: s.description || '',
-                price: s.rate ?? s.cost ?? 40,
-                start_time: s.startTime,
-                end_time: s.endTime,
-                display_name: s.displayName,
-                is_active: s.isActive !== false,
-              })
-              .eq('id', rem.id);
+      // 3. Fallback: Also check canteen_meal_slots table if __SYSTEM_MENU_CONFIG__ was not yet set
+      const systemMenuRow = remoteEmployees?.find((r: any) => r.id === '__SYSTEM_MENU_CONFIG__');
+      if (!systemMenuRow) {
+        const { data: remoteSlots } = await client.from('canteen_meal_slots').select('*');
+        if (remoteSlots && remoteSlots.length > 0) {
+          this.mealSlots = this.mealSlots.map(localSlot => {
+            const rem = remoteSlots.find((r: any) => 
+              r.name?.toLowerCase() === localSlot.name.toLowerCase() ||
+              (localSlot.name === 'Tea/Snacks' && (r.id === 'TEASNACKS' || r.name === 'Tea/Snacks')) ||
+              (localSlot.name === 'Tiffin' && (r.id === 'TIFFIN' || r.id === 'BREAKFAST' || r.name?.toLowerCase() === 'breakfast'))
+            );
+            if (rem) {
+              const p = rem.price !== undefined && rem.price !== null ? Number(rem.price) : (localSlot.rate ?? 40);
+              const remoteDesc = rem.description !== undefined && rem.description !== null && !isStaleDummyDescription(rem.description)
+                ? rem.description
+                : '';
+              const finalDesc = remoteDesc !== '' ? remoteDesc : (localSlot.description || '');
+              const finalTamil = localSlot.name === 'Tiffin' ? 'காலை உணவு' : localSlot.tamilDisplayName;
+              return {
+                ...localSlot,
+                description: finalDesc,
+                rate: p,
+                cost: p,
+                tamilDisplayName: finalTamil,
+                startTime: rem.start_time ? String(rem.start_time).slice(0, 5) : localSlot.startTime,
+                endTime: rem.end_time ? String(rem.end_time).slice(0, 5) : localSlot.endTime,
+                isActive: rem.is_active !== false,
+              };
+            }
+            return localSlot;
+          });
+          this.saveMealSlotsLocal();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: this.mealSlots }));
           }
         }
       }
@@ -426,11 +553,14 @@ class CanteenService {
   }
 
   public getEmployees(): Employee[] {
-    return [...this.employees];
+    return this.employees.filter(e => !this.isDeletedOrSystemId(e.id));
   }
 
   public async addEmployee(emp: Employee): Promise<void> {
-    const existingIndex = this.employees.findIndex((e) => e.id.toLowerCase() === emp.id.toLowerCase());
+    const targetId = String(emp.id).trim().toLowerCase();
+    this.removeDeletedEmployeeId(emp.id);
+
+    const existingIndex = this.employees.findIndex((e) => String(e.id).trim().toLowerCase() === targetId);
     if (existingIndex >= 0) {
       throw new Error(`User with ID ${emp.id} already exists.`);
     }
@@ -459,6 +589,7 @@ class CanteenService {
         console.error('Supabase employee insert error:', error);
         throw new Error(`Database error: ${error.message}`);
       }
+      await supabaseManager.broadcastRemote('employee_updated', cleanEmp);
     }
 
     this.employees.unshift(cleanEmp);
@@ -467,14 +598,16 @@ class CanteenService {
   }
 
   public async updateEmployee(id: string, updated: Partial<Employee>): Promise<void> {
-    const index = this.employees.findIndex((e) => e.id === id);
+    const targetId = String(id).trim().toLowerCase();
+    const index = this.employees.findIndex((e) => String(e.id).trim().toLowerCase() === targetId);
     if (index === -1) {
       throw new Error(`User with ID ${id} not found.`);
     }
 
-    if (updated.id && updated.id !== id) {
+    if (updated.id && String(updated.id).trim().toLowerCase() !== targetId) {
+      const newTargetId = String(updated.id).trim().toLowerCase();
       const duplicateIndex = this.employees.findIndex(
-        (e) => e.id.toLowerCase() === updated.id!.toLowerCase() && e.id !== id
+        (e) => String(e.id).trim().toLowerCase() === newTargetId && String(e.id).trim().toLowerCase() !== targetId
       );
       if (duplicateIndex >= 0) {
         throw new Error(`User with ID ${updated.id} already exists.`);
@@ -500,6 +633,7 @@ class CanteenService {
         }
 
         await client.from('canteen_employees').update(toUpdate).eq('id', id);
+        await supabaseManager.broadcastRemote('employee_updated', this.employees[index]);
       } catch (err) {
         console.warn('Supabase remote employee update fallback:', err);
       }
@@ -507,19 +641,28 @@ class CanteenService {
   }
 
   public async deleteEmployee(id: string): Promise<void> {
-    const index = this.employees.findIndex((e) => e.id === id);
-    if (index === -1) return;
+    const targetId = String(id).trim().toLowerCase();
+    this.addDeletedEmployeeId(id);
 
-    const removed = this.employees.splice(index, 1)[0];
+    const removedList = this.employees.filter((e) => String(e.id).trim().toLowerCase() === targetId);
+    this.employees = this.employees.filter((e) => String(e.id).trim().toLowerCase() !== targetId);
     this.saveEmployeesLocal();
-    supabaseManager.broadcastChange('canteen_employees', 'DELETE', removed);
 
+    for (const removed of removedList) {
+      supabaseManager.broadcastChange('canteen_employees', 'DELETE', removed);
+    }
+
+    // Broadcast across all connected devices in real time
+    await supabaseManager.broadcastRemote('employee_deleted', { id });
+
+    // Permanently remove from Supabase database
     const client = supabaseManager.getClient();
     if (client) {
       try {
         await client.from('canteen_employees').delete().eq('id', id);
+        await client.from('canteen_employees').delete().ilike('id', id);
       } catch (err) {
-        console.warn('Supabase remote employee delete fallback:', err);
+        console.warn('Supabase remote employee delete error:', err);
       }
     }
   }
@@ -545,37 +688,47 @@ class CanteenService {
   }
 
   public async updateMealSlots(newSlots: MealSlotConfig[]): Promise<void> {
-    this.mealSlots = newSlots.map(s => {
-      const def = DEFAULT_MEAL_SLOTS.find(d => d.name === s.name);
-      const r = s.rate !== undefined ? s.rate : (s.cost !== undefined ? s.cost : (def?.rate ?? 40));
-      let cleanTamil = (s.tamilDisplayName || def?.tamilDisplayName || '')
-        .replace(/\(.*?\)/g, '')
-        .replace(/[a-zA-Z]/g, '')
-        .trim();
-      if (s.name === 'Tiffin' && (!cleanTamil || cleanTamil === 'டிபன்')) {
-        cleanTamil = 'காலை உணவு';
-      }
-      return {
-        ...s,
-        description: s.description !== undefined ? s.description : (def?.description ?? ''),
-        rate: r,
-        cost: r,
-        tamilDisplayName: cleanTamil || (s.name === 'Tiffin' ? 'காலை உணவு' : def?.tamilDisplayName || ''),
-      };
-    });
-    this.saveMealSlotsLocal();
+    this.applyRemoteMenuSlots(newSlots);
+
     try {
       localStorage.setItem('canteen_menu_last_saved', Date.now().toString());
     } catch {}
 
-    // Persist to Supabase SQL so menu changes survive across all devices and reloads
+    // 1. Primary Cloud Persistence: Store menu configuration in Supabase cloud (canteen_employees system row)
+    // Ensures changes survive permanently and immediately display on EVERY device that opens or connects
     try {
       const client = supabaseManager.getClient();
       if (client) {
+        const payload = JSON.stringify({
+          updatedAt: Date.now(),
+          slots: this.mealSlots,
+        });
+
+        const { error: upsertErr } = await client.from('canteen_employees').upsert({
+          id: '__SYSTEM_MENU_CONFIG__',
+          name: 'SYSTEM_MENU_DATA',
+          dept: 'Employee',
+          role: 'SYSTEM',
+          photo_url: payload,
+          confidence_score: 1.0,
+          is_active: true,
+        });
+
+        if (upsertErr) {
+          console.warn('Supabase __SYSTEM_MENU_CONFIG__ upsert error:', upsertErr);
+        } else {
+          console.log('[CanteenService] Menu configuration successfully saved to Supabase cloud!');
+        }
+
+        // Broadcast to ALL connected devices in real time so other open devices immediately update
+        await supabaseManager.broadcastRemote('menu_updated', {
+          slots: this.mealSlots,
+          updatedAt: Date.now(),
+        });
+
+        // 2. Secondary update on canteen_meal_slots table (best-effort)
         for (const s of this.mealSlots) {
           const slotId = s.name === 'Tea/Snacks' ? 'TEASNACKS' : s.name.toUpperCase();
-          
-          // Match by name or legacy id to safely update existing row in SQL without unique violation
           const { data: existingSlots } = await client
             .from('canteen_meal_slots')
             .select('id, name')
@@ -584,7 +737,7 @@ class CanteenService {
 
           if (existingSlots && existingSlots.length > 0) {
             const rowId = existingSlots[0].id;
-            const { error: updErr } = await client
+            await client
               .from('canteen_meal_slots')
               .update({
                 name: s.name,
@@ -597,28 +750,6 @@ class CanteenService {
                 is_active: s.isActive !== false,
               })
               .eq('id', rowId);
-
-            if (updErr) {
-              console.warn(`Error updating ${s.name} in Supabase:`, updErr);
-            }
-          } else {
-            const { error: insErr } = await client
-              .from('canteen_meal_slots')
-              .insert({
-                id: slotId,
-                name: s.name,
-                display_name: s.displayName,
-                start_time: s.startTime,
-                end_time: s.endTime,
-                emoji: s.emoji,
-                description: s.description || '',
-                price: s.rate ?? s.cost ?? 40,
-                is_active: s.isActive !== false,
-              });
-
-            if (insErr) {
-              console.warn(`Error inserting ${s.name} in Supabase:`, insErr);
-            }
           }
         }
       }
@@ -626,10 +757,7 @@ class CanteenService {
       console.warn('Failed saving meal slots to Supabase:', e);
     }
 
-    supabaseManager.broadcastChange('canteen_meal_slots', 'UPDATE', this.mealSlots);
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: this.mealSlots }));
-    }
+    supabaseManager.broadcastChange('canteen_meal_slots', 'UPDATE', { slots: this.mealSlots });
   }
 
   public getTodayDateString(): string {

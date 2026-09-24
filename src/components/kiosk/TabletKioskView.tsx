@@ -124,6 +124,15 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     loadRoster();
     loadMealSlots();
 
+    // Fetch latest cloud menu & roster on startup across all devices
+    canteenService
+      .syncFromSupabase()
+      .then(() => {
+        loadRoster();
+        loadMealSlots();
+      })
+      .catch(() => {});
+
     const handleMenuEvent = () => loadMealSlots();
     window.addEventListener('canteen_menu_updated', handleMenuEvent);
 

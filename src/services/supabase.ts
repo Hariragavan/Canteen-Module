@@ -1,4 +1,4 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 
 // Default Supabase config stored in localStorage or fallback placeholder
 const STORAGE_KEY_URL = 'canteen_supabase_url';
@@ -17,6 +17,7 @@ export interface SupabaseConfig {
 
 class SupabaseManager {
   private client: SupabaseClient | null = null;
+  private realtimeChannel: RealtimeChannel | null = null;
   private config: SupabaseConfig = {
     url: '',
     anonKey: '',
@@ -44,6 +45,7 @@ class SupabaseManager {
           isConnected: true,
           isCustom: true,
         };
+        this.setupRealtimeChannel();
       } catch (err) {
         console.warn('Failed to initialize Supabase client:', err);
         this.config.isConnected = false;
@@ -55,6 +57,57 @@ class SupabaseManager {
         isConnected: false,
         isCustom: false,
       };
+    }
+  }
+
+  private setupRealtimeChannel() {
+    if (!this.client) return;
+    try {
+      if (this.realtimeChannel) {
+        try {
+          this.client.removeChannel(this.realtimeChannel);
+        } catch {}
+        this.realtimeChannel = null;
+      }
+
+      this.realtimeChannel = this.client.channel('canteen_realtime_sync', {
+        config: { broadcast: { self: false } },
+      });
+
+      // 1. Cross-device Broadcast: Menu updates from any device
+      this.realtimeChannel.on('broadcast', { event: 'menu_updated' }, ({ payload }) => {
+        this.broadcastChange('canteen_meal_slots', 'UPDATE', payload);
+      });
+
+      // 2. Cross-device Broadcast: Employee deleted
+      this.realtimeChannel.on('broadcast', { event: 'employee_deleted' }, ({ payload }) => {
+        this.broadcastChange('canteen_employees', 'DELETE', payload);
+      });
+
+      // 3. Cross-device Broadcast: Employee added or updated
+      this.realtimeChannel.on('broadcast', { event: 'employee_updated' }, ({ payload }) => {
+        this.broadcastChange('canteen_employees', 'UPDATE', payload);
+      });
+
+      // 4. Postgres DB changes: canteen_employees
+      this.realtimeChannel.on('postgres_changes', { event: '*', schema: 'public', table: 'canteen_employees' }, (change) => {
+        const eventType = (change.eventType as 'INSERT' | 'UPDATE' | 'DELETE') || 'UPDATE';
+        this.broadcastChange('canteen_employees', eventType, change.new || change.old);
+      });
+
+      // 5. Postgres DB changes: canteen_orders
+      this.realtimeChannel.on('postgres_changes', { event: '*', schema: 'public', table: 'canteen_orders' }, (change) => {
+        const eventType = (change.eventType as 'INSERT' | 'UPDATE' | 'DELETE') || 'UPDATE';
+        this.broadcastChange('canteen_orders', eventType, change.new || change.old);
+      });
+
+      this.realtimeChannel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[Supabase Realtime] sync channel connected across all devices');
+        }
+      });
+    } catch (e) {
+      console.warn('Failed setting up Supabase realtime channel:', e);
     }
   }
 
@@ -95,6 +148,7 @@ class SupabaseManager {
         isConnected: !error,
         isCustom: true,
       };
+      this.setupRealtimeChannel();
       return !error;
     } catch (err) {
       console.warn('Supabase connection verification failed:', err);
@@ -108,15 +162,33 @@ class SupabaseManager {
         isConnected: false,
         isCustom: true,
       };
+      this.setupRealtimeChannel();
       return false;
     }
   }
 
   /**
-   * Broadcast real-time change to all active components
+   * Broadcast real-time change to all active components locally
    */
   public broadcastChange(table: string, eventType: 'INSERT' | 'UPDATE' | 'DELETE', payload: unknown) {
     this.subscribers.forEach(cb => cb({ table, eventType, payload }));
+  }
+
+  /**
+   * Broadcast an event across ALL connected devices via Supabase Realtime
+   */
+  public async broadcastRemote(event: string, payload: unknown): Promise<void> {
+    if (this.realtimeChannel) {
+      try {
+        await this.realtimeChannel.send({
+          type: 'broadcast',
+          event,
+          payload,
+        });
+      } catch (err) {
+        console.warn('Failed sending remote broadcast:', err);
+      }
+    }
   }
 
   /**
