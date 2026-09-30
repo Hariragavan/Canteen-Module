@@ -89,21 +89,21 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Brand & Hardware Labels */}
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center text-white font-black text-lg shadow-sm shadow-emerald-600/30">
-            SC
+            EE
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <span className="font-bold text-slate-900 tracking-tight text-lg">
-                SmartCanteen OS
+              <span className="font-bold text-slate-900 tracking-tight text-lg leading-none">
+                Esstee Exports
               </span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse mr-1.5"></span>
-                Light Edition
+                Smart Canteen System
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 font-medium hidden sm:block">
-              80mm Thermal Slip Printer • 2D Barcode Scanner Ready
-            </p>
+            <span className="text-[11px] text-slate-500 font-semibold tracking-normal mt-0.5 block">
+              India Private Limited
+            </span>
           </div>
         </div>
 

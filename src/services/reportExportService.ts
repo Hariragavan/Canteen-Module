@@ -23,7 +23,7 @@ export function formatOrderReportData(orders: Order[]) {
     const priceVal = o.rate ?? 40;
 
     return {
-      date: o.dateStr || '',
+      date: (o.dateStr || '').trim().replace(/^[^\w\d-]+/, ''),
       empId: o.userId || '',
       name: o.name || '',
       dept: o.dept || '',
@@ -107,7 +107,6 @@ export function exportOrdersToCSV(
   ];
 
   const csvContent =
-    '\uFEFF' +
     [CSV_HEADERS.join(','), ...rows.map((r) => r.join(',')), totalRow.join(',')].join('\n');
 
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

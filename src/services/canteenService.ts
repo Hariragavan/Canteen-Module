@@ -996,6 +996,45 @@ class CanteenService {
   }
 
   /**
+   * Reset / Cancel an order (e.g. printer error / paper jam)
+   * Completely removes the saved record from local storage and Supabase cloud.
+   */
+  public async resetOrder(orderUuidOrId: string): Promise<boolean> {
+    const target = this.orders.find(
+      (o) => o.orderUuid === orderUuidOrId || o.id === orderUuidOrId || String(o.token) === orderUuidOrId
+    );
+    if (!target) return false;
+
+    // 1. Remove from local in-memory array
+    this.orders = this.orders.filter(
+      (o) => o.orderUuid !== target.orderUuid && o.id !== target.id
+    );
+    this.saveLocal();
+
+    // 2. Broadcast deletion to all tabs / clients
+    supabaseManager.broadcastChange('canteen_orders', 'DELETE', target);
+    try {
+      await supabaseManager.broadcastRemote('order_cancelled', {
+        orderUuid: target.orderUuid,
+        token: target.token,
+      });
+    } catch {}
+
+    // 3. Delete from Supabase remote database
+    const client = supabaseManager.getClient();
+    if (client) {
+      try {
+        await client.from('canteen_orders').delete().eq('order_uuid', target.orderUuid);
+        await client.from('canteen_orders').delete().eq('id', target.id);
+      } catch (err) {
+        console.warn('Supabase remote order delete error:', err);
+      }
+    }
+
+    return true;
+  }
+
+  /**
    * Simulate peak rush by issuing and claiming 5 rapid orders
    */
   public simulatePeakRush(): void {

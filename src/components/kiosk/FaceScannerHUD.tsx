@@ -331,18 +331,18 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
             </div>
           )}
 
-          {/* Camera Closed Viewfinder: White-Grey Screen, Shows Big Esslee Logo, "Tap to turn on" at the bottom */}
+          {/* Camera Closed Viewfinder: White-Grey Screen, Shows Esslee Logo & "Tap to turn on" scaled to 90% */}
           {!isCameraActive && (
-            <div className="absolute inset-0 z-10 flex flex-col items-center justify-between py-6 px-4 bg-gradient-to-b from-slate-50 to-slate-100/95 text-center transition-all group-hover:bg-slate-200/70 select-none">
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-between py-5 px-4 bg-gradient-to-b from-slate-50 to-slate-100/95 text-center transition-all group-hover:bg-slate-200/70 select-none scale-90 transform origin-center">
               <div className="flex-1 flex items-center justify-center w-full px-2">
                 <img
                   src={ESSLEE_LOGO_BASE64}
                   alt="Esslee Logo"
-                  className="max-h-[155px] sm:max-h-[185px] w-auto max-w-[88%] object-contain drop-shadow-sm group-hover:scale-105 transition-transform duration-300"
+                  className="max-h-[140px] sm:max-h-[165px] w-auto max-w-[82%] object-contain drop-shadow-sm group-hover:scale-105 transition-transform duration-300"
                 />
               </div>
-              <div className="shrink-0 flex flex-col items-center pb-2">
-                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/95 border border-slate-300 shadow-xs group-hover:border-emerald-500 group-hover:bg-emerald-50 transition-colors">
+              <div className="shrink-0 flex flex-col items-center pb-1">
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/95 border border-slate-300 shadow-xs group-hover:border-emerald-500 group-hover:bg-emerald-50 transition-colors">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
                   <h4 className="text-sm sm:text-base font-black text-slate-800 group-hover:text-emerald-800 tracking-tight">
                     Tap to turn on
@@ -396,10 +396,6 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
 
           <style>{`.mirror { transform: scaleX(-1); }`}</style>
         </div>
-
-        <p className="text-[11px] text-slate-500 text-center font-sans">
-          Corporate Punching Machine AI Face Detection • Automatic Real-Time Recognition
-        </p>
       </div>
     );
   }

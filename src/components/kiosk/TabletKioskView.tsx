@@ -252,6 +252,14 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
   // =========================================================================
   const handleCaptureAndScan = async () => {
     if (isProcessingScan || isScanVerified || kioskStep === 'VERIFIED') return;
+
+    // If camera is closed / off, turn on camera immediately!
+    if (!hudRef.current?.isCameraRunning()) {
+      hudRef.current?.startCamera();
+      setVerificationError(null);
+      return;
+    }
+
     setVerificationError(null);
     setIsCapturing(true);
     setIsProcessingScan(true);
@@ -498,14 +506,19 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
       {/* ================================================================= */}
       <div className="bg-white border border-slate-200 px-4 sm:px-6 py-2.5 sm:py-3 rounded-2xl sm:rounded-3xl flex items-center justify-between shadow-sm shrink-0">
         
-        {/* Left: Smartcanteen OS */}
-        <div className="flex items-center space-x-2.5">
-          <span className="w-3 h-3 rounded-full bg-emerald-500 animate-ping mr-0.5"></span>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans">
-            Smartcanteen OS
-          </h1>
-          <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 hidden sm:inline-block">
-            {kioskStep === 'SCANNING' ? 'Camera Biometric View' : 'Verified Identity & Food Selection'}
+        {/* Left: Esstee Exports India Private Limited */}
+        <div className="flex items-center space-x-3">
+          <span className="w-3 h-3 rounded-full bg-emerald-500 animate-ping mr-0.5 shrink-0"></span>
+          <div className="flex flex-col">
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight font-sans leading-none">
+              Esstee Exports
+            </h1>
+            <span className="text-[11px] sm:text-xs font-semibold text-slate-500 tracking-normal mt-0.5">
+              India Private Limited
+            </span>
+          </div>
+          <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 hidden sm:inline-block ml-1">
+            Smart Canteen System
           </span>
         </div>
 
@@ -558,8 +571,8 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                           {activeSlot.name}
                         </span>
                         {activeSlot.tamilDisplayName && (
-                          <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200">
-                            {activeSlot.tamilDisplayName}
+                          <span className="text-xs sm:text-sm font-black text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-md border border-emerald-300">
+                            {activeSlot.name === 'Tiffin' || activeSlot.tamilDisplayName === 'டிபன்' ? 'காலை உணவு' : activeSlot.tamilDisplayName}
                           </span>
                         )}
                       </div>
@@ -875,7 +888,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                   <div className="flex items-center space-x-2">
                     <UtensilsCrossed className="w-4 h-4 text-emerald-600" />
                     <h3 className="font-black text-slate-900 text-base sm:text-lg tracking-tight">
-                      Select Food Type
+                      Select the Particular
                     </h3>
                     <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
                       Active: {activeSlotName}
@@ -979,8 +992,8 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                                     {slot.name}
                                   </h4>
                                   {slot.tamilDisplayName && (
-                                    <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                      {slot.name === 'Tiffin' || slot.tamilDisplayName === 'டிபன்' ? 'காலை உணவு' : slot.tamilDisplayName}
+                                    <span className="font-black text-slate-900 text-base sm:text-lg tracking-tight">
+                                      / {slot.name === 'Tiffin' || slot.tamilDisplayName === 'டிபன்' ? 'காலை உணவு' : slot.tamilDisplayName}
                                     </span>
                                   )}
                                   {isCurrentTimeSlot && (

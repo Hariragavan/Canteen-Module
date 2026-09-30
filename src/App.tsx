@@ -149,7 +149,7 @@ export const App: React.FC = () => {
       {activeTab !== 'kiosk' && (
         <footer className="border-t border-slate-200 bg-white py-3 text-center text-xs text-slate-400 print:hidden select-none">
           <div className="max-w-7xl mx-auto px-4 flex flex-wrap items-center justify-between gap-2">
-            <span>SmartCanteen OS Light Edition • 80mm Thermal Printer & 2D Barcode Scanner</span>
+            <span>Esstee Exports India Private Limited • Smart Canteen System</span>
             <span className="font-mono text-[11px] text-slate-400">Lenovo K11 Gen 2 Tablet Optimized</span>
           </div>
         </footer>
