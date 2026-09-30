@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Order } from '../../types';
 import { canteenService } from '../../services/canteenService';
-import { Printer, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Printer, CheckCircle2 } from 'lucide-react';
 
 interface ThermalReceiptProps {
   order?: Order;
@@ -125,7 +125,6 @@ export const ThermalReceipt = React.forwardRef<ThermalReceiptHandle, ThermalRece
   {
     order,
     orders,
-    onSendToScanner,
     onPrint,
     onPrintingStateChange,
   },
@@ -317,16 +316,6 @@ export const ThermalReceipt = React.forwardRef<ThermalReceiptHandle, ThermalRece
               : 'Physical Print (80mm)'}
           </span>
         </button>
-
-        {onSendToScanner && (
-          <button
-            onClick={() => onSendToScanner(ordersList[0].orderUuid)}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center space-x-1.5 transition-colors cursor-pointer"
-          >
-            <span>Scan at Counter</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        )}
       </div>
 
       <div className="flex items-center space-x-1.5 text-xs text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 print:hidden font-medium">

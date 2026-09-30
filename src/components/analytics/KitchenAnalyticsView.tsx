@@ -22,6 +22,8 @@ import {
   Search,
   CheckCircle2,
   Clock,
+  FileSpreadsheet,
+  FileText,
 } from 'lucide-react';
 
 // Register ChartJS modules
@@ -215,7 +217,15 @@ export const KitchenAnalyticsView: React.FC = () => {
   }, [dateOrders, searchQuery, selectedDept, selectedMeal, selectedStatus]);
 
   const handleExportCSV = () => {
-    canteenService.exportAuditCSV(fromDate, toDate);
+    canteenService.exportAuditCSV(fromDate, toDate, filteredOrders);
+  };
+
+  const handleExportExcel = () => {
+    canteenService.exportAuditExcel(fromDate, toDate, filteredOrders);
+  };
+
+  const handleExportPDF = () => {
+    canteenService.exportAuditPDF(fromDate, toDate, filteredOrders);
   };
 
   const handleSetQuickDate = (preset: 'today' | 'yesterday' | 'week' | 'all') => {
@@ -314,15 +324,38 @@ export const KitchenAnalyticsView: React.FC = () => {
             </button>
           </div>
 
-          {/* Download CSV for selected date range */}
-          <button
-            onClick={handleExportCSV}
-            title="Download CSV for selected date range"
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center space-x-1.5 active:scale-95 cursor-pointer ml-auto"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Download CSV</span>
-          </button>
+          {/* Download Reports: CSV, Excel, PDF */}
+          <div className="flex items-center gap-1.5 ml-auto">
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              title="Download Report in CSV format"
+              className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 transition-all shadow-2xs flex items-center space-x-1.5 active:scale-95 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-600" />
+              <span>CSV</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              title="Download Report in Excel (.xlsx) format"
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center space-x-1.5 active:scale-95 cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100" />
+              <span>Excel</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleExportPDF}
+              title="Download Report in PDF (.pdf) format"
+              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl transition-all shadow-xs flex items-center space-x-1.5 active:scale-95 cursor-pointer"
+            >
+              <FileText className="w-3.5 h-3.5 text-rose-100" />
+              <span>PDF</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -483,75 +516,68 @@ export const KitchenAnalyticsView: React.FC = () => {
           <table className="w-full text-left text-xs text-slate-700 relative">
             <thead className="sticky top-0 z-10 text-slate-800 uppercase bg-slate-100 font-mono text-[10px] border-b-2 border-slate-300 shadow-xs">
               <tr>
-                <th className="p-3 bg-slate-100">Token</th>
                 <th className="p-3 bg-slate-100">Date</th>
-                <th className="p-3 bg-slate-100">Employee</th>
-                <th className="p-3 bg-slate-100">Department</th>
-                <th className="p-3 bg-slate-100">Meal Slot</th>
-                <th className="p-3 bg-slate-100 text-right">Rate</th>
-                <th className="p-3 bg-slate-100 text-center">Qty</th>
-                <th className="p-3 bg-slate-100 text-right">Total</th>
-                <th className="p-3 bg-slate-100">Menu Items</th>
+                <th className="p-3 bg-slate-100">Emp ID</th>
+                <th className="p-3 bg-slate-100">Name</th>
+                <th className="p-3 bg-slate-100">Dept</th>
+                <th className="p-3 bg-slate-100">Meal</th>
+                <th className="p-3 bg-slate-100 text-right">Price</th>
+                <th className="p-3 bg-slate-100">Status</th>
                 <th className="p-3 bg-slate-100">Issued Time</th>
                 <th className="p-3 bg-slate-100">Served Time</th>
-                <th className="p-3 bg-slate-100">Status</th>
+                <th className="p-3 bg-slate-100 text-center">Token Number</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
               {filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="p-6 text-center text-xs text-slate-400 italic">
+                  <td colSpan={10} className="p-6 text-center text-xs text-slate-400 italic">
                     No orders recorded for the selected date range matching filters.
                   </td>
                 </tr>
               ) : (
                 filteredOrders.map((o) => {
-                  const itemSummary = Array.isArray(o.items) && o.items.length > 0
-                    ? o.items.map(it => (typeof it === 'string' ? it : it?.description || it?.name || '')).join(', ')
-                    : 'Standard Meal';
-                  const rateVal = o.rate ?? 40;
-                  const qtyVal = o.qty ?? 1;
-                  const total = rateVal * qtyVal;
+                  const isServed = o.status === 'SERVED' || Boolean(o.servedAt);
+                  const priceVal = o.rate ?? 40;
                   return (
                     <tr key={o.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-3 font-mono font-bold text-slate-900">
-                        #{o.token}
-                      </td>
-                      <td className="p-3 font-mono text-slate-600">
+                      <td className="p-3 font-mono text-slate-600 whitespace-nowrap">
                         {o.dateStr}
                       </td>
-                      <td className="p-3">
-                        <div className="font-bold text-slate-900">{o.name}</div>
-                        <div className="text-[10px] font-mono text-slate-400">{o.userId}</div>
+                      <td className="p-3 font-mono font-bold text-slate-700 whitespace-nowrap">
+                        {o.userId}
                       </td>
-                      <td className="p-3 text-slate-600">{o.dept}</td>
-                      <td className="p-3 font-semibold text-slate-900">{o.meal}</td>
-                      <td className="p-3 font-mono font-bold text-slate-900 text-right">
-                        ₹{rateVal}
+                      <td className="p-3 font-bold text-slate-900 whitespace-nowrap">
+                        {o.name}
                       </td>
-                      <td className="p-3 font-mono font-bold text-slate-700 text-center">
-                        {qtyVal}
+                      <td className="p-3 text-slate-600 whitespace-nowrap">
+                        {o.dept}
                       </td>
-                      <td className="p-3 font-mono font-black text-emerald-800 text-right">
-                        ₹{total}
+                      <td className="p-3 font-semibold text-slate-900 whitespace-nowrap">
+                        {o.meal}
                       </td>
-                      <td className="p-3 text-slate-600 max-w-[180px] truncate" title={itemSummary}>
-                        {itemSummary}
+                      <td className="p-3 font-mono font-bold text-slate-900 text-right whitespace-nowrap">
+                        ₹{priceVal}
                       </td>
-                      <td className="p-3 font-mono text-slate-500">{o.issuedAt}</td>
-                      <td className="p-3 font-mono text-slate-500">
-                        {o.servedAt || <span className="text-amber-600 italic">In Queue</span>}
-                      </td>
-                      <td className="p-3">
-                        {o.status === 'SERVED' ? (
+                      <td className="p-3 whitespace-nowrap">
+                        {isServed ? (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            SERVED
+                            Printed / Served
                           </span>
                         ) : (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                            PRINTED
+                            Printed
                           </span>
                         )}
+                      </td>
+                      <td className="p-3 font-mono text-slate-500 whitespace-nowrap">
+                        {o.issuedAt || ''}
+                      </td>
+                      <td className="p-3 font-mono text-slate-500 whitespace-nowrap">
+                        {o.servedAt || ''}
+                      </td>
+                      <td className="p-3 font-mono font-bold text-slate-900 text-center whitespace-nowrap">
+                        #{o.token}
                       </td>
                     </tr>
                   );

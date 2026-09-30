@@ -1,5 +1,6 @@
 import type { Employee, MealFeedback, MealSlotConfig, MealSlotName, Order, VerificationResult } from '../types';
 import { supabaseManager } from './supabase';
+import { exportOrdersToCSV, exportOrdersToExcel, exportOrdersToPDF } from './reportExportService';
 
 const STORAGE_ORDERS_KEY = 'canteen_local_orders_v3';
 const STORAGE_TOKEN_KEY = 'canteen_token_seq_v3';
@@ -1045,76 +1046,32 @@ class CanteenService {
     supabaseManager.broadcastChange('canteen_employees', 'DELETE', { type: 'RESET' });
   }
 
-  public exportAuditCSV(fromDate?: string, toDate?: string): void {
+  private getTargetOrdersForExport(fromDate?: string, toDate?: string, customOrders?: Order[]): Order[] {
+    if (customOrders && customOrders.length > 0) {
+      return [...customOrders];
+    }
     let targetOrders = [...this.orders];
     if (fromDate && toDate) {
-      targetOrders = targetOrders.filter(o => o.dateStr >= fromDate && o.dateStr <= toDate);
+      targetOrders = targetOrders.filter((o) => o.dateStr >= fromDate && o.dateStr <= toDate);
     } else if (fromDate) {
-      targetOrders = targetOrders.filter(o => o.dateStr === fromDate);
+      targetOrders = targetOrders.filter((o) => o.dateStr === fromDate);
     }
+    return targetOrders;
+  }
 
-    if (targetOrders.length === 0) {
-      alert(`No records found to export for ${fromDate ? `date range ${fromDate} to ${toDate || fromDate}` : 'the ledger'}.`);
-      return;
-    }
+  public exportAuditCSV(fromDate?: string, toDate?: string, customOrders?: Order[]): void {
+    const targetOrders = this.getTargetOrdersForExport(fromDate, toDate, customOrders);
+    exportOrdersToCSV(targetOrders, fromDate, toDate);
+  }
 
-    const headers = [
-      'Token Number',
-      'Order UUID',
-      'Employee ID',
-      'Employee Name',
-      'Department',
-      'Meal Slot',
-      'Rate (₹)',
-      'Quantity',
-      'Total Amount (₹)',
-      'Menu Items',
-      'Status',
-      'Issued Time',
-      'Served Time',
-      'Date',
-    ];
+  public exportAuditExcel(fromDate?: string, toDate?: string, customOrders?: Order[]): void {
+    const targetOrders = this.getTargetOrdersForExport(fromDate, toDate, customOrders);
+    exportOrdersToExcel(targetOrders, fromDate, toDate);
+  }
 
-    const rows = targetOrders.map(o => {
-      const itemDesc = Array.isArray(o.items) && o.items.length > 0
-        ? o.items.map(it => (typeof it === 'string' ? it : it?.description || it?.name || '')).join('; ')
-        : '';
-      const rateVal = o.rate ?? 40;
-      const qtyVal = o.qty ?? 1;
-      const totalAmount = rateVal * qtyVal;
-      return [
-        o.token,
-        `"${o.orderUuid}"`,
-        `"${o.userId}"`,
-        `"${o.name}"`,
-        `"${o.dept}"`,
-        `"${o.meal}"`,
-        rateVal,
-        qtyVal,
-        totalAmount,
-        `"${itemDesc.replace(/"/g, '""')}"`,
-        o.status,
-        `"${o.issuedAt}"`,
-        `"${o.servedAt || ''}"`,
-        `"${o.dateStr}"`,
-      ];
-    });
-
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    const fileName = fromDate && toDate
-      ? `Canteen_Audit_${fromDate}_to_${toDate}.csv`
-      : fromDate
-      ? `Canteen_Audit_${fromDate}.csv`
-      : `Canteen_Audit_All_${new Date().toISOString().slice(0, 10)}.csv`;
-    link.setAttribute('download', fileName);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  public exportAuditPDF(fromDate?: string, toDate?: string, customOrders?: Order[]): void {
+    const targetOrders = this.getTargetOrdersForExport(fromDate, toDate, customOrders);
+    exportOrdersToPDF(targetOrders, fromDate, toDate);
   }
 
   /**
