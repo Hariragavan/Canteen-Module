@@ -338,7 +338,7 @@ export const FaceScannerHUD = forwardRef<FaceScannerHUDHandle, FaceScannerHUDPro
                 <img
                   src={ESSLEE_LOGO_BASE64}
                   alt="Esslee Logo"
-                  className="max-h-[140px] sm:max-h-[160px] w-auto max-w-[85%] object-contain drop-shadow-sm group-hover:scale-105 transition-transform duration-300"
+                  className="max-h-[155px] sm:max-h-[185px] w-auto max-w-[88%] object-contain drop-shadow-sm group-hover:scale-105 transition-transform duration-300"
                 />
               </div>
               <div className="shrink-0 flex flex-col items-center pb-2">

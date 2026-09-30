@@ -29,11 +29,11 @@ const ThermalSlipContent: React.FC<{
         {/* Left Column: esslee Logo, QR Code, ORD UUID */}
         <div className="w-[124px] shrink-0 flex flex-col items-center text-left">
           {/* esslee Logo - Elongated in top of QR code (replacing Campus Canteen) */}
-          <div className="flex items-center justify-center w-full mb-1 h-[32px] overflow-hidden">
+          <div className="flex items-center justify-center w-full mb-1 h-[40px] overflow-hidden">
             <img
               src={ESSLEE_LOGO_BASE64}
               alt="esslee"
-              className="w-full h-full object-contain"
+              className="w-full h-full object-fill"
             />
           </div>
 
