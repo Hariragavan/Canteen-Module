@@ -122,14 +122,6 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
             </div>
           </div>
 
-          {/* Quick Credential Hint */}
-          <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-xl p-2.5 text-[11px] text-emerald-900 flex items-center justify-between">
-            <span className="font-medium">System Credentials:</span>
-            <span className="font-mono font-bold bg-white px-2 py-0.5 rounded border border-emerald-200">
-              admin / admin@123
-            </span>
-          </div>
-
           {/* Submit Button */}
           <div className="pt-2">
             <button

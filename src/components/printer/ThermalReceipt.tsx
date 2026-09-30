@@ -23,7 +23,7 @@ const ThermalSlipContent: React.FC<{
   tamilMealName: string;
 }> = ({ ord, rateVal, formattedDate, formattedTime, tamilMealName }) => {
   return (
-    <div className="tvs-slip-page w-[275px] max-w-[280px] bg-white text-black font-sans p-2 select-none border-0 shadow-none outline-none">
+    <div className="tvs-slip-page w-[275px] max-w-[280px] bg-white text-black font-sans px-1.5 py-1 print:p-0 print:m-0 select-none border-0 shadow-none outline-none">
       {/* Top 2-Column Side-by-Side Content */}
       <div className="flex items-stretch justify-between gap-2">
         {/* Left Column: esslee Logo, QR Code, ORD UUID */}
@@ -57,12 +57,12 @@ const ThermalSlipContent: React.FC<{
 
         {/* Right Column: Rate Box, QTY, Food Type Box (Tamil & English) */}
         <div className="flex-1 min-w-0 flex flex-col justify-between pl-1 text-left">
-          {/* Top Right: Big Amount Box [ RS: 40 ] - Number centered */}
-          <div className="border-2 border-black py-1 px-1.5 flex items-center justify-center relative min-h-[66px] w-full">
+          {/* Top Right: Big Amount Box [ RS: 40 ] - Number centered, bigger box and font */}
+          <div className="border-2 border-black py-1 px-1.5 flex items-center justify-center relative min-h-[82px] sm:min-h-[86px] w-full">
             <span className="absolute top-1 left-1.5 text-xs sm:text-sm font-black text-black font-sans leading-none tracking-tight">
               RS:
             </span>
-            <span className="text-[52px] sm:text-[58px] font-black text-black leading-none tracking-tight text-center">
+            <span className="text-[64px] sm:text-[70px] font-black text-black leading-none tracking-tight text-center">
               {rateVal}
             </span>
           </div>
@@ -72,12 +72,12 @@ const ThermalSlipContent: React.FC<{
             QTY: 1
           </div>
 
-          {/* Food Type Box: Bold Tamil & English stacked together */}
-          <div className="border-2 border-black text-center py-1 px-1 flex flex-col justify-center">
-            <div className="font-black text-[13px] sm:text-[14px] text-black leading-tight">
+          {/* Food Type Box: Attached at bottom with mt-auto, bigger Tamil & English text */}
+          <div className="border-2 border-black text-center py-1.5 px-1 flex flex-col justify-center mt-auto">
+            <div className="font-black text-[15px] sm:text-[16px] text-black leading-tight">
               {tamilMealName}
             </div>
-            <div className="border-t border-black font-black text-sm sm:text-base text-black leading-tight pt-0.5 mt-0.5">
+            <div className="border-t-2 border-black font-black text-base sm:text-lg text-black leading-tight pt-0.5 mt-0.5">
               {ord.meal}
             </div>
           </div>
@@ -85,7 +85,7 @@ const ThermalSlipContent: React.FC<{
       </div>
 
       {/* Spanning Info Below Columns: Token #, Name, ID & Time/Date */}
-      <div className="w-full mt-2 text-left">
+      <div className="w-full mt-1.5 text-left">
         {/* Token # */}
         <div className="text-[22px] font-black text-black leading-tight tracking-tight">
           Token # {ord.token}
@@ -104,7 +104,7 @@ const ThermalSlipContent: React.FC<{
       </div>
 
       {/* Bottom Dashed Separator Line */}
-      <div className="w-full border-t border-dashed border-black my-1.5" />
+      <div className="w-full border-t border-dashed border-black my-1" />
 
       {/* Footer Notice */}
       <div className="w-full text-center text-[10px] font-sans font-bold text-black tracking-tight">

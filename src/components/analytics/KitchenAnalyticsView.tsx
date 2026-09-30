@@ -263,7 +263,7 @@ export const KitchenAnalyticsView: React.FC = () => {
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Real-time meal consumption telemetry, queue velocity, and audit clearance ledger.
+            Real-time consumption telemetry, queue velocity, and audit clearance ledger.
           </p>
         </div>
 
@@ -381,7 +381,7 @@ export const KitchenAnalyticsView: React.FC = () => {
         {/* KPI 2: Served */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Meals Served</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Particular Served</p>
             <h3 className="text-3xl font-black text-emerald-700 mt-1 font-mono">{totalServed}</h3>
             <p className="text-[11px] text-slate-500 mt-1 font-medium">
               <strong className="text-emerald-700 font-bold">{collectionRate}%</strong> collection rate
@@ -428,7 +428,7 @@ export const KitchenAnalyticsView: React.FC = () => {
         {/* Chart 1: Donut Intake Breakdown (4 cols) */}
         <div className="lg:col-span-4 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
           <div>
-            <h4 className="font-bold text-slate-900 text-sm">Meal Slot Share (3 Slots)</h4>
+            <h4 className="font-bold text-slate-900 text-sm">Particular Share (3 Slots)</h4>
             <p className="text-xs text-slate-500 mt-0.5">Tiffin, Lunch, and Tea/Snacks distribution</p>
           </div>
           <div className="h-64 relative flex items-center justify-center my-2">
@@ -493,7 +493,7 @@ export const KitchenAnalyticsView: React.FC = () => {
               onChange={(e) => setSelectedMeal(e.target.value)}
               className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
             >
-              <option value="ALL">All Meals</option>
+              <option value="ALL">All Particulars</option>
               <option value="Tiffin">Tiffin</option>
               <option value="Lunch">Lunch</option>
               <option value="Tea/Snacks">Tea/Snacks</option>
@@ -520,7 +520,7 @@ export const KitchenAnalyticsView: React.FC = () => {
                 <th className="p-3 bg-slate-100">Emp ID</th>
                 <th className="p-3 bg-slate-100">Name</th>
                 <th className="p-3 bg-slate-100">Dept</th>
-                <th className="p-3 bg-slate-100">Meal</th>
+                <th className="p-3 bg-slate-100">Particular</th>
                 <th className="p-3 bg-slate-100 text-right">Price</th>
                 <th className="p-3 bg-slate-100">Status</th>
                 <th className="p-3 bg-slate-100">Issued Time</th>
