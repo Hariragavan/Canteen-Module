@@ -5,6 +5,8 @@ import type { Order } from '../../types';
 import { canteenService } from '../../services/canteenService';
 import { Printer, CheckCircle2 } from 'lucide-react';
 
+import { ESSLEE_LOGO_BASE64 } from '../../assets/logoBase64';
+
 interface ThermalReceiptProps {
   order?: Order;
   orders?: Order[];
@@ -12,7 +14,7 @@ interface ThermalReceiptProps {
   onPrint?: () => void;
 }
 
-// Single slip layout matching user reference specifications
+// Single slip layout matching user reference specifications and esslee branding
 const ThermalSlipContent: React.FC<{
   ord: Order;
   rateVal: number;
@@ -22,20 +24,24 @@ const ThermalSlipContent: React.FC<{
 }> = ({ ord, rateVal, formattedDate, formattedTime, tamilMealName }) => {
   return (
     <div className="tvs-slip-page w-[275px] max-w-[280px] bg-white text-black font-sans p-2 select-none border-0 shadow-none outline-none">
-      {/* Main 2-Column Side-by-Side Content */}
+      {/* Top 2-Column Side-by-Side Content */}
       <div className="flex items-stretch justify-between gap-2">
-        {/* Left Column: Campus Canteen, QR Code, ORD UUID, Token, Name, ID */}
-        <div className="w-[124px] shrink-0 flex flex-col items-start text-left">
-          <div className="flex items-center justify-between w-full mb-1">
-            <span className="font-bold text-black text-[13.5px] tracking-tight whitespace-nowrap">
-              Campus Canteen
-            </span>
+        {/* Left Column: esslee Logo, QR Code, ORD UUID */}
+        <div className="w-[124px] shrink-0 flex flex-col items-center text-left">
+          {/* esslee Logo - Elongated in top of QR code (replacing Campus Canteen) */}
+          <div className="flex items-center justify-center w-full mb-1 h-[32px] overflow-hidden">
+            <img
+              src={ESSLEE_LOGO_BASE64}
+              alt="esslee"
+              className="w-full h-full object-contain"
+            />
           </div>
 
-          <div className="p-0.5 bg-white border border-black rounded-none flex items-center justify-center">
+          {/* QR Code Container with 2px solid black border */}
+          <div className="p-0.5 bg-white border-2 border-black flex items-center justify-center w-full aspect-square">
             <QRCodeSVG
               value={ord.orderUuid}
-              size={106}
+              size={110}
               level="M"
               includeMargin={false}
               fgColor="#000000"
@@ -43,29 +49,15 @@ const ThermalSlipContent: React.FC<{
             />
           </div>
 
-          <div className="text-[9px] font-mono font-medium text-black tracking-tighter mt-1 select-all break-all leading-tight">
+          {/* ORD UUID */}
+          <div className="text-[9.5px] font-mono font-medium text-black tracking-tighter mt-1 select-all break-all leading-tight w-full text-left">
             {ord.orderUuid}
-          </div>
-
-          {/* Token # */}
-          <div className="text-[15px] font-black text-black mt-1 leading-tight tracking-tight">
-            Token # {ord.token}
-          </div>
-
-          {/* Name */}
-          <div className="text-xs font-semibold text-black mt-0.5 leading-tight truncate max-w-[122px]">
-            Name: {ord.name}
-          </div>
-
-          {/* ID */}
-          <div className="text-xs font-semibold text-black mt-0.5 leading-tight truncate max-w-[122px]">
-            ID: {ord.userId}
           </div>
         </div>
 
-        {/* Right Column: Rate Box, QTY, Food Type Box (Tamil & English), Time & Date */}
+        {/* Right Column: Rate Box, QTY, Food Type Box (Tamil & English) */}
         <div className="flex-1 min-w-0 flex flex-col justify-between pl-1 text-left">
-          {/* Top Right: Big Amount Box [ RS: 40 ] - Number centered even for single digit */}
+          {/* Top Right: Big Amount Box [ RS: 40 ] - Number centered */}
           <div className="border-2 border-black py-1 px-1.5 flex items-center justify-center relative min-h-[66px] w-full">
             <span className="absolute top-1 left-1.5 text-xs sm:text-sm font-black text-black font-sans leading-none tracking-tight">
               RS:
@@ -81,26 +73,40 @@ const ThermalSlipContent: React.FC<{
           </div>
 
           {/* Food Type Box: Bold Tamil & English stacked together */}
-          <div className="border-2 border-black text-center py-0.5 px-1 flex flex-col justify-center">
-            <div className="font-black text-[13px] sm:text-sm text-black leading-tight">
+          <div className="border-2 border-black text-center py-1 px-1 flex flex-col justify-center">
+            <div className="font-black text-[13px] sm:text-[14px] text-black leading-tight">
               {tamilMealName}
             </div>
             <div className="border-t border-black font-black text-sm sm:text-base text-black leading-tight pt-0.5 mt-0.5">
               {ord.meal}
             </div>
           </div>
+        </div>
+      </div>
 
-          {/* Time & Date: to bottom directly above the dashed line */}
-          <div className="mt-auto pt-1.5 text-[9.5px] sm:text-[10px] text-black font-sans font-bold leading-tight whitespace-nowrap">
-            {formattedTime} | {formattedDate}
-          </div>
+      {/* Spanning Info Below Columns: Token #, Name, ID & Time/Date */}
+      <div className="w-full mt-2 text-left">
+        {/* Token # */}
+        <div className="text-[22px] font-black text-black leading-tight tracking-tight">
+          Token # {ord.token}
+        </div>
+
+        {/* Name */}
+        <div className="text-sm font-bold text-black mt-0.5 leading-tight truncate">
+          Name: {ord.name}
+        </div>
+
+        {/* ID & Date/Time on same line */}
+        <div className="flex items-center justify-between text-xs font-bold text-black mt-1 leading-tight">
+          <span>ID: {ord.userId}</span>
+          <span className="font-sans font-bold">{formattedTime} | {formattedDate}</span>
         </div>
       </div>
 
       {/* Bottom Dashed Separator Line */}
       <div className="w-full border-t border-dashed border-black my-1.5" />
 
-      {/* Footer Notice: User requirement: 'in token in botom mention only present the slip aat canteen counter' */}
+      {/* Footer Notice */}
       <div className="w-full text-center text-[10px] font-sans font-bold text-black tracking-tight">
         Present the slip at canteen counter
       </div>

@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Order } from '../types';
@@ -49,6 +49,8 @@ function getFileNameBase(fromDate?: string, toDate?: string): string {
 
 /**
  * 1. Export as CSV File
+ * - Headings highlighted in uppercase
+ * - Last row contains TOTAL AMOUNT in the Price column
  */
 export function exportOrdersToCSV(
   orders: Order[],
@@ -61,6 +63,22 @@ export function exportOrdersToCSV(
   }
 
   const formatted = formatOrderReportData(orders);
+  const totalAmount = formatted.reduce((sum, item) => sum + item.price, 0);
+
+  // Highlighted Uppercase Column Headers
+  const CSV_HEADERS = [
+    'DATE',
+    'EMP ID',
+    'NAME',
+    'DEPT',
+    'MEAL',
+    'PRICE',
+    'STATUS',
+    'ISSUED TIME',
+    'SERVED TIME',
+    'TOKEN NUMBER',
+  ];
+
   const rows = formatted.map((item) => [
     `"${item.date}"`,
     `"${item.empId}"`,
@@ -74,8 +92,24 @@ export function exportOrdersToCSV(
     item.tokenNumber,
   ]);
 
+  // Last Total Amount Row for the Price column
+  const totalRow = [
+    `"TOTAL AMOUNT"`,
+    `""`,
+    `""`,
+    `""`,
+    `""`,
+    totalAmount,
+    `""`,
+    `""`,
+    `""`,
+    `""`,
+  ];
+
   const csvContent =
-    '\uFEFF' + [REPORT_HEADERS.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    '\uFEFF' +
+    [CSV_HEADERS.join(','), ...rows.map((r) => r.join(',')), totalRow.join(',')].join('\n');
+
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -89,6 +123,9 @@ export function exportOrdersToCSV(
 
 /**
  * 2. Export as Excel (.xlsx) File
+ * - Highlighted Emerald Headings with bold white text
+ * - Total Amount Row at the bottom with Price column highlighted
+ * - Auto-filter and optimized column widths
  */
 export function exportOrdersToExcel(
   orders: Order[],
@@ -101,6 +138,8 @@ export function exportOrdersToExcel(
   }
 
   const formatted = formatOrderReportData(orders);
+  const totalAmount = formatted.reduce((sum, item) => sum + item.price, 0);
+
   const dataRows = formatted.map((item) => [
     item.date,
     item.empId,
@@ -114,7 +153,99 @@ export function exportOrdersToExcel(
     item.tokenNumber,
   ]);
 
-  const worksheet = XLSX.utils.aoa_to_sheet([REPORT_HEADERS, ...dataRows]);
+  // Total row at bottom
+  const totalRow = [
+    'TOTAL AMOUNT',
+    '',
+    '',
+    '',
+    '',
+    totalAmount,
+    '',
+    '',
+    '',
+    '',
+  ];
+
+  const worksheet = XLSX.utils.aoa_to_sheet([REPORT_HEADERS, ...dataRows, totalRow]);
+
+  const colLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+
+  // 1. Highlight Headings (Row 1): Rich Emerald fill, bold white text, crisp borders
+  colLetters.forEach((col) => {
+    const cellRef = `${col}1`;
+    if (worksheet[cellRef]) {
+      worksheet[cellRef].s = {
+        fill: { fgColor: { rgb: '059669' } }, // Emerald 600
+        font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: {
+          top: { style: 'thin', color: { rgb: '047857' } },
+          bottom: { style: 'medium', color: { rgb: '047857' } },
+          left: { style: 'thin', color: { rgb: '047857' } },
+          right: { style: 'thin', color: { rgb: '047857' } },
+        },
+      };
+    }
+  });
+
+  // 2. Format Data Rows (Rows 2 to N+1)
+  dataRows.forEach((_, rowIdx) => {
+    const excelRow = rowIdx + 2;
+    colLetters.forEach((col) => {
+      const cellRef = `${col}${excelRow}`;
+      if (worksheet[cellRef]) {
+        const isPriceCol = col === 'F';
+        const isTokenCol = col === 'J';
+        worksheet[cellRef].s = {
+          font: { name: 'Calibri', sz: 10, bold: isPriceCol || isTokenCol },
+          alignment: {
+            horizontal: isPriceCol ? 'right' : isTokenCol ? 'center' : 'left',
+            vertical: 'center',
+          },
+          border: {
+            top: { style: 'thin', color: { rgb: 'E2E8F0' } },
+            bottom: { style: 'thin', color: { rgb: 'E2E8F0' } },
+            left: { style: 'thin', color: { rgb: 'E2E8F0' } },
+            right: { style: 'thin', color: { rgb: 'E2E8F0' } },
+          },
+        };
+      }
+    });
+  });
+
+  // 3. Highlight Last Total Row: Soft emerald highlight, double bottom border, total in Price column
+  const totalRowIdx = dataRows.length + 2;
+  colLetters.forEach((col) => {
+    const cellRef = `${col}${totalRowIdx}`;
+    if (!worksheet[cellRef]) {
+      worksheet[cellRef] = { t: 's', v: '' };
+    }
+    const isPriceCol = col === 'F';
+    const isLabelCol = col === 'A';
+    worksheet[cellRef].s = {
+      fill: { fgColor: { rgb: 'ECFDF5' } }, // Light emerald highlight
+      font: {
+        name: 'Calibri',
+        sz: isPriceCol ? 12 : 11,
+        bold: true,
+        color: { rgb: '065F46' }, // Dark emerald
+      },
+      alignment: {
+        horizontal: isPriceCol ? 'right' : isLabelCol ? 'left' : 'center',
+        vertical: 'center',
+      },
+      border: {
+        top: { style: 'medium', color: { rgb: '059669' } },
+        bottom: { style: 'double', color: { rgb: '059669' } },
+        left: { style: 'thin', color: { rgb: 'CBD5E1' } },
+        right: { style: 'thin', color: { rgb: 'CBD5E1' } },
+      },
+    };
+  });
+
+  // Enable Excel Auto-Filter on header row
+  worksheet['!autofilter'] = { ref: `A1:J${dataRows.length + 1}` };
 
   // Set friendly column widths
   worksheet['!cols'] = [
@@ -123,7 +254,7 @@ export function exportOrdersToExcel(
     { wch: 22 }, // Name
     { wch: 16 }, // Dept
     { wch: 14 }, // Meal
-    { wch: 12 }, // Price
+    { wch: 14 }, // Price
     { wch: 20 }, // Status
     { wch: 16 }, // Issued Time
     { wch: 16 }, // Served Time
@@ -138,6 +269,9 @@ export function exportOrdersToExcel(
 
 /**
  * 3. Export as PDF (.pdf) Document
+ * - Prominent Total Amount banner displayed at the TOP
+ * - Clean ASCII "Rs. XX" formatting to prevent multi-byte encoding separation / small 1 glitch
+ * - Summary row at bottom of table showing Total Amount under Price column
  */
 export function exportOrdersToPDF(
   orders: Order[],
@@ -150,45 +284,76 @@ export function exportOrdersToPDF(
   }
 
   const formatted = formatOrderReportData(orders);
+  const totalAmount = formatted.reduce((sum, item) => sum + item.price, 0);
   const doc = new jsPDF({ orientation: 'landscape', format: 'a4' });
 
   // Document Title Header
   doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42); // slate-900
-  doc.text('Smart Canteen - Token Clearance & Audit Report', 14, 15);
+  doc.text('Smart Canteen - Token Clearance & Audit Report', 14, 13);
 
-  doc.setFontSize(9);
-  doc.setTextColor(100, 116, 139); // slate-500
+  // Top Highlighted Total Amount Banner
   const rangeInfo =
     fromDate && toDate
       ? `Date Range: ${fromDate} to ${toDate}`
       : fromDate
       ? `Date: ${fromDate}`
       : 'All Recorded Dates';
-  const totalAmount = formatted.reduce((sum, item) => sum + item.price, 0);
-  doc.text(
-    `${rangeInfo}  •  Total Tokens: ${formatted.length}  •  Total Value: ₹${totalAmount.toLocaleString()}  •  Generated: ${new Date().toLocaleString()}`,
-    14,
-    21
-  );
 
+  doc.setFillColor(236, 253, 245); // emerald-50
+  doc.setDrawColor(5, 150, 105); // emerald-600
+  doc.setLineWidth(0.6);
+  doc.roundedRect(14, 17, doc.internal.pageSize.width - 28, 11, 2, 2, 'FD');
+
+  // Prominent Total Amount text inside the banner
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(4, 120, 87); // emerald-700
+  doc.text(`TOTAL AMOUNT: Rs. ${totalAmount.toLocaleString()}`, 18, 24.5);
+
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(51, 65, 85); // slate-700
+  const metaInfo = `Total Tokens: ${formatted.length}  •  ${rangeInfo}  •  Generated: ${new Date().toLocaleString()}`;
+  doc.text(metaInfo, doc.internal.pageSize.width - 18, 24.5, { align: 'right' });
+
+  // Table Body Rows:
+  // Using "Rs. XX" instead of unicode Rupee symbol "₹" avoids font encoding corruption (which showed "small 1" / â‚¹)
   const tableRows = formatted.map((item) => [
     item.date,
     item.empId,
     item.name,
     item.dept,
     item.meal,
-    `₹${item.price}`,
+    `Rs. ${item.price}`,
     item.status,
     item.issuedTime,
     item.servedTime,
     String(item.tokenNumber),
   ]);
 
+  // Last Total Amount row under the Price column in table footer
+  const tableFoot = [
+    [
+      'TOTAL AMOUNT',
+      '',
+      '',
+      '',
+      '',
+      `Rs. ${totalAmount.toLocaleString()}`,
+      '',
+      '',
+      '',
+      `${formatted.length} Tokens`,
+    ],
+  ];
+
   autoTable(doc, {
     head: [REPORT_HEADERS],
     body: tableRows,
-    startY: 25,
+    foot: tableFoot,
+    startY: 32,
     theme: 'grid',
     styles: {
       fontSize: 8,
@@ -201,8 +366,15 @@ export function exportOrdersToPDF(
       fontStyle: 'bold',
       halign: 'left',
     },
+    footStyles: {
+      fillColor: [236, 253, 245], // emerald-50
+      textColor: [4, 120, 87], // emerald-700
+      fontStyle: 'bold',
+      fontSize: 8.5,
+      halign: 'left',
+    },
     columnStyles: {
-      5: { halign: 'right' }, // Price
+      5: { halign: 'right', fontStyle: 'bold' }, // Price column aligned right
       9: { halign: 'center', fontStyle: 'bold' }, // Token Number
     },
     alternateRowStyles: {

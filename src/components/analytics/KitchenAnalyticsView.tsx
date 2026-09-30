@@ -584,6 +584,21 @@ export const KitchenAnalyticsView: React.FC = () => {
                 })
               )}
             </tbody>
+            {filteredOrders.length > 0 && (
+              <tfoot className="bg-slate-100/90 font-bold border-t-2 border-slate-300">
+                <tr>
+                  <td colSpan={5} className="p-3 text-slate-800 text-right uppercase tracking-wider text-xs">
+                    Total Amount:
+                  </td>
+                  <td className="p-3 font-mono font-black text-emerald-800 text-right text-sm whitespace-nowrap">
+                    ₹{filteredOrders.reduce((sum, o) => sum + (o.rate ?? 40), 0).toLocaleString()}
+                  </td>
+                  <td colSpan={4} className="p-3 text-slate-500 text-xs font-mono">
+                    ({filteredOrders.length} tokens)
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
