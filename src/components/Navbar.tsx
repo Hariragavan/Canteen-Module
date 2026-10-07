@@ -16,7 +16,7 @@ import {
   UtensilsCrossed,
 } from 'lucide-react';
 
-export type ActiveTab = 'kiosk' | 'staff' | 'analytics';
+export type ActiveTab = 'kiosk' | 'staff' | 'analytics' | 'admin';
 
 interface NavbarProps {
   activeTab: ActiveTab;

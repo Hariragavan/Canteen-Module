@@ -25,6 +25,8 @@ import {
   Languages,
   Sparkles,
   Save,
+  Tablet,
+  ArrowLeft,
 } from 'lucide-react';
 import type { MealSlotConfig, MealSlotName } from '../../types';
 
@@ -39,6 +41,7 @@ interface AdminPortalModalProps {
   onClose: () => void;
   onRosterUpdated?: () => void;
   onNavigateToStaffScanner?: () => void;
+  onNavigateToKiosk?: () => void;
   onLogout?: () => void;
 }
 
@@ -49,9 +52,11 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   onClose,
   onRosterUpdated,
   onNavigateToStaffScanner,
+  onNavigateToKiosk,
   onLogout,
 }) => {
-  const [activeTab, setActiveTab] = useState<'registered' | 'new' | 'analytics' | 'menu'>('registered');
+  const [activeTab, setActiveTab] = useState<'registered' | 'analytics' | 'menu'>('registered');
+  const [isRegisteringNew, setIsRegisteringNew] = useState<boolean>(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'Employee' | 'Staff'>('ALL');
@@ -187,13 +192,13 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   }, [isCameraActive]);
 
   useEffect(() => {
-    if (isOpen && activeTab === 'new' && !formData.photo) {
+    if (isOpen && activeTab === 'registered' && isRegisteringNew && !formData.photo) {
       startCamera(facingMode);
-    } else if (!isOpen || activeTab !== 'new' || formData.photo) {
+    } else if (!isOpen || activeTab !== 'registered' || !isRegisteringNew || formData.photo) {
       stopCamera();
     }
     return () => stopCamera();
-  }, [isOpen, activeTab, formData.photo]);
+  }, [isOpen, activeTab, isRegisteringNew, formData.photo]);
 
   // Take photo snapshot from video stream and compute 128D biometric descriptor
   const capturePhoto = async () => {
@@ -702,156 +707,290 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
   if (!isOpen) return null;
 
+  const handleReturnToKiosk = () => {
+    stopCamera();
+    stopEditCamera();
+    if (onNavigateToKiosk) {
+      onNavigateToKiosk();
+    } else {
+      onClose();
+    }
+  };
+
+  const handleLockLogout = () => {
+    stopCamera();
+    stopEditCamera();
+    if (onLogout) {
+      onLogout();
+    } else {
+      onClose();
+    }
+  };
+
+  const handleGoToCounter = () => {
+    stopCamera();
+    stopEditCamera();
+    if (onNavigateToStaffScanner) {
+      onNavigateToStaffScanner();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs">
-      <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-4xl shadow-modal flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[90vh]">
-        
-        {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70">
-          <div className="flex items-center space-x-3">
-            <div className="p-2.5 bg-emerald-600 text-white rounded-2xl shadow-sm shadow-emerald-600/30">
-              <Users className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h3 className="font-bold text-slate-900 text-base">
-                  Canteen Administration Portal
-                </h3>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
-                  Biometric Manager
-                </span>
+    <div className="w-full h-screen min-h-screen flex flex-row overflow-hidden bg-slate-50 select-none">
+      
+      {/* ============================================================= */}
+      {/* LEFT SIDEBAR NAVIGATION                                       */}
+      {/* ============================================================= */}
+      <aside className="w-64 sm:w-72 shrink-0 bg-white border-r border-slate-200 flex flex-col justify-between h-full overflow-y-auto z-20 shadow-xs">
+        <div className="flex flex-col">
+          
+          {/* 1. Brand & Portal Header */}
+          <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/60">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center text-white font-black text-base shadow-sm shadow-emerald-600/30 shrink-0">
+                EE
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Manage registered cafeteria personnel or enroll new staff and employees.
-              </p>
+              <div className="min-w-0">
+                <h2 className="font-black text-slate-900 text-sm tracking-tight truncate leading-tight">
+                  Esstee Exports
+                </h2>
+                <div className="flex items-center space-x-1.5 mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-[11px] font-bold text-emerald-800">
+                    Admin Portal
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
+          {/* 2. Top Quick Actions: Tablet Kiosk, Lock & Logout, Counter View */}
+          <div className="p-3 border-b border-slate-100 space-y-1.5 bg-slate-50/30">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">
+              Quick Actions
+            </div>
+
+            {/* Tablet Kiosk Button (Return to first page) */}
+            <button
+              type="button"
+              onClick={handleReturnToKiosk}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 text-xs font-bold transition-all shadow-2xs active:scale-95 group cursor-pointer"
+              title="Return to Tablet Kiosk (First Page)"
+            >
+              <div className="flex items-center space-x-2.5">
+                <div className="p-1.5 rounded-lg bg-emerald-100/80 text-emerald-700 group-hover:bg-emerald-200 transition-colors">
+                  <Tablet className="w-4 h-4" />
+                </div>
+                <span>Tablet Kiosk</span>
+              </div>
+              <span className="text-[10px] font-medium text-slate-400 group-hover:text-emerald-700">
+                First Page
+              </span>
+            </button>
+
+            {/* Lock & Logout Button */}
             {onLogout && (
               <button
                 type="button"
-                onClick={() => {
-                  onLogout();
-                  onClose();
-                }}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all shadow-2xs active:scale-95"
-                title="Lock Admin Portal and Logout"
+                onClick={handleLockLogout}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-200 text-xs font-bold transition-all shadow-2xs active:scale-95 group cursor-pointer"
+                title="Lock Admin Portal & Logout"
               >
-                <Lock className="w-3.5 h-3.5" />
-                <span>Lock & Logout</span>
+                <div className="flex items-center space-x-2.5">
+                  <div className="p-1.5 rounded-lg bg-rose-100/80 text-rose-700 group-hover:bg-rose-200 transition-colors">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <span>Lock & Logout</span>
+                </div>
+                <span className="text-[10px] font-medium text-slate-400 group-hover:text-rose-600">
+                  Exit
+                </span>
               </button>
             )}
 
+            {/* Counter View Button (When clicked, open that page) */}
             {onNavigateToStaffScanner && (
               <button
                 type="button"
-                onClick={() => {
-                  onClose();
-                  onNavigateToStaffScanner();
-                }}
-                className="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200 text-xs font-bold transition-all shadow-2xs active:scale-95"
-                title="Switch to Counter Scanner Station"
+                onClick={handleGoToCounter}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 text-xs font-bold transition-all shadow-2xs active:scale-95 group cursor-pointer"
+                title="Open Staff Counter Scanner Station"
               >
-                <Scan className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Counter Station</span>
+                <div className="flex items-center space-x-2.5">
+                  <div className="p-1.5 rounded-lg bg-indigo-100/80 text-indigo-700 group-hover:bg-indigo-200 transition-colors">
+                    <Scan className="w-4 h-4" />
+                  </div>
+                  <span>Counter View</span>
+                </div>
+                <span className="text-[10px] font-medium text-slate-400 group-hover:text-indigo-600">
+                  Open →
+                </span>
               </button>
             )}
-
-            <button
-              onClick={onClose}
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
           </div>
-        </div>
 
-        {/* Tab Navigation */}
-        <div className="flex items-center justify-between px-6 pt-3 pb-2 border-b border-slate-100 bg-white">
-          <div className="flex items-center space-x-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+          {/* 3. Left Sidebar Navigation Tabs */}
+          <div className="p-3 space-y-1">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1 mb-0.5">
+              Admin Sections
+            </div>
+
+            {/* Registered Users Tab */}
             <button
+              type="button"
               onClick={() => {
                 setActiveTab('registered');
+                setIsRegisteringNew(false);
                 stopCamera();
               }}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'registered'
-                  ? 'bg-white text-emerald-700 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
-              <Users className="w-4 h-4" />
-              <span>Registered Users ({employees.length})</span>
+              <div className="flex items-center space-x-3">
+                <Users className={`w-4 h-4 ${activeTab === 'registered' ? 'text-white' : 'text-slate-500'}`} />
+                <span>Registered Users</span>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
+                activeTab === 'registered'
+                  ? 'bg-emerald-700 text-emerald-100'
+                  : 'bg-slate-100 text-slate-600 border border-slate-200'
+              }`}>
+                {employees.length}
+              </span>
             </button>
 
+            {/* Kitchen Analysis Tab */}
             <button
-              onClick={() => {
-                setActiveTab('new');
-                loadEmployees();
-                if (!formData.id) {
-                  setFormData((prev) => ({
-                    ...prev,
-                    id: `EMP-${1000 + employees.length + 1}`,
-                  }));
-                }
-              }}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'new'
-                  ? 'bg-white text-emerald-700 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>New Registration</span>
-            </button>
-
-            <button
+              type="button"
               onClick={() => {
                 setActiveTab('analytics');
+                setIsRegisteringNew(false);
                 stopCamera();
               }}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              className={`w-full flex items-center space-x-3 px-3.5 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'analytics'
-                  ? 'bg-white text-emerald-700 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
-              <BarChart3 className="w-4 h-4" />
-              <span>Kitchen Analytics</span>
+              <BarChart3 className={`w-4 h-4 ${activeTab === 'analytics' ? 'text-white' : 'text-slate-500'}`} />
+              <span>Kitchen Analysis</span>
             </button>
 
+            {/* Menu & Timings Tab */}
             <button
+              type="button"
               onClick={() => {
                 setActiveTab('menu');
+                setIsRegisteringNew(false);
                 stopCamera();
                 setAdminMealSlots(canteenService.getMealSlots());
               }}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              className={`w-full flex items-center space-x-3 px-3.5 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'menu'
-                  ? 'bg-white text-emerald-700 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
-              <UtensilsCrossed className="w-4 h-4" />
+              <UtensilsCrossed className={`w-4 h-4 ${activeTab === 'menu' ? 'text-white' : 'text-slate-500'}`} />
               <span>Menu & Timings</span>
             </button>
           </div>
 
-          <div className="hidden sm:block text-xs text-slate-400 font-medium">
-            Active Roster Sync • Central Terminal Link
+        </div>
+
+        {/* 4. Sidebar Footer */}
+        <div className="p-4 border-t border-slate-100 bg-slate-50/70 text-[11px] text-slate-500">
+          <div className="flex items-center space-x-1.5 font-bold text-slate-700">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Central Roster Synced</span>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            Lenovo K11 Tablet Optimized
+          </p>
+        </div>
+      </aside>
+
+      {/* ============================================================= */}
+      {/* MAIN CONTENT AREA                                             */}
+      {/* ============================================================= */}
+      <div className="flex-1 h-full overflow-y-auto flex flex-col min-w-0 bg-slate-50">
+        
+        {/* Top Header of Main Content Area */}
+        <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0 sticky top-0 z-10 shadow-2xs">
+          <div>
+            <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+              {activeTab === 'registered'
+                ? isRegisteringNew
+                  ? 'New User Registration (128D AI Biometrics)'
+                  : 'Registered Cafeteria Personnel'
+                : activeTab === 'analytics'
+                ? 'Kitchen Analysis & Operations Telemetry'
+                : 'Daily Menu & Serving Timings Management'}
+            </h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {activeTab === 'registered'
+                ? isRegisteringNew
+                  ? 'Capture face photo, verify unique vector embedding, and enroll personnel.'
+                  : 'Search, review, edit, or remove registered cafeteria employees and staff.'
+                : activeTab === 'analytics'
+                ? 'Real-time telemetry, consumption curve, and audit clearance ledger.'
+                : 'Update daily food items in Tamil/English and configure operational timings.'}
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse mr-1.5" />
+              Central System Active
+            </span>
           </div>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-6 overflow-y-auto flex-1">
+        {/* Content Body */}
+        <div className="p-4 sm:p-6 lg:p-8 flex-1">
           
           {/* ============================================================= */}
-          {/* TAB 1: REGISTERED USERS                                       */}
+          {/* TAB 1: REGISTERED USERS LIST (WHEN NOT REGISTERING NEW)       */}
           {/* ============================================================= */}
-          {activeTab === 'registered' && (
+          {activeTab === 'registered' && !isRegisteringNew && (
             <div className="space-y-4">
               
+              {/* Top Bar in Registered Users: Title & NEW REGISTRATION BUTTON */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center space-x-2">
+                  <h3 className="font-bold text-slate-900 text-base">
+                    Personnel Directory
+                  </h3>
+                  <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                    {employees.length} Users
+                  </span>
+                </div>
+
+                {/* Prominent New Registration Button at the Top */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRegisteringNew(true);
+                    loadEmployees();
+                    if (!formData.id) {
+                      setFormData((prev) => ({
+                        ...prev,
+                        id: `EMP-${1000 + employees.length + 1}`,
+                      }));
+                    }
+                  }}
+                  className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/25 transition-all active:scale-95 cursor-pointer ml-auto"
+                  title="Enroll a new staff or employee with facial recognition"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>+ New Registration</span>
+                </button>
+              </div>
+
               {/* Search & Filter Controls */}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="relative flex-1 min-w-[240px]">
@@ -861,7 +1000,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search by Name, Employee ID, or Department..."
-                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
+                    className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
 
@@ -906,7 +1045,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                     </p>
                     <button
                       type="button"
-                      onClick={() => setActiveTab('new')}
+                      onClick={() => setIsRegisteringNew(true)}
                       className="mt-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95"
                     >
                       + Register First Employee
@@ -975,10 +1114,30 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           )}
 
           {/* ============================================================= */}
-          {/* TAB 2: NEW REGISTRATION (WITH LIVE IMAGE CAPTURE)             */}
+          {/* TAB 1 SUBVIEW: NEW REGISTRATION (WITH LIVE IMAGE CAPTURE)     */}
           {/* ============================================================= */}
-          {activeTab === 'new' && (
-            <form onSubmit={handleRegisterSubmit} className="space-y-6">
+          {activeTab === 'registered' && isRegisteringNew && (
+            <div className="space-y-5 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRegisteringNew(false);
+                    stopCamera();
+                    setErrorMessage(null);
+                    setSuccessMessage(null);
+                  }}
+                  className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>← Back to Registered Users</span>
+                </button>
+                <span className="text-xs font-bold text-slate-500 font-mono">
+                  Sequential Auto ID: {formData.id}
+                </span>
+              </div>
+
+              <form onSubmit={handleRegisterSubmit} className="space-y-6">
               
               {successMessage && (
                 <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center space-x-2 text-xs font-bold text-emerald-800">
@@ -1267,7 +1426,8 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
               </div>
 
             </form>
-          )}
+          </div>
+        )}
 
           {/* ============================================================= */}
           {/* TAB 3: KITCHEN ANALYTICS & OPERATIONS                         */}
@@ -1495,18 +1655,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           )}
 
         </div>
-
-        {/* Footer */}
-        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-          <span>Smart Canteen OS • Central Management & Operations</span>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors"
-          >
-            Close
-          </button>
-        </div>
-
       </div>
 
       {/* ============================================================= */}

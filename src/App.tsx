@@ -16,7 +16,6 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('kiosk');
   const [isHardwareModalOpen, setIsHardwareModalOpen] = useState<boolean>(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
-  const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
   const [isAdminLoginModalOpen, setIsAdminLoginModalOpen] = useState<boolean>(false);
   const [isMenuModalOpen, setIsMenuModalOpen] = useState<boolean>(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
@@ -26,7 +25,7 @@ export const App: React.FC = () => {
   // Protected Admin Portal Gatekeeper (admin / admin@123)
   const handleOpenAdminPortal = useCallback(() => {
     if (isAdminAuthenticated) {
-      setIsAdminModalOpen(true);
+      setActiveTab('admin');
     } else {
       setIsAdminLoginModalOpen(true);
     }
@@ -35,12 +34,12 @@ export const App: React.FC = () => {
   const handleAdminLoginSuccess = useCallback(() => {
     setIsAdminAuthenticated(true);
     setIsAdminLoginModalOpen(false);
-    setIsAdminModalOpen(true);
+    setActiveTab('admin');
   }, []);
 
   const handleAdminLogout = useCallback(() => {
     setIsAdminAuthenticated(false);
-    setIsAdminModalOpen(false);
+    setActiveTab('kiosk');
   }, []);
 
   // Sync count of unclaimed printed tokens
@@ -66,11 +65,11 @@ export const App: React.FC = () => {
 
   return (
     <div className={`flex flex-col bg-slate-50 text-slate-900 font-sans selection:bg-emerald-100 selection:text-emerald-900 ${
-      activeTab === 'kiosk' ? 'h-screen max-h-[100dvh] overflow-hidden' : 'min-h-screen'
+      activeTab === 'kiosk' || activeTab === 'admin' ? 'h-screen max-h-[100dvh] overflow-hidden' : 'min-h-screen'
     }`}>
       
-      {/* Top Application Header - Rendered on Staff Scanner and Analytics; Kiosk uses the dedicated sketch header */}
-      {activeTab !== 'kiosk' && (
+      {/* Top Application Header - Rendered on Staff Scanner and Analytics; Kiosk and Admin use dedicated full-page layouts */}
+      {activeTab !== 'kiosk' && activeTab !== 'admin' && (
         <Navbar
           activeTab={activeTab}
           onSelectTab={setActiveTab}
@@ -82,10 +81,12 @@ export const App: React.FC = () => {
         />
       )}
 
-      {/* Main Content Area: Optimized for Lenovo K11 Gen 2 tablet kiosk display */}
+      {/* Main Content Area */}
       <main className={
         activeTab === 'kiosk'
           ? 'flex-1 w-full max-w-5xl lg:max-w-6xl mx-auto px-2 py-2 sm:px-4 sm:py-2.5 flex flex-col min-h-0 overflow-y-auto md:overflow-hidden'
+          : activeTab === 'admin'
+          ? 'flex-1 w-full h-full min-h-0 overflow-hidden flex flex-col p-0 m-0'
           : 'flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col justify-start'
       }>
         {activeTab === 'kiosk' && (
@@ -105,6 +106,19 @@ export const App: React.FC = () => {
         {activeTab === 'analytics' && (
           <KitchenAnalyticsView />
         )}
+
+        {activeTab === 'admin' && (
+          <AdminPortalModal
+            isOpen={true}
+            onClose={() => setActiveTab('kiosk')}
+            onLogout={handleAdminLogout}
+            onNavigateToKiosk={() => setActiveTab('kiosk')}
+            onNavigateToStaffScanner={() => setActiveTab('staff')}
+            onRosterUpdated={() => {
+              syncUnclaimedCount();
+            }}
+          />
+        )}
       </main>
 
       {/* Admin Gatekeeper Login Modal (ID: admin, Password: admin@123) */}
@@ -114,17 +128,6 @@ export const App: React.FC = () => {
         onLoginSuccess={handleAdminLoginSuccess}
       />
 
-      {/* Admin Portal Modal (Registered Users, Edit/Delete, New Registration with Camera) */}
-      <AdminPortalModal
-        isOpen={isAdminModalOpen}
-        onClose={() => setIsAdminModalOpen(false)}
-        onLogout={handleAdminLogout}
-        onRosterUpdated={() => {
-          syncUnclaimedCount();
-          setActiveTab('kiosk');
-        }}
-        onNavigateToStaffScanner={() => setActiveTab('staff')}
-      />
 
       {/* Hardware Diagnostics Modal */}
       <HardwareDiagnosticsModal
@@ -145,8 +148,8 @@ export const App: React.FC = () => {
         onClose={() => setIsMenuModalOpen(false)}
       />
 
-      {/* Footer - Only shown for desktop/staff/analytics tabs, hidden in kiosk mode */}
-      {activeTab !== 'kiosk' && (
+      {/* Footer - Only shown for desktop/staff/analytics tabs, hidden in kiosk and admin modes */}
+      {activeTab !== 'kiosk' && activeTab !== 'admin' && (
         <footer className="border-t border-slate-200 bg-white py-3 text-center text-xs text-slate-400 print:hidden select-none">
           <div className="max-w-7xl mx-auto px-4 flex flex-wrap items-center justify-between gap-2">
             <span>Esstee Exports India Private Limited • Smart Canteen System</span>
