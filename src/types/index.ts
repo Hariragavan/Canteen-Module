@@ -83,3 +83,35 @@ export interface MealFeedback {
   timestamp: number;
   dateStr: string;
 }
+
+export interface TransportUnit {
+  id: string;
+  name: string;
+  location?: string;
+  contactPerson?: string;
+}
+
+export interface TransportItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: 'kg' | 'count' | 'litres' | 'packets';
+}
+
+export interface FoodTransportRecord {
+  id: string;
+  unitName: string;
+  mealType: string;
+  menuItems: string;
+  personCount: number;
+  primaryQuantity: number;
+  primaryUnit: 'kg' | 'count';
+  items?: TransportItem[];
+  dispatchDate: string; // YYYY-MM-DD
+  dispatchTime: string; // e.g. 12:30 PM
+  vehicleOrDriver?: string;
+  status: 'DISPATCHED' | 'DELIVERED' | 'IN_TRANSIT';
+  notes?: string;
+  timestamp: number;
+  created_at?: string;
+}

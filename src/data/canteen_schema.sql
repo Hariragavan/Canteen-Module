@@ -239,7 +239,7 @@ END $$;
 -- 10. CUSTOMER FOOD & SERVICE FEEDBACK TABLE
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS canteen_feedback (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY DEFAULT ('FB-' || substr(gen_random_uuid()::text, 1, 8)),
   meal_slot TEXT NOT NULL,
   rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
   comment TEXT,
@@ -250,4 +250,88 @@ ALTER TABLE canteen_feedback ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow public all on feedback" ON canteen_feedback;
 CREATE POLICY "Allow public all on feedback" ON canteen_feedback FOR ALL USING (true) WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_canteen_feedback_date ON canteen_feedback (created_at);
+
+-- ------------------------------------------------------------------------------
+-- 11. TRANSPORT DESTINATION UNITS / SECTORS TABLE
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS canteen_transport_units (
+  id TEXT PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  location TEXT,
+  contact_person TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE canteen_transport_units ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public all on transport units" ON canteen_transport_units;
+CREATE POLICY "Allow public all on transport units" ON canteen_transport_units FOR ALL USING (true) WITH CHECK (true);
+
+-- Seed initial units for Esstee Exports
+INSERT INTO canteen_transport_units (id, name, location, contact_person)
+VALUES
+  ('UNIT-1', 'Unit 1 - Spinning Division', 'Block A, North Wing', 'Suresh Kumar'),
+  ('UNIT-2', 'Unit 2 - Weaving Division', 'Block B, Main Plant', 'Murugan R'),
+  ('UNIT-3', 'Unit 3 - Processing & Dyeing', 'Industrial Sector 4', 'Anand P'),
+  ('UNIT-4', 'Unit 4 - Garments & Packing', 'South Campus Gate 2', 'Karthik S'),
+  ('UNIT-HQ', 'Admin Block & Executive Office', 'Central Headquarters', 'HR Frontdesk')
+ON CONFLICT (id) DO NOTHING;
+
+-- ------------------------------------------------------------------------------
+-- 12. FOOD TRANSPORT & SECTOR DISPATCHES LEDGER TABLE
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS canteen_food_transport (
+  id TEXT PRIMARY KEY DEFAULT ('TRP-' || substr(gen_random_uuid()::text, 1, 8)),
+  unit_name TEXT NOT NULL,
+  meal_type TEXT NOT NULL,                    -- 'Tiffin', 'Lunch', 'Tea/Snacks'
+  menu_items TEXT NOT NULL,                   -- e.g. 'Rice, Sambar, Poriyal, Curd'
+  person_count INTEGER NOT NULL DEFAULT 1,    -- Headcount
+  primary_quantity NUMERIC NOT NULL DEFAULT 0, -- e.g. 25.0
+  primary_unit TEXT NOT NULL DEFAULT 'kg',    -- 'kg' or 'count'
+  items_breakdown JSONB DEFAULT '[]'::jsonb,  -- Specific dish list: [{ name, quantity, unit }]
+  dispatch_date DATE NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::DATE,
+  dispatch_time TEXT NOT NULL,                -- e.g. '12:30 PM'
+  vehicle_or_driver TEXT,                     -- Vehicle / Driver Name
+  status TEXT NOT NULL DEFAULT 'DISPATCHED',  -- 'DISPATCHED', 'DELIVERED', 'IN_TRANSIT'
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE canteen_food_transport ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public all on food transport" ON canteen_food_transport;
+CREATE POLICY "Allow public all on food transport" ON canteen_food_transport FOR ALL USING (true) WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_canteen_transport_date ON canteen_food_transport (dispatch_date);
+CREATE INDEX IF NOT EXISTS idx_canteen_transport_unit ON canteen_food_transport (unit_name);
+CREATE INDEX IF NOT EXISTS idx_canteen_transport_meal ON canteen_food_transport (meal_type);
+
+-- ------------------------------------------------------------------------------
+-- 13. REALTIME REPLICATION FOR NEW TABLES
+-- ------------------------------------------------------------------------------
+ALTER TABLE canteen_transport_units REPLICA IDENTITY FULL;
+ALTER TABLE canteen_food_transport REPLICA IDENTITY FULL;
+ALTER TABLE canteen_feedback REPLICA IDENTITY FULL;
+
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE canteen_transport_units;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE canteen_food_transport;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE canteen_feedback;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+END $$;
+
 

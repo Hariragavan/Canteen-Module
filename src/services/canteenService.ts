@@ -1,4 +1,13 @@
-import type { Employee, MealFeedback, MealSlotConfig, MealSlotName, Order, VerificationResult } from '../types';
+import type {
+  Employee,
+  MealFeedback,
+  MealSlotConfig,
+  MealSlotName,
+  Order,
+  VerificationResult,
+  TransportUnit,
+  FoodTransportRecord,
+} from '../types';
 import { supabaseManager } from './supabase';
 import { exportOrdersToCSV, exportOrdersToExcel, exportOrdersToPDF } from './reportExportService';
 
@@ -8,7 +17,17 @@ const STORAGE_EMPLOYEES_KEY = 'canteen_local_employees_v3';
 const STORAGE_MEAL_SLOTS_KEY = 'canteen_custom_menu_slots_permanent';
 const STORAGE_FEEDBACK_KEY = 'canteen_customer_feedbacks_v1';
 const STORAGE_DELETED_EMPLOYEES_KEY = 'canteen_deleted_employees_tombstone_v1';
+const STORAGE_TRANSPORT_UNITS_KEY = 'canteen_transport_units_v1';
+const STORAGE_FOOD_TRANSPORT_KEY = 'canteen_food_transport_records_v1';
 export const HARD_PURGED_USER_IDS = new Set<string>(['1212', '1234']);
+
+export const DEFAULT_TRANSPORT_UNITS: TransportUnit[] = [
+  { id: 'UNIT-1', name: 'Unit 1 - Spinning Division', location: 'Block A, North Wing', contactPerson: 'Suresh Kumar' },
+  { id: 'UNIT-2', name: 'Unit 2 - Weaving Division', location: 'Block B, Main Plant', contactPerson: 'Murugan R' },
+  { id: 'UNIT-3', name: 'Unit 3 - Processing & Dyeing', location: 'Industrial Sector 4', contactPerson: 'Anand P' },
+  { id: 'UNIT-4', name: 'Unit 4 - Garments & Packing', location: 'South Campus Gate 2', contactPerson: 'Karthik S' },
+  { id: 'UNIT-HQ', name: 'Admin Block & Executive Office', location: 'Central Headquarters', contactPerson: 'HR Frontdesk' },
+];
 
 // Strictly 3 Canteen Meal Slots: Tiffin, Lunch, Tea/Snacks with pure Tamil text (no brackets)
 // Clean slate: description starts empty so user menu updates are saved without default placeholder data
@@ -105,6 +124,9 @@ class CanteenService {
   private employees: Employee[] = [];
   private orders: Order[] = [];
   private mealSlots: MealSlotConfig[] = [...DEFAULT_MEAL_SLOTS];
+  private transportUnits: TransportUnit[] = [...DEFAULT_TRANSPORT_UNITS];
+  private foodTransports: FoodTransportRecord[] = [];
+  private feedbacks: MealFeedback[] = [];
   private tokenSeq: number = 150;
   private isLoaded: boolean = false;
 
@@ -259,6 +281,40 @@ class CanteenService {
       if (storedSeq) {
         this.tokenSeq = parseInt(storedSeq, 10) || 101;
       }
+
+      // Load Transport Units
+      const storedUnits = localStorage.getItem(STORAGE_TRANSPORT_UNITS_KEY);
+      if (storedUnits) {
+        try {
+          this.transportUnits = JSON.parse(storedUnits);
+        } catch {
+          this.transportUnits = [...DEFAULT_TRANSPORT_UNITS];
+        }
+      } else {
+        this.transportUnits = [...DEFAULT_TRANSPORT_UNITS];
+        this.saveTransportUnitsLocal();
+      }
+
+      // Load Food Transport Records
+      const storedTransports = localStorage.getItem(STORAGE_FOOD_TRANSPORT_KEY);
+      if (storedTransports) {
+        try {
+          this.foodTransports = JSON.parse(storedTransports);
+        } catch {
+          this.foodTransports = [];
+        }
+      }
+
+      // Load Feedbacks
+      const storedFeedbacks = localStorage.getItem(STORAGE_FEEDBACK_KEY);
+      if (storedFeedbacks) {
+        try {
+          this.feedbacks = JSON.parse(storedFeedbacks);
+        } catch {
+          this.feedbacks = [];
+        }
+      }
+
       this.isLoaded = true;
 
       // Realtime listener for cross-device changes (Menu update, employee deletion/update)
@@ -325,6 +381,30 @@ class CanteenService {
       localStorage.setItem(STORAGE_TOKEN_KEY, String(this.tokenSeq));
     } catch (e) {
       console.warn('Failed saving orders to localStorage:', e);
+    }
+  }
+
+  private saveTransportUnitsLocal() {
+    try {
+      localStorage.setItem(STORAGE_TRANSPORT_UNITS_KEY, JSON.stringify(this.transportUnits));
+    } catch (e) {
+      console.warn('Failed saving transport units to localStorage:', e);
+    }
+  }
+
+  private saveFoodTransportsLocal() {
+    try {
+      localStorage.setItem(STORAGE_FOOD_TRANSPORT_KEY, JSON.stringify(this.foodTransports));
+    } catch (e) {
+      console.warn('Failed saving food transports to localStorage:', e);
+    }
+  }
+
+  private saveFeedbacksLocal() {
+    try {
+      localStorage.setItem(STORAGE_FEEDBACK_KEY, JSON.stringify(this.feedbacks));
+    } catch (e) {
+      console.warn('Failed saving feedbacks to localStorage:', e);
     }
   }
 
@@ -547,6 +627,101 @@ class CanteenService {
             window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: this.mealSlots }));
           }
         }
+      }
+
+      // 4. Sync Transport Units from Supabase
+      try {
+        const { data: remoteUnits, error: unitErr } = await client
+          .from('canteen_transport_units')
+          .select('*')
+          .order('created_at', { ascending: true });
+
+        if (!unitErr && remoteUnits && remoteUnits.length > 0) {
+          const unitMap = new Map<string, TransportUnit>();
+          this.transportUnits.forEach((u) => unitMap.set(u.id, u));
+          remoteUnits.forEach((ru: any) => {
+            unitMap.set(ru.id, {
+              id: ru.id,
+              name: ru.name,
+              location: ru.location || undefined,
+              contactPerson: ru.contact_person || undefined,
+            });
+          });
+          this.transportUnits = Array.from(unitMap.values());
+          this.saveTransportUnitsLocal();
+        }
+      } catch (e) {
+        // Table might not exist yet before SQL migration is applied
+      }
+
+      // 5. Sync Food Transport Records from Supabase
+      try {
+        const { data: remoteTransports, error: transErr } = await client
+          .from('canteen_food_transport')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!transErr && remoteTransports && remoteTransports.length > 0) {
+          const transMap = new Map<string, FoodTransportRecord>();
+          this.foodTransports.forEach((t) => transMap.set(t.id, t));
+          remoteTransports.forEach((rt: any) => {
+            transMap.set(rt.id, {
+              id: rt.id,
+              unitName: rt.unit_name,
+              mealType: rt.meal_type,
+              menuItems: rt.menu_items,
+              personCount: rt.person_count || 1,
+              primaryQuantity: Number(rt.primary_quantity || 0),
+              primaryUnit: (rt.primary_unit as 'kg' | 'count') || 'kg',
+              items: rt.items_breakdown || [],
+              dispatchDate: rt.dispatch_date,
+              dispatchTime: rt.dispatch_time,
+              vehicleOrDriver: rt.vehicle_or_driver || undefined,
+              status: rt.status || 'DISPATCHED',
+              notes: rt.notes || undefined,
+              timestamp: rt.created_at ? new Date(rt.created_at).getTime() : Date.now(),
+              created_at: rt.created_at,
+            });
+          });
+          this.foodTransports = Array.from(transMap.values()).sort(
+            (a, b) => (b.timestamp || 0) - (a.timestamp || 0)
+          );
+          this.saveFoodTransportsLocal();
+        }
+      } catch (e) {
+        // Table might not exist yet
+      }
+
+      // 6. Sync Feedbacks from Supabase
+      try {
+        const { data: remoteFeedbacks, error: fbErr } = await client
+          .from('canteen_feedback')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!fbErr && remoteFeedbacks && remoteFeedbacks.length > 0) {
+          const fbMap = new Map<string, MealFeedback>();
+          this.feedbacks.forEach((f) => {
+            const k = f.id || `${f.mealSlot}-${f.timestamp}`;
+            fbMap.set(k, f);
+          });
+          remoteFeedbacks.forEach((rf: any) => {
+            const timeMs = rf.created_at ? new Date(rf.created_at).getTime() : Date.now();
+            const dateStr = rf.created_at ? rf.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10);
+            fbMap.set(rf.id, {
+              id: rf.id,
+              mealSlot: rf.meal_slot,
+              rating: rf.rating,
+              comment: rf.comment || '',
+              timestamp: timeMs,
+              dateStr,
+            });
+          });
+          this.feedbacks = Array.from(fbMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+          this.saveFeedbacksLocal();
+        }
+      } catch (e) {
+        // Table might not exist yet
       }
     } catch (err) {
       console.warn('Sync from Supabase fallback:', err);
@@ -1113,36 +1288,161 @@ class CanteenService {
     exportOrdersToPDF(targetOrders, fromDate, toDate);
   }
 
-  /**
-   * Save customer feedback locally and sync to Supabase
-   */
-  public async submitFeedback(feedback: MealFeedback): Promise<void> {
-    try {
-      const stored = localStorage.getItem(STORAGE_FEEDBACK_KEY);
-      const list: MealFeedback[] = stored ? JSON.parse(stored) : [];
-      list.unshift(feedback);
-      localStorage.setItem(STORAGE_FEEDBACK_KEY, JSON.stringify(list));
+  // =========================================================================
+  // 1. TRANSPORT UNITS MANAGEMENT
+  // =========================================================================
+  public getTransportUnits(): TransportUnit[] {
+    return [...this.transportUnits];
+  }
 
-      const client = supabaseManager.getClient();
-      if (client) {
-        await client.from('canteen_feedback').insert({
-          meal_slot: feedback.mealSlot,
-          rating: feedback.rating,
-          comment: feedback.comment || null,
-          created_at: new Date(feedback.timestamp).toISOString(),
+  public async addTransportUnit(unit: Omit<TransportUnit, 'id'> | TransportUnit): Promise<TransportUnit> {
+    const newUnit: TransportUnit = {
+      ...unit,
+      id: 'id' in unit && unit.id ? unit.id : `UNIT-${Date.now().toString(36).toUpperCase()}`,
+    };
+    this.transportUnits.push(newUnit);
+    this.saveTransportUnitsLocal();
+
+    const client = supabaseManager.getClient();
+    if (client) {
+      try {
+        await client.from('canteen_transport_units').insert({
+          id: newUnit.id,
+          name: newUnit.name,
+          location: newUnit.location || null,
+          contact_person: newUnit.contactPerson || null,
         });
+        supabaseManager.broadcastChange('canteen_transport_units', 'INSERT', newUnit);
+      } catch (e) {
+        console.warn('Transport unit remote save fallback:', e);
       }
-    } catch (e) {
-      console.warn('Feedback save fallback:', e);
+    }
+    return newUnit;
+  }
+
+  public async deleteTransportUnit(id: string): Promise<void> {
+    this.transportUnits = this.transportUnits.filter((u) => u.id !== id);
+    this.saveTransportUnitsLocal();
+
+    const client = supabaseManager.getClient();
+    if (client) {
+      try {
+        await client.from('canteen_transport_units').delete().eq('id', id);
+        supabaseManager.broadcastChange('canteen_transport_units', 'DELETE', { id });
+      } catch (e) {
+        console.warn('Transport unit remote delete fallback:', e);
+      }
     }
   }
 
+  // =========================================================================
+  // 2. FOOD TRANSPORT & DISPATCH LEDGER
+  // =========================================================================
+  public getFoodTransports(): FoodTransportRecord[] {
+    return [...this.foodTransports];
+  }
+
+  public async addFoodTransport(
+    record: Omit<FoodTransportRecord, 'id' | 'timestamp'>
+  ): Promise<FoodTransportRecord> {
+    const timestamp = Date.now();
+    const id = `TRP-${Date.now().toString(36).toUpperCase()}`;
+    const newRecord: FoodTransportRecord = {
+      ...record,
+      id,
+      timestamp,
+      created_at: new Date(timestamp).toISOString(),
+    };
+
+    this.foodTransports.unshift(newRecord);
+    this.saveFoodTransportsLocal();
+
+    const client = supabaseManager.getClient();
+    if (client) {
+      try {
+        await client.from('canteen_food_transport').insert({
+          id: newRecord.id,
+          unit_name: newRecord.unitName,
+          meal_type: newRecord.mealType,
+          menu_items: newRecord.menuItems,
+          person_count: newRecord.personCount,
+          primary_quantity: newRecord.primaryQuantity,
+          primary_unit: newRecord.primaryUnit,
+          items_breakdown: newRecord.items || [],
+          dispatch_date: newRecord.dispatchDate,
+          dispatch_time: newRecord.dispatchTime,
+          vehicle_or_driver: newRecord.vehicleOrDriver || null,
+          status: newRecord.status,
+          notes: newRecord.notes || null,
+          created_at: newRecord.created_at,
+        });
+        supabaseManager.broadcastChange('canteen_food_transport', 'INSERT', newRecord);
+      } catch (e) {
+        console.warn('Food transport remote save fallback:', e);
+      }
+    }
+    return newRecord;
+  }
+
+  public async deleteFoodTransport(id: string): Promise<void> {
+    this.foodTransports = this.foodTransports.filter((t) => t.id !== id);
+    this.saveFoodTransportsLocal();
+
+    const client = supabaseManager.getClient();
+    if (client) {
+      try {
+        await client.from('canteen_food_transport').delete().eq('id', id);
+        supabaseManager.broadcastChange('canteen_food_transport', 'DELETE', { id });
+      } catch (e) {
+        console.warn('Food transport remote delete fallback:', e);
+      }
+    }
+  }
+
+  // =========================================================================
+  // 3. MEAL FEEDBACK & EMPLOYEE REVIEWS
+  // =========================================================================
   public getFeedbacks(): MealFeedback[] {
-    try {
-      const stored = localStorage.getItem(STORAGE_FEEDBACK_KEY);
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
+    return [...this.feedbacks];
+  }
+
+  public async submitFeedback(feedback: MealFeedback): Promise<void> {
+    const fb: MealFeedback = {
+      ...feedback,
+      id: feedback.id || `FB-${Date.now().toString(36).toUpperCase()}`,
+    };
+    this.feedbacks.unshift(fb);
+    this.saveFeedbacksLocal();
+
+    const client = supabaseManager.getClient();
+    if (client) {
+      try {
+        await client.from('canteen_feedback').insert({
+          id: fb.id,
+          meal_slot: fb.mealSlot,
+          rating: fb.rating,
+          comment: fb.comment || null,
+          created_at: new Date(fb.timestamp).toISOString(),
+        });
+        supabaseManager.broadcastChange('canteen_feedback', 'INSERT', fb);
+      } catch (e) {
+        console.warn('Feedback save fallback:', e);
+      }
+    }
+  }
+
+  public async deleteFeedback(id: string): Promise<void> {
+    this.feedbacks = this.feedbacks.filter((f) => f.id !== id);
+    this.saveFeedbacksLocal();
+
+    const client = supabaseManager.getClient();
+    if (client) {
+      try {
+        await client.from('canteen_feedback').delete().eq('id', id);
+        supabaseManager.broadcastChange('canteen_feedback', 'DELETE', { id });
+      } catch (e) {
+        console.warn('Feedback delete fallback:', e);
+      }
     }
   }
 }

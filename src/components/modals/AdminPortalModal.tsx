@@ -3,6 +3,8 @@ import type { Employee } from '../../types';
 import { canteenService } from '../../services/canteenService';
 import { soundEngine } from '../../services/soundEngine';
 import { KitchenAnalyticsView } from '../analytics/KitchenAnalyticsView';
+import { FoodTransportView } from '../transport/FoodTransportView';
+import { FeedbackReviewView } from '../feedback/FeedbackReviewView';
 import {
   X,
   UserPlus,
@@ -27,6 +29,8 @@ import {
   Save,
   Tablet,
   ArrowLeft,
+  Truck,
+  MessageSquareHeart,
 } from 'lucide-react';
 import type { MealSlotConfig, MealSlotName } from '../../types';
 
@@ -55,7 +59,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   onNavigateToKiosk,
   onLogout,
 }) => {
-  const [activeTab, setActiveTab] = useState<'registered' | 'analytics' | 'menu'>('registered');
+  const [activeTab, setActiveTab] = useState<'registered' | 'analytics' | 'transport' | 'feedback' | 'menu'>('registered');
   const [isRegisteringNew, setIsRegisteringNew] = useState<boolean>(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -880,6 +884,42 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
               <span>Kitchen Analysis</span>
             </button>
 
+            {/* Food Transport Tab (Positioned right after Kitchen Analysis) */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('transport');
+                setIsRegisteringNew(false);
+                stopCamera();
+              }}
+              className={`w-full flex items-center space-x-3 px-3.5 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'transport'
+                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Truck className={`w-4 h-4 ${activeTab === 'transport' ? 'text-white' : 'text-slate-500'}`} />
+              <span>Food Transport</span>
+            </button>
+
+            {/* Feedback Review Tab */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('feedback');
+                setIsRegisteringNew(false);
+                stopCamera();
+              }}
+              className={`w-full flex items-center space-x-3 px-3.5 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'feedback'
+                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <MessageSquareHeart className={`w-4 h-4 ${activeTab === 'feedback' ? 'text-white' : 'text-slate-500'}`} />
+              <span>Feedback Review</span>
+            </button>
+
             {/* Menu & Timings Tab */}
             <button
               type="button"
@@ -1430,11 +1470,29 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         )}
 
           {/* ============================================================= */}
-          {/* TAB 3: KITCHEN ANALYTICS & OPERATIONS                         */}
+          {/* TAB 2: KITCHEN ANALYTICS & OPERATIONS                         */}
           {/* ============================================================= */}
           {activeTab === 'analytics' && (
             <div className="py-1">
               <KitchenAnalyticsView />
+            </div>
+          )}
+
+          {/* ============================================================= */}
+          {/* TAB 3: FOOD TRANSPORT & SECTOR DISPATCHES                     */}
+          {/* ============================================================= */}
+          {activeTab === 'transport' && (
+            <div className="py-1">
+              <FoodTransportView />
+            </div>
+          )}
+
+          {/* ============================================================= */}
+          {/* TAB 4: FEEDBACK REVIEW & SENTIMENT ANALYSIS                   */}
+          {/* ============================================================= */}
+          {activeTab === 'feedback' && (
+            <div className="py-1">
+              <FeedbackReviewView />
             </div>
           )}
 

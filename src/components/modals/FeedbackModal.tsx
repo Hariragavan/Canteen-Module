@@ -24,19 +24,26 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
   const [selectedSlot, setSelectedSlot] = useState<MealSlotName>(defaultSlot);
   const [rating, setRating] = useState<number>(0);
   const [hoverRating, setHoverRating] = useState<number>(0);
+  const [comment, setComment] = useState<string>('');
+  const [isTypingComment, setIsTypingComment] = useState<boolean>(false);
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
-  const [remainingSeconds, setRemainingSeconds] = useState<number>(10);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(15);
 
-  // 10-second auto-close timer when opened
+  // Auto-close timer (pauses while typing comments so user isn't rushed)
   useEffect(() => {
     if (!isOpen) {
-      setRemainingSeconds(10);
+      setRemainingSeconds(15);
+      setComment('');
+      setIsTypingComment(false);
       return;
     }
 
-    setRemainingSeconds(10);
+    setRemainingSeconds(15);
     const interval = setInterval(() => {
       setRemainingSeconds((prev) => {
+        if (isTypingComment) {
+          return 25; // Keep timer comfortably extended while writing
+        }
         if (prev <= 1) {
           clearInterval(interval);
           onClose();
@@ -47,7 +54,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, isTypingComment]);
 
   if (!isOpen) return null;
 
@@ -109,7 +116,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
     await canteenService.submitFeedback({
       mealSlot: selectedSlot,
       rating,
-      comment: '',
+      comment: comment.trim(),
       timestamp: Date.now(),
       dateStr: new Date().toISOString().slice(0, 10),
     });
@@ -117,6 +124,8 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
     setTimeout(() => {
       setIsSubmitted(false);
       setRating(0);
+      setComment('');
+      setIsTypingComment(false);
       onClose();
     }, 1200);
   };
@@ -230,6 +239,29 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
               <p className={`text-xs mt-2 transition-all ${ratingLabel.color}`}>
                 {ratingLabel.text}
               </p>
+            </div>
+
+            {/* Step 3: Comments & Suggestions (Optional) */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-slate-800 uppercase tracking-tight flex items-center justify-between">
+                <span>3. Feedback Comments (கருத்துக்கள்):</span>
+                <span className="text-[10px] text-slate-400 font-normal">Optional / விருப்பத்தேர்வு</span>
+              </label>
+              <textarea
+                rows={2}
+                value={comment}
+                onFocus={() => {
+                  setIsTypingComment(true);
+                  setRemainingSeconds(35);
+                }}
+                onBlur={() => setIsTypingComment(false)}
+                onChange={(e) => {
+                  setComment(e.target.value);
+                  setRemainingSeconds(35);
+                }}
+                placeholder="உணவு தரம், சுவை அல்லது ஆலோசனைகள் உள்ளிடவும் / Type suggestions or comments here..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white resize-none transition-all leading-relaxed"
+              />
             </div>
 
             {/* Submit Button */}
