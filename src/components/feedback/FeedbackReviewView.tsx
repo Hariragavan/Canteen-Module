@@ -128,7 +128,7 @@ export const FeedbackReviewView: React.FC = () => {
       ];
     });
 
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -383,7 +383,7 @@ export const FeedbackReviewView: React.FC = () => {
             onChange={(e) => setSelectedMeal(e.target.value)}
             className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
           >
-            <option value="ALL">All Food Types</option>
+            <option value="ALL">All Particulars</option>
             <option value="Tiffin">🥞 Tiffin (காலை உணவு)</option>
             <option value="Lunch">🍛 Lunch (மதிய உணவு)</option>
             <option value="Tea/Snacks">☕ Tea/Snacks (தேநீர் & ஸ்நாக்ஸ்)</option>
@@ -410,7 +410,7 @@ export const FeedbackReviewView: React.FC = () => {
               onChange={(e) => setOnlyWithComments(e.target.checked)}
               className="rounded text-emerald-600 focus:ring-emerald-500"
             />
-            <span>With Comments Only</span>
+            <span>With Comments</span>
           </label>
         </div>
 

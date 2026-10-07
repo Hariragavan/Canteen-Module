@@ -75,6 +75,7 @@ export const FoodTransportView: React.FC = () => {
   // Success Toast & Delete Confirm
   const [dispatchSuccessToast, setDispatchSuccessToast] = useState<boolean>(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState<boolean>(false);
 
   // Load Initial Data
   const refreshData = () => {
@@ -333,7 +334,7 @@ export const FoodTransportView: React.FC = () => {
             title="Register a new factory sector or branch unit"
           >
             <Plus className="w-4 h-4 text-emerald-700" />
-            <span>+ Add New Unit / Sector</span>
+            <span>Add New Unit / Sector</span>
           </button>
 
           <button
@@ -378,7 +379,7 @@ export const FoodTransportView: React.FC = () => {
               <label className="text-xs font-bold text-slate-800 uppercase tracking-tight flex items-center justify-between">
                 <span className="flex items-center gap-1">
                   <Building2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>1. Select Destination Unit / Sector (பிரிவு தேர்வு):</span>
+                  <span>1. Select Destination Unit / factory (பிரிவு தேர்வு):</span>
                 </span>
                 <span className="text-[11px] text-slate-400 font-normal">
                   {units.length} registered units
@@ -443,7 +444,7 @@ export const FoodTransportView: React.FC = () => {
           {/* Row 2: Particular / Food Type Selector */}
           <div>
             <label className="text-xs font-bold text-slate-800 uppercase tracking-tight block mb-1.5">
-              2. Select Food Particular / Type (உணவு வகை):
+              2. Select Particular(உணவு வகை):
             </label>
             <div className="grid grid-cols-3 gap-2.5">
               {[
@@ -782,12 +783,20 @@ export const FoodTransportView: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => exportTransportToPDF(filteredRecords, fromDate, toDate)}
-              className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer"
-              title="Download PDF Report"
+              disabled={isGeneratingPDF}
+              onClick={async () => {
+                setIsGeneratingPDF(true);
+                try {
+                  await exportTransportToPDF(filteredRecords, fromDate, toDate);
+                } finally {
+                  setIsGeneratingPDF(false);
+                }
+              }}
+              className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-700/20 flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+              title="Download PDF Report with full Tamil typography"
             >
-              <FileText className="w-3.5 h-3.5" />
-              <span>PDF Report</span>
+              <FileText className={`w-3.5 h-3.5 ${isGeneratingPDF ? 'animate-pulse' : ''}`} />
+              <span>{isGeneratingPDF ? 'Generating...' : 'PDF Report'}</span>
             </button>
           </div>
         </div>
@@ -875,7 +884,7 @@ export const FoodTransportView: React.FC = () => {
               onChange={(e) => setFilterUnit(e.target.value)}
               className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
             >
-              <option value="ALL">All Units / Sectors</option>
+              <option value="ALL">All Units / Factories</option>
               {units.map((u) => (
                 <option key={u.id} value={u.name}>
                   {u.name}
@@ -889,7 +898,7 @@ export const FoodTransportView: React.FC = () => {
               onChange={(e) => setFilterMeal(e.target.value)}
               className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
             >
-              <option value="ALL">All Food Types</option>
+              <option value="ALL">All Particulars</option>
               <option value="Tiffin">🥞 Tiffin</option>
               <option value="Lunch">🍛 Lunch</option>
               <option value="Tea/Snacks">☕ Tea/Snacks</option>
@@ -918,12 +927,9 @@ export const FoodTransportView: React.FC = () => {
               </span>
               <span className="text-xs text-slate-400 ml-1.5 font-medium">Trips</span>
             </div>
-            <span className="text-[11px] text-slate-400 mt-1">
-              Food delivery runs
-            </span>
           </div>
 
-          {/* Card 2: Total Headcount / Persons Fed */}
+          {/* Card 2: Persons Fed / Headcount */}
           <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-tight">
@@ -939,9 +945,6 @@ export const FoodTransportView: React.FC = () => {
               </span>
               <span className="text-xs text-slate-400 ml-1.5 font-medium">Employees</span>
             </div>
-            <span className="text-[11px] text-slate-400 mt-1">
-              Dispatched headcount
-            </span>
           </div>
 
           {/* Card 3: Dispatched in Kg */}
@@ -960,9 +963,6 @@ export const FoodTransportView: React.FC = () => {
               </span>
               <span className="text-xs text-slate-400 ml-1.5 font-medium">Kg</span>
             </div>
-            <span className="text-[11px] text-slate-400 mt-1">
-              Rice, Sambar, Gravy & Meals
-            </span>
           </div>
 
           {/* Card 4: Dispatched in Count */}
@@ -981,9 +981,6 @@ export const FoodTransportView: React.FC = () => {
               </span>
               <span className="text-xs text-slate-400 ml-1.5 font-medium">Pieces / Nos</span>
             </div>
-            <span className="text-[11px] text-slate-400 mt-1">
-              Chapatti, Idli, Vada, Snacks
-            </span>
           </div>
 
         </div>
@@ -1006,7 +1003,7 @@ export const FoodTransportView: React.FC = () => {
                 <tr>
                   <th className="px-3.5 py-3 text-center">Date & Time</th>
                   <th className="px-3.5 py-3">Sector / Unit</th>
-                  <th className="px-3.5 py-3 text-center">Food Type</th>
+                  <th className="px-3.5 py-3 text-center">Particulars</th>
                   <th className="px-3.5 py-3">Menu Items Dispatched</th>
                   <th className="px-3.5 py-3 text-right">Headcount</th>
                   <th className="px-3.5 py-3 text-right">Quantity</th>
@@ -1158,7 +1155,7 @@ export const FoodTransportView: React.FC = () => {
                   <Building2 className="w-4 h-4" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-slate-900 text-sm">Add New Unit / Sector</h4>
+                  <h4 className="font-bold text-slate-900 text-sm">Add New Unit / Factory</h4>
                   <p className="text-[11px] text-slate-500">புதிய ஆலை அல்லது கிளை பிரிவை சேர்க்கவும்</p>
                 </div>
               </div>
@@ -1174,7 +1171,7 @@ export const FoodTransportView: React.FC = () => {
             <form onSubmit={handleSaveNewUnit} className="p-5 flex flex-col gap-3.5">
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-bold text-slate-800">
-                  Unit / Sector Name (பிரிவு பெயர்) *
+                  Unit / Factory Name (பிரிவு பெயர்) *
                 </label>
                 <input
                   type="text"

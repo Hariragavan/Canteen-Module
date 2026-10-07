@@ -941,17 +941,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           </div>
 
         </div>
-
-        {/* 4. Sidebar Footer */}
-        <div className="p-4 border-t border-slate-100 bg-slate-50/70 text-[11px] text-slate-500">
-          <div className="flex items-center space-x-1.5 font-bold text-slate-700">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Central Roster Synced</span>
-          </div>
-          <p className="text-[10px] text-slate-400 mt-0.5">
-            Lenovo K11 Tablet Optimized
-          </p>
-        </div>
       </aside>
 
       {/* ============================================================= */}
@@ -969,6 +958,10 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                   : 'Registered Cafeteria Personnel'
                 : activeTab === 'analytics'
                 ? 'Kitchen Analysis & Operations Telemetry'
+                : activeTab === 'transport'
+                ? 'Food Transport & Sector Dispatches'
+                : activeTab === 'feedback'
+                ? 'Feedback Review & Analysis'
                 : 'Daily Menu & Serving Timings Management'}
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -978,6 +971,10 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                   : 'Search, review, edit, or remove registered cafeteria employees and staff.'
                 : activeTab === 'analytics'
                 ? 'Real-time telemetry, consumption curve, and audit clearance ledger.'
+                : activeTab === 'transport'
+                ? 'Manage food transport dispatches to other units and track date-wise analytics.'
+                : activeTab === 'feedback'
+                ? 'Overview of employee satisfaction ratings, food quality feedback, and suggestions.'
                 : 'Update daily food items in Tamil/English and configure operational timings.'}
             </p>
           </div>

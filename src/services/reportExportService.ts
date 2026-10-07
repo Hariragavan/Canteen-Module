@@ -106,8 +106,9 @@ export function exportOrdersToCSV(
     `""`,
   ];
 
+  const BOM = '\uFEFF';
   const csvContent =
-    [CSV_HEADERS.join(','), ...rows.map((r) => r.join(',')), totalRow.join(',')].join('\n');
+    BOM + [CSV_HEADERS.join(','), ...rows.map((r) => r.join(',')), totalRow.join(',')].join('\r\n');
 
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
