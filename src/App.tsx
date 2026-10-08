@@ -11,6 +11,7 @@ import { AdminLoginModal } from './components/modals/AdminLoginModal';
 import { MenuTimingModal } from './components/modals/MenuTimingModal';
 import { canteenService } from './services/canteenService';
 import { supabaseManager } from './services/supabase';
+import { useBarcodeScanner } from './hooks/useBarcodeScanner';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('kiosk');
@@ -20,6 +21,7 @@ export const App: React.FC = () => {
   const [isMenuModalOpen, setIsMenuModalOpen] = useState<boolean>(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
   const [initialTokenToScan, setInitialTokenToScan] = useState<string | null>(null);
+  const [scannedBarcode, setScannedBarcode] = useState<{ code: string; timestamp: number } | null>(null);
   const [unclaimedCount, setUnclaimedCount] = useState<number>(0);
 
   // Protected Admin Portal Gatekeeper (admin / admin@123)
@@ -42,6 +44,27 @@ export const App: React.FC = () => {
     setActiveTab('kiosk');
   }, []);
 
+  const handleBackToAdmin = useCallback(() => {
+    setIsAdminAuthenticated(true);
+    setActiveTab('admin');
+  }, []);
+
+  // Global Hardware 2D Barcode Gun Listener
+  // When a QR/barcode is scanned anywhere in the app, automatically switch to Staff Counter & verify
+  const handleGlobalBarcodeScan = useCallback((scannedText: string) => {
+    const code = scannedText.trim();
+    if (!code) return;
+    setActiveTab('staff');
+    setScannedBarcode({ code, timestamp: Date.now() });
+  }, []);
+
+  const { diagnostic: scannerDiagnostic } = useBarcodeScanner({
+    onScan: handleGlobalBarcodeScan,
+    maxIntervalMs: 65,
+    minLength: 3,
+    enabled: true,
+  });
+
   // Sync count of unclaimed printed tokens
   const syncUnclaimedCount = useCallback(() => {
     const orders = canteenService.getOrders();
@@ -59,8 +82,8 @@ export const App: React.FC = () => {
 
   // Navigate from Kiosk slip to Counter scanner
   const handleNavigateToStaffScanner = (orderUuid: string) => {
-    setInitialTokenToScan(orderUuid);
     setActiveTab('staff');
+    setScannedBarcode({ code: orderUuid, timestamp: Date.now() });
   };
 
   return (
@@ -68,8 +91,8 @@ export const App: React.FC = () => {
       activeTab === 'kiosk' || activeTab === 'admin' ? 'h-screen max-h-[100dvh] overflow-hidden' : 'min-h-screen'
     }`}>
       
-      {/* Top Application Header - Rendered on Staff Scanner and Analytics; Kiosk and Admin use dedicated full-page layouts */}
-      {activeTab !== 'kiosk' && activeTab !== 'admin' && (
+      {/* Top Application Header - Rendered on Analytics only; Kiosk, Admin, and Staff Counter have dedicated layouts */}
+      {activeTab !== 'kiosk' && activeTab !== 'admin' && activeTab !== 'staff' && (
         <Navbar
           activeTab={activeTab}
           onSelectTab={setActiveTab}
@@ -87,6 +110,8 @@ export const App: React.FC = () => {
           ? 'flex-1 w-full max-w-5xl lg:max-w-6xl mx-auto px-2 py-2 sm:px-4 sm:py-2.5 flex flex-col min-h-0 overflow-y-auto md:overflow-hidden'
           : activeTab === 'admin'
           ? 'flex-1 w-full h-full min-h-0 overflow-hidden flex flex-col p-0 m-0'
+          : activeTab === 'staff'
+          ? 'flex-1 w-full flex flex-col min-h-0 bg-slate-50 p-0 m-0 overflow-y-auto'
           : 'flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col justify-start'
       }>
         {activeTab === 'kiosk' && (
@@ -99,7 +124,13 @@ export const App: React.FC = () => {
         {activeTab === 'staff' && (
           <StaffScannerView
             initialTokenToScan={initialTokenToScan}
-            onClearInitialToken={() => setInitialTokenToScan(null)}
+            scannedBarcode={scannedBarcode}
+            onClearInitialToken={() => {
+              setInitialTokenToScan(null);
+              setScannedBarcode(null);
+            }}
+            onBackToAdmin={handleBackToAdmin}
+            scannerDiagnostic={scannerDiagnostic}
           />
         )}
 
@@ -148,8 +179,8 @@ export const App: React.FC = () => {
         onClose={() => setIsMenuModalOpen(false)}
       />
 
-      {/* Footer - Only shown for desktop/staff/analytics tabs, hidden in kiosk and admin modes */}
-      {activeTab !== 'kiosk' && activeTab !== 'admin' && (
+      {/* Footer - Only shown for analytics tab, hidden in kiosk, admin, and staff counter modes */}
+      {activeTab !== 'kiosk' && activeTab !== 'admin' && activeTab !== 'staff' && (
         <footer className="border-t border-slate-200 bg-white py-3 text-center text-xs text-slate-400 print:hidden select-none">
           <div className="max-w-7xl mx-auto px-4 flex flex-wrap items-center justify-between gap-2">
             <span>Esstee Exports India Private Limited • Smart Canteen System</span>

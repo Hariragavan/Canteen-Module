@@ -73,6 +73,11 @@ export function useBarcodeScanner({
           // Play crisp scanner decode chirp
           soundEngine.playScannerBeep();
 
+          // Blur active input so enter doesn't submit unrelated forms
+          if (document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+          }
+
           // Invoke callback
           onScan(buffered);
         }
@@ -89,6 +94,10 @@ export function useBarcodeScanner({
         isStreamingRef.current = false;
       } else {
         isStreamingRef.current = true;
+        // If rapid streaming from scanner, prevent default on inputs to prevent text pollution
+        if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+          e.preventDefault();
+        }
       }
 
       // Append standard printable characters
