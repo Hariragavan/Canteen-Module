@@ -108,14 +108,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Navigation Tabs (3 Main Modules) */}
-        <nav className="flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+        <nav className="flex items-center bg-white p-1.5 rounded-2xl border border-slate-200 shadow-2xs">
           <button
             id="tabKioskBtn"
             onClick={() => onSelectTab('kiosk')}
             className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 ${
               activeTab === 'kiosk'
-                ? 'bg-white text-emerald-700 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
             <Tablet className="w-4 h-4" />
@@ -127,8 +127,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => onSelectTab('staff')}
             className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 ${
               activeTab === 'staff'
-                ? 'bg-white text-emerald-700 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
             <Scan className="w-4 h-4" />
@@ -145,8 +145,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => onSelectTab('analytics')}
             className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 ${
               activeTab === 'analytics'
-                ? 'bg-white text-emerald-700 shadow-sm'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
             <BarChart3 className="w-4 h-4" />

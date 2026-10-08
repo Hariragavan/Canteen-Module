@@ -749,7 +749,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         <div className="flex flex-col">
           
           {/* 1. Brand & Portal Header */}
-          <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/60">
+          <div className="p-4 sm:p-5 border-b border-slate-100 bg-white">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center text-white font-black text-base shadow-sm shadow-emerald-600/30 shrink-0">
                 EE
@@ -769,7 +769,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           </div>
 
           {/* 2. Top Quick Actions: Tablet Kiosk, Lock & Logout, Counter View */}
-          <div className="p-3 border-b border-slate-100 space-y-1.5 bg-slate-50/30">
+          <div className="p-3 border-b border-slate-100 space-y-1.5 bg-white">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5">
               Quick Actions
             </div>
@@ -834,7 +834,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           </div>
 
           {/* 3. Left Sidebar Navigation Tabs */}
-          <div className="p-3 space-y-1">
+          <div className="p-3 space-y-1 bg-white">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1 mb-0.5">
               Admin Sections
             </div>
