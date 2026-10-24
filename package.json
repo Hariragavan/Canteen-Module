@@ -29,6 +29,7 @@
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.4",
+    "simple-keyboard": "^3.8.199",
     "tailwind-merge": "^3.7.0",
     "xlsx": "^0.18.5",
     "xlsx-js-style": "^1.2.0"

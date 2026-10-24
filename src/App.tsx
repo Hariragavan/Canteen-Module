@@ -10,6 +10,7 @@ import { MongoDbSettingsModal } from './components/modals/MongoDbSettingsModal';
 import { AdminPortalModal } from './components/modals/AdminPortalModal';
 import { AdminLoginModal } from './components/modals/AdminLoginModal';
 import { MenuTimingModal } from './components/modals/MenuTimingModal';
+import { VirtualKeyboard } from './components/keyboard/VirtualKeyboard';
 import { canteenService } from './services/canteenService';
 import { apiClient } from './services/apiClient';
 import { useBarcodeScanner } from './hooks/useBarcodeScanner';
@@ -220,6 +221,9 @@ export const App: React.FC = () => {
           </div>
         </footer>
       )}
+
+      {/* On-Screen Virtual Keyboard Dock with Left-Corner Toggle Button */}
+      <VirtualKeyboard />
 
     </div>
   );
