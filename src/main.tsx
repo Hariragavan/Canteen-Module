@@ -4,10 +4,15 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
 
+const basename = window.location.pathname.startsWith('/canteen-module') || import.meta.env.BASE_URL !== '/'
+  ? '/canteen-module'
+  : '';
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <App />
     </BrowserRouter>
   </StrictMode>,
 )
+

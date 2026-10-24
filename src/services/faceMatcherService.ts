@@ -32,7 +32,8 @@ export async function loadFaceApiModels(): Promise<boolean> {
   }
 
   modelsLoadedPromise = (async () => {
-    const LOCAL_URL = '/models';
+    const base = import.meta.env.BASE_URL || '/';
+    const LOCAL_URL = `${base.replace(/\/+$/, '')}/models`;
     const CDN_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
 
     // 1. Optimize WebGL settings for low-end mobile/tablet devices

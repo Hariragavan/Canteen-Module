@@ -31,39 +31,35 @@ export const App: React.FC = () => {
 
   // Synchronize browser URL path with active tab
   useEffect(() => {
-    const rawPath = decodeURIComponent(location.pathname || '').toLowerCase();
+    let rawPath = decodeURIComponent(location.pathname || '').toLowerCase();
+    if (rawPath.startsWith('/canteen-module')) {
+      rawPath = rawPath.replace('/canteen-module', '');
+    }
     
-    if (rawPath.includes('admin')) {
-      setActiveTabState('admin');
-      document.title = 'SmartCanteen OS • Production Kiosk & Verification Counter';
-    } else if (rawPath.includes('kitchen') || rawPath.includes('analysis') || rawPath.includes('analytics')) {
+    if (rawPath.includes('kitchen') || rawPath.includes('analysis') || rawPath.includes('analytics')) {
       setActiveTabState('analytics');
-      document.title = 'SmartCanteen OS • Kitchen Analytics';
     } else if (rawPath.includes('staff') || rawPath.includes('counter')) {
       setActiveTabState('staff');
-      document.title = 'SmartCanteen OS • Staff Verification Counter';
-    } else {
+    } else if (rawPath.startsWith('/admin') || rawPath.includes('admin')) {
+      setActiveTabState('admin');
+    } else if (rawPath === '/' || rawPath.includes('kiosk') || rawPath === '') {
       setActiveTabState('kiosk');
-      document.title = 'SmartCanteen OS • Production Kiosk & Verification Counter';
     }
   }, [location.pathname]);
 
-  // Tab switch handler that keeps URL cleanly in sync with base prefix (e.g. /canteen-module)
+  // Tab switch handler that keeps URL cleanly in sync
   const switchTab = useCallback((tab: ActiveTab) => {
     setActiveTabState(tab);
-    const hasCanteenModulePrefix = location.pathname.toLowerCase().startsWith('/canteen-module');
-    const basePrefix = hasCanteenModulePrefix ? '/canteen-module' : '';
-    
     if (tab === 'analytics') {
-      navigate(`${basePrefix}/kitchen-analysis`);
+      navigate('/kitchen-analysis');
     } else if (tab === 'staff') {
-      navigate(`${basePrefix}/staff-counter`);
+      navigate('/staff-counter');
     } else if (tab === 'admin') {
-      navigate(`${basePrefix}/admin`);
+      navigate('/admin');
     } else {
-      navigate(`${basePrefix}/kiosk`);
+      navigate('/kiosk');
     }
-  }, [location.pathname, navigate]);
+  }, [navigate]);
 
   // Protected Admin Portal Gatekeeper (admin / admin@123)
   const handleOpenAdminPortal = useCallback(() => {
@@ -132,23 +128,25 @@ export const App: React.FC = () => {
       activeTab === 'kiosk' || activeTab === 'admin' ? 'h-screen max-h-[100dvh] overflow-hidden' : 'min-h-screen'
     }`}>
       
-      {/* Top Application Header - Rendered across all views to show App Name & all page tabs */}
-      <Navbar
-        activeTab={activeTab}
-        onSelectTab={switchTab}
-        onOpenHardwareModal={() => setIsHardwareModalOpen(true)}
-        onOpenDatabaseModal={() => setIsDbModalOpen(true)}
-        onOpenAdminModal={handleOpenAdminPortal}
-        onOpenMenuModal={() => setIsMenuModalOpen(true)}
-        unclaimedCount={unclaimedCount}
-      />
+      {/* Top Application Header - Rendered on Analytics only; Kiosk, Admin, and Staff Counter have dedicated layouts */}
+      {activeTab !== 'kiosk' && activeTab !== 'admin' && activeTab !== 'staff' && (
+        <Navbar
+          activeTab={activeTab}
+          onSelectTab={switchTab}
+          onOpenHardwareModal={() => setIsHardwareModalOpen(true)}
+          onOpenDatabaseModal={() => setIsDbModalOpen(true)}
+          onOpenAdminModal={handleOpenAdminPortal}
+          onOpenMenuModal={() => setIsMenuModalOpen(true)}
+          unclaimedCount={unclaimedCount}
+        />
+      )}
 
       {/* Main Content Area */}
       <main className={
         activeTab === 'kiosk'
           ? 'flex-1 w-full max-w-5xl lg:max-w-6xl mx-auto px-2 py-2 sm:px-4 sm:py-2.5 flex flex-col min-h-0 overflow-y-auto md:overflow-hidden'
           : activeTab === 'admin'
-          ? 'flex-1 w-full h-[calc(100dvh-64px)] min-h-0 overflow-hidden flex flex-col p-0 m-0'
+          ? 'flex-1 w-full h-full min-h-0 overflow-hidden flex flex-col p-0 m-0'
           : activeTab === 'staff'
           ? 'flex-1 w-full flex flex-col min-h-0 bg-slate-50 p-0 m-0 overflow-y-auto'
           : 'flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col justify-start'
