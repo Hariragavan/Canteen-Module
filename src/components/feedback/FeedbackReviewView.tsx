@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { MealFeedback, MealSlotName } from '../../types';
 import { canteenService } from '../../services/canteenService';
-import { supabaseManager } from '../../services/supabase';
+import { apiClient } from '../../services/apiClient';
 import {
   Star,
   MessageSquareHeart,
@@ -30,10 +30,8 @@ export const FeedbackReviewView: React.FC = () => {
 
   useEffect(() => {
     loadFeedbacks();
-    const unsub = supabaseManager.onRealtimeChange((event) => {
-      if (event.table === 'canteen_feedback') {
-        loadFeedbacks();
-      }
+    const unsub = apiClient.subscribe(() => {
+      loadFeedbacks();
     });
     return () => unsub();
   }, []);

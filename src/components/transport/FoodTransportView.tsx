@@ -6,7 +6,7 @@ import type {
   TransportUnit,
 } from '../../types';
 import { canteenService } from '../../services/canteenService';
-import { supabaseManager } from '../../services/supabase';
+import { apiClient } from '../../services/apiClient';
 import { soundEngine } from '../../services/soundEngine';
 import {
   exportTransportToCSV,
@@ -89,13 +89,8 @@ export const FoodTransportView: React.FC = () => {
 
   useEffect(() => {
     refreshData();
-    const unsub = supabaseManager.onRealtimeChange((event) => {
-      if (
-        event.table === 'canteen_food_transport' ||
-        event.table === 'canteen_transport_units'
-      ) {
-        refreshData();
-      }
+    const unsub = apiClient.subscribe(() => {
+      refreshData();
     });
     return () => unsub();
   }, []);

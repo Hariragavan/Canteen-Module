@@ -1,22 +1,26 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import type { ActiveTab } from './components/Navbar';
 import { TabletKioskView } from './components/kiosk/TabletKioskView';
 import { StaffScannerView } from './components/staff/StaffScannerView';
 import { KitchenAnalyticsView } from './components/analytics/KitchenAnalyticsView';
 import { HardwareDiagnosticsModal } from './components/modals/HardwareDiagnosticsModal';
-import { SupabaseSettingsModal } from './components/modals/SupabaseSettingsModal';
+import { MongoDbSettingsModal } from './components/modals/MongoDbSettingsModal';
 import { AdminPortalModal } from './components/modals/AdminPortalModal';
 import { AdminLoginModal } from './components/modals/AdminLoginModal';
 import { MenuTimingModal } from './components/modals/MenuTimingModal';
 import { canteenService } from './services/canteenService';
-import { supabaseManager } from './services/supabase';
+import { apiClient } from './services/apiClient';
 import { useBarcodeScanner } from './hooks/useBarcodeScanner';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('kiosk');
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const [activeTab, setActiveTabState] = useState<ActiveTab>('kiosk');
   const [isHardwareModalOpen, setIsHardwareModalOpen] = useState<boolean>(false);
-  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
+  const [isDbModalOpen, setIsDbModalOpen] = useState<boolean>(false);
   const [isAdminLoginModalOpen, setIsAdminLoginModalOpen] = useState<boolean>(false);
   const [isMenuModalOpen, setIsMenuModalOpen] = useState<boolean>(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
@@ -24,39 +28,68 @@ export const App: React.FC = () => {
   const [scannedBarcode, setScannedBarcode] = useState<{ code: string; timestamp: number } | null>(null);
   const [unclaimedCount, setUnclaimedCount] = useState<number>(0);
 
+  // Synchronize browser URL path with active tab
+  useEffect(() => {
+    const rawPath = decodeURIComponent(location.pathname || '').toLowerCase();
+    
+    if (rawPath.includes('kitchen') || rawPath.includes('analysis') || rawPath.includes('analytics')) {
+      setActiveTabState('analytics');
+    } else if (rawPath.includes('staff') || rawPath.includes('counter')) {
+      setActiveTabState('staff');
+    } else if (rawPath.startsWith('/admin')) {
+      setActiveTabState('admin');
+    } else if (rawPath === '/' || rawPath.includes('kiosk')) {
+      setActiveTabState('kiosk');
+    }
+  }, [location.pathname]);
+
+  // Tab switch handler that keeps URL cleanly in sync
+  const switchTab = useCallback((tab: ActiveTab) => {
+    setActiveTabState(tab);
+    if (tab === 'analytics') {
+      navigate('/kitchen-analysis');
+    } else if (tab === 'staff') {
+      navigate('/staff-counter');
+    } else if (tab === 'admin') {
+      navigate('/admin');
+    } else {
+      navigate('/kiosk');
+    }
+  }, [navigate]);
+
   // Protected Admin Portal Gatekeeper (admin / admin@123)
   const handleOpenAdminPortal = useCallback(() => {
     if (isAdminAuthenticated) {
-      setActiveTab('admin');
+      switchTab('admin');
     } else {
       setIsAdminLoginModalOpen(true);
     }
-  }, [isAdminAuthenticated]);
+  }, [isAdminAuthenticated, switchTab]);
 
   const handleAdminLoginSuccess = useCallback(() => {
     setIsAdminAuthenticated(true);
     setIsAdminLoginModalOpen(false);
-    setActiveTab('admin');
-  }, []);
+    switchTab('admin');
+  }, [switchTab]);
 
   const handleAdminLogout = useCallback(() => {
     setIsAdminAuthenticated(false);
-    setActiveTab('kiosk');
-  }, []);
+    switchTab('kiosk');
+  }, [switchTab]);
 
   const handleBackToAdmin = useCallback(() => {
     setIsAdminAuthenticated(true);
-    setActiveTab('admin');
-  }, []);
+    switchTab('admin');
+  }, [switchTab]);
 
   // Global Hardware 2D Barcode Gun Listener
   // When a QR/barcode is scanned anywhere in the app, automatically switch to Staff Counter & verify
   const handleGlobalBarcodeScan = useCallback((scannedText: string) => {
     const code = scannedText.trim();
     if (!code) return;
-    setActiveTab('staff');
+    switchTab('staff');
     setScannedBarcode({ code, timestamp: Date.now() });
-  }, []);
+  }, [switchTab]);
 
   const { diagnostic: scannerDiagnostic } = useBarcodeScanner({
     onScan: handleGlobalBarcodeScan,
@@ -74,7 +107,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     syncUnclaimedCount();
-    const unsub = supabaseManager.onRealtimeChange(() => {
+    const unsub = apiClient.subscribe(() => {
       syncUnclaimedCount();
     });
     return () => unsub();
@@ -82,7 +115,7 @@ export const App: React.FC = () => {
 
   // Navigate from Kiosk slip to Counter scanner
   const handleNavigateToStaffScanner = (orderUuid: string) => {
-    setActiveTab('staff');
+    switchTab('staff');
     setScannedBarcode({ code: orderUuid, timestamp: Date.now() });
   };
 
@@ -95,9 +128,9 @@ export const App: React.FC = () => {
       {activeTab !== 'kiosk' && activeTab !== 'admin' && activeTab !== 'staff' && (
         <Navbar
           activeTab={activeTab}
-          onSelectTab={setActiveTab}
+          onSelectTab={switchTab}
           onOpenHardwareModal={() => setIsHardwareModalOpen(true)}
-          onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+          onOpenDatabaseModal={() => setIsDbModalOpen(true)}
           onOpenAdminModal={handleOpenAdminPortal}
           onOpenMenuModal={() => setIsMenuModalOpen(true)}
           unclaimedCount={unclaimedCount}
@@ -141,10 +174,10 @@ export const App: React.FC = () => {
         {activeTab === 'admin' && (
           <AdminPortalModal
             isOpen={true}
-            onClose={() => setActiveTab('kiosk')}
+            onClose={() => switchTab('kiosk')}
             onLogout={handleAdminLogout}
-            onNavigateToKiosk={() => setActiveTab('kiosk')}
-            onNavigateToStaffScanner={() => setActiveTab('staff')}
+            onNavigateToKiosk={() => switchTab('kiosk')}
+            onNavigateToStaffScanner={() => switchTab('staff')}
             onRosterUpdated={() => {
               syncUnclaimedCount();
             }}
@@ -159,17 +192,16 @@ export const App: React.FC = () => {
         onLoginSuccess={handleAdminLoginSuccess}
       />
 
-
       {/* Hardware Diagnostics Modal */}
       <HardwareDiagnosticsModal
         isOpen={isHardwareModalOpen}
         onClose={() => setIsHardwareModalOpen(false)}
       />
 
-      {/* Supabase Settings Modal */}
-      <SupabaseSettingsModal
-        isOpen={isSupabaseModalOpen}
-        onClose={() => setIsSupabaseModalOpen(false)}
+      {/* MongoDB Backend Settings Modal */}
+      <MongoDbSettingsModal
+        isOpen={isDbModalOpen}
+        onClose={() => setIsDbModalOpen(false)}
         onConfigChanged={syncUnclaimedCount}
       />
 

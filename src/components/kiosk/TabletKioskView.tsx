@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { Employee, MealSlotConfig, MealSlotName, Order } from '../../types';
 import { canteenService, DEFAULT_MEAL_SLOTS } from '../../services/canteenService';
-import { supabaseManager } from '../../services/supabase';
+import { apiClient } from '../../services/apiClient';
 import { soundEngine } from '../../services/soundEngine';
 import { faceMatcherService } from '../../services/faceMatcherService';
 import { FaceScannerHUD } from './FaceScannerHUD';
@@ -102,7 +102,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
   const carouselRef = useRef<HTMLDivElement | null>(null);
   const [isPrintingActive, setIsPrintingActive] = useState<boolean>(false);
 
-  // Initialize and sync roster from local/Supabase
+  // Initialize and sync roster from local/MongoDB
   const loadRoster = useCallback(() => {
     const emps = canteenService.getEmployees();
     setEmployees(emps);
@@ -126,7 +126,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
 
     // Fetch latest cloud menu & roster on startup across all devices
     canteenService
-      .syncFromSupabase()
+      .syncFromDatabase()
       .then(() => {
         loadRoster();
         loadMealSlots();
@@ -136,13 +136,9 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     const handleMenuEvent = () => loadMealSlots();
     window.addEventListener('canteen_menu_updated', handleMenuEvent);
 
-    const unsub = supabaseManager.onRealtimeChange((event) => {
-      if (event.table === 'canteen_employees') {
-        loadRoster();
-      }
-      if (event.table === 'canteen_meal_slots') {
-        loadMealSlots();
-      }
+    const unsub = apiClient.subscribe(() => {
+      loadRoster();
+      loadMealSlots();
     });
 
     return () => {

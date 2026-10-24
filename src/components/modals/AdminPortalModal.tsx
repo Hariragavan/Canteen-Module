@@ -107,7 +107,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
   const loadEmployees = async () => {
     try {
-      await canteenService.syncFromSupabase();
+      await canteenService.syncFromDatabase();
     } catch (e) {
       console.warn('Sync error in loadEmployees:', e);
     }
@@ -1078,7 +1078,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                     </div>
                     <h4 className="font-bold text-slate-800 text-sm">No Users Registered Yet</h4>
                     <p className="text-xs text-slate-500 max-w-sm">
-                      Your Supabase database and canteen roster are clean with zero dummy data. Click below to register your first user with 128D AI facial biometrics!
+                      Your MongoDB database and canteen roster are clean with zero dummy data. Click below to register your first user with 128D AI facial biometrics!
                     </p>
                     <button
                       type="button"

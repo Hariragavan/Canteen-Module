@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Order } from '../../types';
 import { canteenService } from '../../services/canteenService';
-import { supabaseManager } from '../../services/supabase';
+import { apiClient } from '../../services/apiClient';
 import {
   Chart as ChartJS,
   ArcElement,
@@ -55,7 +55,7 @@ export const KitchenAnalyticsView: React.FC = () => {
 
   useEffect(() => {
     refreshData();
-    const unsub = supabaseManager.onRealtimeChange(() => {
+    const unsub = apiClient.subscribe(() => {
       refreshData();
     });
     return () => unsub();

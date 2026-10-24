@@ -8,7 +8,7 @@ import type {
   TransportUnit,
   FoodTransportRecord,
 } from '../types';
-import { supabaseManager } from './supabase';
+import { apiClient } from './apiClient';
 import { exportOrdersToCSV, exportOrdersToExcel, exportOrdersToPDF } from './reportExportService';
 
 const STORAGE_ORDERS_KEY = 'canteen_local_orders_v3';
@@ -29,8 +29,6 @@ export const DEFAULT_TRANSPORT_UNITS: TransportUnit[] = [
   { id: 'UNIT-HQ', name: 'Admin Block & Executive Office', location: 'Central Headquarters', contactPerson: 'HR Frontdesk' },
 ];
 
-// Strictly 3 Canteen Meal Slots: Tiffin, Lunch, Tea/Snacks with pure Tamil text (no brackets)
-// Clean slate: description starts empty so user menu updates are saved without default placeholder data
 export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
   {
     name: 'Tiffin',
@@ -104,7 +102,6 @@ export function normalizeDescriptor(val: unknown): number[] | null {
   return null;
 }
 
-// Clean Slate: Empty initial employees so admin can register new users
 export const INITIAL_EMPLOYEES: Employee[] = [];
 
 export const isStaleDummyDescription = (desc?: string): boolean => {
@@ -127,7 +124,7 @@ class CanteenService {
   private transportUnits: TransportUnit[] = [...DEFAULT_TRANSPORT_UNITS];
   private foodTransports: FoodTransportRecord[] = [];
   private feedbacks: MealFeedback[] = [];
-  private tokenSeq: number = 150;
+  private tokenSeq: number = 101;
   private isLoaded: boolean = false;
 
   constructor() {
@@ -151,8 +148,6 @@ class CanteenService {
   public addDeletedEmployeeId(id: string) {
     const s = this.getDeletedEmployeeIds();
     s.add(String(id).trim().toLowerCase());
-    s.add('1212');
-    s.add('1234');
     try {
       localStorage.setItem(STORAGE_DELETED_EMPLOYEES_KEY, JSON.stringify(Array.from(s)));
     } catch {}
@@ -181,73 +176,17 @@ class CanteenService {
       const storedOrders = localStorage.getItem(STORAGE_ORDERS_KEY);
       const storedSeq = localStorage.getItem(STORAGE_TOKEN_KEY);
       const storedEmployees = localStorage.getItem(STORAGE_EMPLOYEES_KEY);
-
-      // Load custom menu slots from permanent key, or fallback to any previously stored keys
-      let rawSlots = localStorage.getItem(STORAGE_MEAL_SLOTS_KEY);
-      if (!rawSlots) {
-        rawSlots = localStorage.getItem('canteen_meal_slots_v8') ||
-                   localStorage.getItem('canteen_meal_slots_v7') ||
-                   localStorage.getItem('canteen_meal_slots_v6') ||
-                   localStorage.getItem('canteen_meal_slots');
-      }
+      const rawSlots = localStorage.getItem(STORAGE_MEAL_SLOTS_KEY);
 
       if (rawSlots) {
         try {
-          const parsedSlots: any[] = JSON.parse(rawSlots);
-          if (Array.isArray(parsedSlots) && parsedSlots.length > 0) {
-            const slotNames: MealSlotName[] = ['Tiffin', 'Lunch', 'Tea/Snacks'];
-            this.mealSlots = slotNames.map(name => {
-              const def = DEFAULT_MEAL_SLOTS.find(d => d.name === name)!;
-              const existing = parsedSlots.find(ps => 
-                ps.name === name ||
-                (name === 'Tiffin' && ps.name === 'Breakfast') ||
-                (name === 'Tea/Snacks' && (ps.name === 'Tea or Coffee' || ps.name === 'Snacks' || ps.name === 'Tea'))
-              );
-
-              if (existing) {
-                // Preserve exact user settings (what was typed, what amount fixed, what times fixed)
-                const userRate = existing.rate !== undefined ? existing.rate : (existing.cost !== undefined ? existing.cost : def.rate);
-                let cleanTamil = (existing.tamilDisplayName || def.tamilDisplayName || '')
-                  .replace(/\(.*?\)/g, '')
-                  .replace(/[a-zA-Z]/g, '')
-                  .trim();
-                if (name === 'Tiffin' && (!cleanTamil || cleanTamil === 'டிபன்')) {
-                  cleanTamil = 'காலை உணவு';
-                }
-                
-                // If existing description had legacy hardcoded dummy strings, purge it to empty string
-                let userDesc = existing.description;
-                if (userDesc === undefined || userDesc === null || isStaleDummyDescription(userDesc)) {
-                  userDesc = '';
-                }
-
-                return {
-                  ...def,
-                  ...existing,
-                  name,
-                  displayName: existing.displayName || def.displayName,
-                  description: userDesc,
-                  startTime: existing.startTime || def.startTime,
-                  endTime: existing.endTime || def.endTime,
-                  rate: userRate,
-                  cost: userRate,
-                  tamilDisplayName: cleanTamil || def.tamilDisplayName,
-                  isActive: existing.isActive !== false,
-                };
-              }
-              return { ...def };
-            });
-            this.saveMealSlotsLocal();
-          } else {
-            this.mealSlots = [...DEFAULT_MEAL_SLOTS];
-            this.saveMealSlotsLocal();
+          const parsed = JSON.parse(rawSlots);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            this.mealSlots = parsed;
           }
         } catch {
           this.mealSlots = [...DEFAULT_MEAL_SLOTS];
         }
-      } else {
-        this.mealSlots = [...DEFAULT_MEAL_SLOTS];
-        this.saveMealSlotsLocal();
       }
 
       if (storedOrders) {
@@ -257,32 +196,21 @@ class CanteenService {
       }
 
       if (storedEmployees) {
-        // Normalize any legacy department names to strictly 'Staff' or 'Employee'
-        // and strictly filter out deleted or system IDs (such as 1212 and 1234)
         this.employees = JSON.parse(storedEmployees)
           .filter((emp: any) => !this.isDeletedOrSystemId(emp.id))
-          .map((emp: Employee) => {
-            const isStaff = emp.dept?.toLowerCase().includes('staff') || emp.role === 'Staff';
-            const descriptor = normalizeDescriptor(emp.face_descriptor || emp.embedding);
-            return {
-              ...emp,
-              dept: isStaff ? 'Staff' : 'Employee',
-              role: isStaff ? 'Staff' : 'Employee',
-              face_descriptor: descriptor,
-              embedding: descriptor,
-            };
-          });
-        this.saveEmployeesLocal();
+          .map((emp: Employee) => ({
+            ...emp,
+            face_descriptor: normalizeDescriptor(emp.face_descriptor || emp.embedding),
+            embedding: normalizeDescriptor(emp.face_descriptor || emp.embedding),
+          }));
       } else {
         this.employees = [...INITIAL_EMPLOYEES];
-        this.saveEmployeesLocal();
       }
 
       if (storedSeq) {
         this.tokenSeq = parseInt(storedSeq, 10) || 101;
       }
 
-      // Load Transport Units
       const storedUnits = localStorage.getItem(STORAGE_TRANSPORT_UNITS_KEY);
       if (storedUnits) {
         try {
@@ -290,12 +218,8 @@ class CanteenService {
         } catch {
           this.transportUnits = [...DEFAULT_TRANSPORT_UNITS];
         }
-      } else {
-        this.transportUnits = [...DEFAULT_TRANSPORT_UNITS];
-        this.saveTransportUnitsLocal();
       }
 
-      // Load Food Transport Records
       const storedTransports = localStorage.getItem(STORAGE_FOOD_TRANSPORT_KEY);
       if (storedTransports) {
         try {
@@ -305,7 +229,6 @@ class CanteenService {
         }
       }
 
-      // Load Feedbacks
       const storedFeedbacks = localStorage.getItem(STORAGE_FEEDBACK_KEY);
       if (storedFeedbacks) {
         try {
@@ -317,48 +240,18 @@ class CanteenService {
 
       this.isLoaded = true;
 
-      // Realtime listener for cross-device changes (Menu update, employee deletion/update)
-      supabaseManager.onRealtimeChange((event) => {
-        if (event.table === 'canteen_meal_slots') {
-          if (event.payload && typeof event.payload === 'object' && 'slots' in event.payload) {
-            this.applyRemoteMenuSlots((event.payload as any).slots);
-          } else {
-            this.syncFromSupabase().catch(() => {});
-          }
-        }
-        if (event.table === 'canteen_employees') {
-          if (event.eventType === 'DELETE' && event.payload) {
-            const delId = (event.payload as any).id;
-            if (delId) {
-              const tid = String(delId).trim().toLowerCase();
-              this.employees = this.employees.filter((e) => String(e.id).trim().toLowerCase() !== tid);
-              this.saveEmployeesLocal();
-            }
-          } else if (event.eventType === 'UPDATE' && event.payload) {
-            const p = event.payload as any;
-            if (p.id === '__SYSTEM_MENU_CONFIG__' && p.photo_url) {
-              try {
-                const config = JSON.parse(p.photo_url);
-                if (config && Array.isArray(config.slots)) {
-                  this.applyRemoteMenuSlots(config.slots);
-                }
-              } catch {}
-            }
-          }
-        }
+      // Subscribe to backend updates
+      apiClient.subscribe(() => {
+        this.syncFromDatabase().catch(() => {});
       });
 
-      // Also try syncing immediately from remote Supabase tables if connected
-      this.syncFromSupabase().catch(() => {});
+      // Sync immediately with backend
+      this.syncFromDatabase().catch(() => {});
 
-      // Instant synchronization when window is focused or periodically
       if (typeof window !== 'undefined') {
         window.addEventListener('focus', () => {
-          this.syncFromSupabase().catch(() => {});
+          this.syncFromDatabase().catch(() => {});
         });
-        setInterval(() => {
-          this.syncFromSupabase().catch(() => {});
-        }, 20000);
       }
     } catch (e) {
       console.warn('Failed loading local canteen data:', e);
@@ -414,41 +307,9 @@ class CanteenService {
     this.saveLocal();
   }
 
-  /**
-   * Applies and normalizes remote menu slots to local state and localStorage
-   */
   public applyRemoteMenuSlots(remoteSlots: MealSlotConfig[]): void {
     if (!Array.isArray(remoteSlots) || remoteSlots.length === 0) return;
-    const slotNames: MealSlotName[] = ['Tiffin', 'Lunch', 'Tea/Snacks'];
-    this.mealSlots = slotNames.map(name => {
-      const def = DEFAULT_MEAL_SLOTS.find(d => d.name === name)!;
-      const remote = remoteSlots.find(s => s.name === name);
-      if (remote) {
-        const rate = remote.rate !== undefined ? remote.rate : (remote.cost !== undefined ? remote.cost : def.rate);
-        let cleanTamil = (remote.tamilDisplayName || def.tamilDisplayName || '')
-          .replace(/\(.*?\)/g, '')
-          .replace(/[a-zA-Z]/g, '')
-          .trim();
-        if (name === 'Tiffin' && (!cleanTamil || cleanTamil === 'டிபன்')) {
-          cleanTamil = 'காலை உணவு';
-        }
-        return {
-          ...def,
-          ...remote,
-          name,
-          displayName: remote.displayName || def.displayName,
-          description: remote.description !== undefined ? remote.description : '',
-          rate,
-          cost: rate,
-          tamilDisplayName: cleanTamil || def.tamilDisplayName,
-          startTime: remote.startTime || def.startTime,
-          endTime: remote.endTime || def.endTime,
-          isActive: remote.isActive !== false,
-        };
-      }
-      return { ...def };
-    });
-
+    this.mealSlots = remoteSlots;
     this.saveMealSlotsLocal();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: this.mealSlots }));
@@ -456,390 +317,129 @@ class CanteenService {
   }
 
   /**
-   * Synchronize live data across ALL devices: Menu configuration, employees & orders
+   * Synchronize data with MongoDB backend
    */
-  public async syncFromSupabase(): Promise<void> {
-    const client = supabaseManager.getClient();
-    if (!client) return;
-
+  public async syncFromDatabase(): Promise<void> {
     try {
-      // 1. Fetch remote employees & system menu configuration
-      const { data: remoteEmployees, error: empErr } = await client
-        .from('canteen_employees')
-        .select('*');
-
-      if (!empErr && remoteEmployees) {
-        // A. Extract and apply cloud-saved Menu Configuration (__SYSTEM_MENU_CONFIG__)
-        const systemMenuRow = remoteEmployees.find((r: any) => r.id === '__SYSTEM_MENU_CONFIG__');
-        if (systemMenuRow && systemMenuRow.photo_url) {
-          try {
-            const config = JSON.parse(systemMenuRow.photo_url);
-            if (config && Array.isArray(config.slots) && config.slots.length > 0) {
-              this.applyRemoteMenuSlots(config.slots);
-            }
-          } catch (e) {
-            console.warn('Error reading cloud menu configuration:', e);
-          }
-        }
-
-        // B. Permanently delete any blacklisted or tombstoned users (including 1212 & 1234) from Supabase
-        for (const rem of remoteEmployees) {
-          if (this.isDeletedOrSystemId(rem.id) && rem.id !== '__SYSTEM_MENU_CONFIG__') {
-            client.from('canteen_employees').delete().eq('id', rem.id).then(() => {});
-          }
-        }
-
-        // C. Filter out system records and deleted IDs
-        const remoteList: Employee[] = remoteEmployees
-          .filter((rem: any) => !this.isDeletedOrSystemId(rem.id))
-          .map((rem: any) => {
-            const descriptor = normalizeDescriptor(rem.face_descriptor);
-            return {
-              id: rem.id,
-              name: rem.name,
-              dept: rem.dept,
-              photo: rem.photo_url,
-              confidence: rem.confidence_score ?? 0.98,
-              subsidyRate: rem.subsidy_rate ?? 1.0,
-              role: rem.role || (rem.dept?.toLowerCase().includes('staff') ? 'Staff' : 'Employee'),
-              face_descriptor: descriptor,
-              embedding: descriptor,
-            };
-          });
-
-        // The remote Supabase database is the authoritative roster.
-        // DO NOT blindly auto-upload local employees that were deleted from remote!
-        // Only upload employees if they were created offline and marked with _isPendingRemoteSync: true
-        const remoteIds = new Set(remoteList.map((r) => r.id.toLowerCase()));
-        const pendingSync = this.employees.filter((loc) => 
-          (loc as any)._isPendingRemoteSync === true && 
-          !remoteIds.has(loc.id.toLowerCase()) && 
-          !this.isDeletedOrSystemId(loc.id)
-        );
-
-        for (const loc of pendingSync) {
-          try {
-            const { error: insErr } = await client.from('canteen_employees').insert({
-              id: loc.id,
-              name: loc.name,
-              dept: loc.dept,
-              photo_url: loc.photo,
-              confidence_score: loc.confidence,
-              subsidy_rate: loc.subsidyRate,
-              role: loc.role,
-              face_descriptor: loc.face_descriptor || loc.embedding || null,
-            });
-            if (!insErr) {
-              delete (loc as any)._isPendingRemoteSync;
-              remoteList.unshift(loc);
-            }
-          } catch (e) {
-            console.warn('Failed uploading pending local employee:', e);
-          }
-        }
-
-        this.employees = remoteList.filter(e => !this.isDeletedOrSystemId(e.id));
+      // 1. Fetch remote employees
+      const remoteEmps = await apiClient.getEmployees();
+      if (Array.isArray(remoteEmps) && remoteEmps.length > 0) {
+        this.employees = remoteEmps.filter((e) => !this.isDeletedOrSystemId(e.id));
         this.saveEmployeesLocal();
-        supabaseManager.broadcastChange('canteen_employees', 'UPDATE', this.employees);
       }
 
-      // 2. Fetch remote orders across all dates (up to 3000 records)
-      const { data: remoteOrders, error: ordErr } = await client
-        .from('canteen_orders')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(3000);
-
-      if (!ordErr && remoteOrders && remoteOrders.length > 0) {
-        const mappedRemote: Order[] = remoteOrders.map((rem: any) => ({
-          id: rem.id,
-          token: rem.token_number,
-          orderUuid: rem.order_uuid,
-          userId: rem.user_id,
-          name: rem.user_name,
-          dept: rem.department,
-          meal: rem.meal_slot,
-          items: rem.items || [],
-          rate: rem.rate ?? 40,
-          qty: rem.qty ?? 1,
-          status: rem.status,
-          issuedAt: rem.issued_at && rem.issued_at.includes('T') ? new Date(rem.issued_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : (rem.issued_at || ''),
-          servedAt: rem.served_at && rem.served_at.includes('T') ? new Date(rem.served_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : (rem.served_at || null),
-          timestamp: rem.created_at ? new Date(rem.created_at).getTime() : Date.now(),
-          dateStr: rem.order_date,
-        }));
-
+      // 2. Fetch remote orders
+      const remoteOrders = await apiClient.getOrders();
+      if (Array.isArray(remoteOrders) && remoteOrders.length > 0) {
         const orderMap = new Map<string, Order>();
-        this.orders.forEach(o => {
-          const key = (o.orderUuid || o.id).toLowerCase();
-          orderMap.set(key, o);
-        });
-        mappedRemote.forEach(o => {
-          const key = (o.orderUuid || o.id).toLowerCase();
-          orderMap.set(key, o);
-        });
-
+        this.orders.forEach((o) => orderMap.set((o.orderUuid || o.id).toLowerCase(), o));
+        remoteOrders.forEach((o) => orderMap.set((o.orderUuid || o.id).toLowerCase(), o));
         this.orders = Array.from(orderMap.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
         const today = new Date().toISOString().slice(0, 10);
-        const todayTokens = this.orders.filter(o => o.dateStr === today).map(o => o.token);
+        const todayTokens = this.orders.filter((o) => o.dateStr === today).map((o) => o.token);
         const maxTodayToken = todayTokens.length > 0 ? Math.max(...todayTokens) : 100;
         if (maxTodayToken >= 100) {
           this.tokenSeq = maxTodayToken + 1;
         }
         this.saveLocal();
-        supabaseManager.broadcastChange('canteen_orders', 'UPDATE', this.orders);
       }
 
-      // 3. Fallback: Also check canteen_meal_slots table if __SYSTEM_MENU_CONFIG__ was not yet set
-      const systemMenuRow = remoteEmployees?.find((r: any) => r.id === '__SYSTEM_MENU_CONFIG__');
-      if (!systemMenuRow) {
-        const { data: remoteSlots } = await client.from('canteen_meal_slots').select('*');
-        if (remoteSlots && remoteSlots.length > 0) {
-          this.mealSlots = this.mealSlots.map(localSlot => {
-            const rem = remoteSlots.find((r: any) => 
-              r.name?.toLowerCase() === localSlot.name.toLowerCase() ||
-              (localSlot.name === 'Tea/Snacks' && (r.id === 'TEASNACKS' || r.name === 'Tea/Snacks')) ||
-              (localSlot.name === 'Tiffin' && (r.id === 'TIFFIN' || r.id === 'BREAKFAST' || r.name?.toLowerCase() === 'breakfast'))
-            );
-            if (rem) {
-              const p = rem.price !== undefined && rem.price !== null ? Number(rem.price) : (localSlot.rate ?? 40);
-              const remoteDesc = rem.description !== undefined && rem.description !== null && !isStaleDummyDescription(rem.description)
-                ? rem.description
-                : '';
-              const finalDesc = remoteDesc !== '' ? remoteDesc : (localSlot.description || '');
-              const finalTamil = localSlot.name === 'Tiffin' ? 'காலை உணவு' : localSlot.tamilDisplayName;
-              return {
-                ...localSlot,
-                description: finalDesc,
-                rate: p,
-                cost: p,
-                tamilDisplayName: finalTamil,
-                startTime: rem.start_time ? String(rem.start_time).slice(0, 5) : localSlot.startTime,
-                endTime: rem.end_time ? String(rem.end_time).slice(0, 5) : localSlot.endTime,
-                isActive: rem.is_active !== false,
-              };
-            }
-            return localSlot;
-          });
-          this.saveMealSlotsLocal();
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('canteen_menu_updated', { detail: this.mealSlots }));
-          }
-        }
+      // 3. Fetch remote meal slots
+      const remoteSlots = await apiClient.getMealSlots();
+      if (Array.isArray(remoteSlots) && remoteSlots.length > 0) {
+        this.applyRemoteMenuSlots(remoteSlots);
       }
 
-      // 4. Sync Transport Units from Supabase
-      try {
-        const { data: remoteUnits, error: unitErr } = await client
-          .from('canteen_transport_units')
-          .select('*')
-          .order('created_at', { ascending: true });
-
-        if (!unitErr && remoteUnits && remoteUnits.length > 0) {
-          const unitMap = new Map<string, TransportUnit>();
-          this.transportUnits.forEach((u) => unitMap.set(u.id, u));
-          remoteUnits.forEach((ru: any) => {
-            unitMap.set(ru.id, {
-              id: ru.id,
-              name: ru.name,
-              location: ru.location || undefined,
-              contactPerson: ru.contact_person || undefined,
-            });
-          });
-          this.transportUnits = Array.from(unitMap.values());
-          this.saveTransportUnitsLocal();
-        }
-      } catch (e) {
-        // Table might not exist yet before SQL migration is applied
+      // 4. Fetch transport units
+      const remoteUnits = await apiClient.getTransportUnits();
+      if (Array.isArray(remoteUnits) && remoteUnits.length > 0) {
+        this.transportUnits = remoteUnits;
+        this.saveTransportUnitsLocal();
       }
 
-      // 5. Sync Food Transport Records from Supabase
-      try {
-        const { data: remoteTransports, error: transErr } = await client
-          .from('canteen_food_transport')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (!transErr && remoteTransports && remoteTransports.length > 0) {
-          const transMap = new Map<string, FoodTransportRecord>();
-          this.foodTransports.forEach((t) => transMap.set(t.id, t));
-          remoteTransports.forEach((rt: any) => {
-            transMap.set(rt.id, {
-              id: rt.id,
-              unitName: rt.unit_name,
-              mealType: rt.meal_type,
-              menuItems: rt.menu_items,
-              personCount: rt.person_count || 1,
-              primaryQuantity: Number(rt.primary_quantity || 0),
-              primaryUnit: (rt.primary_unit as 'kg' | 'count') || 'kg',
-              items: rt.items_breakdown || [],
-              dispatchDate: rt.dispatch_date,
-              dispatchTime: rt.dispatch_time,
-              vehicleOrDriver: rt.vehicle_or_driver || undefined,
-              status: rt.status || 'DISPATCHED',
-              notes: rt.notes || undefined,
-              timestamp: rt.created_at ? new Date(rt.created_at).getTime() : Date.now(),
-              created_at: rt.created_at,
-            });
-          });
-          this.foodTransports = Array.from(transMap.values()).sort(
-            (a, b) => (b.timestamp || 0) - (a.timestamp || 0)
-          );
-          this.saveFoodTransportsLocal();
-        }
-      } catch (e) {
-        // Table might not exist yet
+      // 5. Fetch food transports
+      const remoteTrans = await apiClient.getFoodTransports();
+      if (Array.isArray(remoteTrans) && remoteTrans.length > 0) {
+        this.foodTransports = remoteTrans;
+        this.saveFoodTransportsLocal();
       }
 
-      // 6. Sync Feedbacks from Supabase
-      try {
-        const { data: remoteFeedbacks, error: fbErr } = await client
-          .from('canteen_feedback')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (!fbErr && remoteFeedbacks && remoteFeedbacks.length > 0) {
-          const fbMap = new Map<string, MealFeedback>();
-          this.feedbacks.forEach((f) => {
-            const k = f.id || `${f.mealSlot}-${f.timestamp}`;
-            fbMap.set(k, f);
-          });
-          remoteFeedbacks.forEach((rf: any) => {
-            const timeMs = rf.created_at ? new Date(rf.created_at).getTime() : Date.now();
-            const dateStr = rf.created_at ? rf.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10);
-            fbMap.set(rf.id, {
-              id: rf.id,
-              mealSlot: rf.meal_slot,
-              rating: rf.rating,
-              comment: rf.comment || '',
-              timestamp: timeMs,
-              dateStr,
-            });
-          });
-          this.feedbacks = Array.from(fbMap.values()).sort((a, b) => b.timestamp - a.timestamp);
-          this.saveFeedbacksLocal();
-        }
-      } catch (e) {
-        // Table might not exist yet
+      // 6. Fetch feedbacks
+      const remoteFbs = await apiClient.getFeedbacks();
+      if (Array.isArray(remoteFbs) && remoteFbs.length > 0) {
+        this.feedbacks = remoteFbs;
+        this.saveFeedbacksLocal();
       }
     } catch (err) {
-      console.warn('Sync from Supabase fallback:', err);
+      console.warn('syncFromDatabase warning:', err);
     }
   }
 
+  // Alias for backward compatibility
+  public async syncFromSupabase(): Promise<void> {
+    return this.syncFromDatabase();
+  }
+
   public getEmployees(): Employee[] {
-    return this.employees.filter(e => !this.isDeletedOrSystemId(e.id));
+    return this.employees.filter((e) => !this.isDeletedOrSystemId(e.id));
   }
 
   public async addEmployee(emp: Employee): Promise<void> {
-    const targetId = String(emp.id).trim().toLowerCase();
+    const targetId = String(emp.id).trim().toUpperCase();
     this.removeDeletedEmployeeId(emp.id);
 
-    const existingIndex = this.employees.findIndex((e) => String(e.id).trim().toLowerCase() === targetId);
+    const existingIndex = this.employees.findIndex((e) => String(e.id).trim().toUpperCase() === targetId);
     if (existingIndex >= 0) {
       throw new Error(`User with ID ${emp.id} already exists.`);
     }
 
-    const descriptor = emp.face_descriptor || emp.embedding || null;
     const cleanEmp: Employee = {
       ...emp,
-      face_descriptor: descriptor,
-      embedding: descriptor,
+      id: targetId,
+      face_descriptor: emp.face_descriptor || emp.embedding || null,
+      embedding: emp.face_descriptor || emp.embedding || null,
     };
 
-    // Sync to Supabase if connected
-    const client = supabaseManager.getClient();
-    if (client) {
-      const { error } = await client.from('canteen_employees').insert({
-        id: cleanEmp.id,
-        name: cleanEmp.name,
-        dept: cleanEmp.dept,
-        photo_url: cleanEmp.photo,
-        confidence_score: cleanEmp.confidence,
-        subsidy_rate: cleanEmp.subsidyRate,
-        role: cleanEmp.role,
-        face_descriptor: descriptor,
-      });
-      if (error) {
-        console.error('Supabase employee insert error:', error);
-        throw new Error(`Database error: ${error.message}`);
-      }
-      await supabaseManager.broadcastRemote('employee_updated', cleanEmp);
+    // Save to MongoDB backend
+    try {
+      await apiClient.createEmployee(cleanEmp);
+    } catch (err) {
+      console.warn('Backend employee creation warning:', err);
     }
 
     this.employees.unshift(cleanEmp);
     this.saveEmployeesLocal();
-    supabaseManager.broadcastChange('canteen_employees', 'INSERT', cleanEmp);
   }
 
   public async updateEmployee(id: string, updated: Partial<Employee>): Promise<void> {
-    const targetId = String(id).trim().toLowerCase();
-    const index = this.employees.findIndex((e) => String(e.id).trim().toLowerCase() === targetId);
+    const targetId = String(id).trim().toUpperCase();
+    const index = this.employees.findIndex((e) => String(e.id).trim().toUpperCase() === targetId);
     if (index === -1) {
       throw new Error(`User with ID ${id} not found.`);
     }
 
-    if (updated.id && String(updated.id).trim().toLowerCase() !== targetId) {
-      const newTargetId = String(updated.id).trim().toLowerCase();
-      const duplicateIndex = this.employees.findIndex(
-        (e) => String(e.id).trim().toLowerCase() === newTargetId && String(e.id).trim().toLowerCase() !== targetId
-      );
-      if (duplicateIndex >= 0) {
-        throw new Error(`User with ID ${updated.id} already exists.`);
-      }
-    }
-
     this.employees[index] = { ...this.employees[index], ...updated };
     this.saveEmployeesLocal();
-    supabaseManager.broadcastChange('canteen_employees', 'UPDATE', this.employees[index]);
 
-    const client = supabaseManager.getClient();
-    if (client) {
-      try {
-        const toUpdate: Record<string, unknown> = {};
-        if (updated.id) toUpdate.id = updated.id;
-        if (updated.name) toUpdate.name = updated.name;
-        if (updated.dept) toUpdate.dept = updated.dept;
-        if (updated.photo) toUpdate.photo_url = updated.photo;
-        if (updated.role) toUpdate.role = updated.role;
-        if (updated.subsidyRate !== undefined) toUpdate.subsidy_rate = updated.subsidyRate;
-        if (updated.face_descriptor !== undefined || updated.embedding !== undefined) {
-          toUpdate.face_descriptor = updated.face_descriptor || updated.embedding || null;
-        }
-
-        await client.from('canteen_employees').update(toUpdate).eq('id', id);
-        await supabaseManager.broadcastRemote('employee_updated', this.employees[index]);
-      } catch (err) {
-        console.warn('Supabase remote employee update fallback:', err);
-      }
+    try {
+      await apiClient.updateEmployee(id, updated);
+    } catch (err) {
+      console.warn('Backend employee update warning:', err);
     }
   }
 
   public async deleteEmployee(id: string): Promise<void> {
-    const targetId = String(id).trim().toLowerCase();
+    const targetId = String(id).trim().toUpperCase();
     this.addDeletedEmployeeId(id);
 
-    const removedList = this.employees.filter((e) => String(e.id).trim().toLowerCase() === targetId);
-    this.employees = this.employees.filter((e) => String(e.id).trim().toLowerCase() !== targetId);
+    this.employees = this.employees.filter((e) => String(e.id).trim().toUpperCase() !== targetId);
     this.saveEmployeesLocal();
 
-    for (const removed of removedList) {
-      supabaseManager.broadcastChange('canteen_employees', 'DELETE', removed);
-    }
-
-    // Broadcast across all connected devices in real time
-    await supabaseManager.broadcastRemote('employee_deleted', { id });
-
-    // Permanently remove from Supabase database
-    const client = supabaseManager.getClient();
-    if (client) {
-      try {
-        await client.from('canteen_employees').delete().eq('id', id);
-        await client.from('canteen_employees').delete().ilike('id', id);
-      } catch (err) {
-        console.warn('Supabase remote employee delete error:', err);
-      }
+    try {
+      await apiClient.deleteEmployee(id);
+    } catch (err) {
+      console.warn('Backend employee delete warning:', err);
     }
   }
 
@@ -848,7 +448,7 @@ class CanteenService {
   }
 
   public getOrdersByDate(dateStr: string): Order[] {
-    return this.orders.filter(o => o.dateStr === dateStr);
+    return this.orders.filter((o) => o.dateStr === dateStr);
   }
 
   public getMealSlots(): MealSlotConfig[] {
@@ -867,104 +467,36 @@ class CanteenService {
     this.applyRemoteMenuSlots(newSlots);
 
     try {
-      localStorage.setItem('canteen_menu_last_saved', Date.now().toString());
-    } catch {}
-
-    // 1. Primary Cloud Persistence: Store menu configuration in Supabase cloud (canteen_employees system row)
-    // Ensures changes survive permanently and immediately display on EVERY device that opens or connects
-    try {
-      const client = supabaseManager.getClient();
-      if (client) {
-        const payload = JSON.stringify({
-          updatedAt: Date.now(),
-          slots: this.mealSlots,
-        });
-
-        const { error: upsertErr } = await client.from('canteen_employees').upsert({
-          id: '__SYSTEM_MENU_CONFIG__',
-          name: 'SYSTEM_MENU_DATA',
-          dept: 'Employee',
-          role: 'SYSTEM',
-          photo_url: payload,
-          confidence_score: 1.0,
-          is_active: true,
-        });
-
-        if (upsertErr) {
-          console.warn('Supabase __SYSTEM_MENU_CONFIG__ upsert error:', upsertErr);
-        } else {
-          console.log('[CanteenService] Menu configuration successfully saved to Supabase cloud!');
-        }
-
-        // Broadcast to ALL connected devices in real time so other open devices immediately update
-        await supabaseManager.broadcastRemote('menu_updated', {
-          slots: this.mealSlots,
-          updatedAt: Date.now(),
-        });
-
-        // 2. Secondary update on canteen_meal_slots table (best-effort)
-        for (const s of this.mealSlots) {
-          const slotId = s.name === 'Tea/Snacks' ? 'TEASNACKS' : s.name.toUpperCase();
-          const { data: existingSlots } = await client
-            .from('canteen_meal_slots')
-            .select('id, name')
-            .or(`name.eq.${s.name},id.eq.${slotId}${s.name === 'Tiffin' ? ',id.eq.BREAKFAST' : ''}`)
-            .limit(1);
-
-          if (existingSlots && existingSlots.length > 0) {
-            const rowId = existingSlots[0].id;
-            await client
-              .from('canteen_meal_slots')
-              .update({
-                name: s.name,
-                display_name: s.displayName,
-                start_time: s.startTime,
-                end_time: s.endTime,
-                emoji: s.emoji,
-                description: s.description || '',
-                price: s.rate ?? s.cost ?? 40,
-                is_active: s.isActive !== false,
-              })
-              .eq('id', rowId);
-          }
-        }
-      }
+      await apiClient.updateMealSlots(this.mealSlots);
     } catch (e) {
-      console.warn('Failed saving meal slots to Supabase:', e);
+      console.warn('Failed saving meal slots to backend:', e);
     }
-
-    supabaseManager.broadcastChange('canteen_meal_slots', 'UPDATE', { slots: this.mealSlots });
   }
 
   public getTodayDateString(): string {
     return new Date().toISOString().slice(0, 10);
   }
 
-  /**
-   * Calculates total tokens already taken by an employee for a specific food type today.
-   * Maximum allowed is 10 tokens per day per food type.
-   */
   public getEmployeeMealTokensCountToday(userId: string, meal: MealSlotName): number {
     const today = this.getTodayDateString();
     const userOrdersToday = this.orders.filter(
-      o => o.userId === userId && 
-           (o.meal === meal || 
-            (meal === 'Tiffin' && (o.meal === 'Tiffin' || o.meal === 'Breakfast')) ||
-            (meal === 'Tea/Snacks' && (o.meal === 'Tea/Snacks' || o.meal === 'Snacks' || (o.meal as string) === 'Tea' || o.meal === 'Tea or Coffee'))) &&
-           o.dateStr === today &&
-           o.status !== 'CANCELLED'
+      (o) =>
+        o.userId === userId &&
+        (o.meal === meal ||
+          (meal === 'Tiffin' && (o.meal === 'Tiffin' || o.meal === 'Breakfast')) ||
+          (meal === 'Tea/Snacks' &&
+            (o.meal === 'Tea/Snacks' || o.meal === 'Snacks' || (o.meal as string) === 'Tea' || o.meal === 'Tea or Coffee'))) &&
+        o.dateStr === today &&
+        o.status !== 'CANCELLED'
     );
     return userOrdersToday.reduce((sum, o) => sum + (o.qty ?? 1), 0);
   }
 
-  /**
-   * Determine active meal slot based on configured start and end times
-   */
   public getActiveMealSlot(): MealSlotName {
     const now = new Date();
     const curMinutes = now.getHours() * 60 + now.getMinutes();
 
-    const activeSlots = this.mealSlots.filter(s => s.isActive !== false);
+    const activeSlots = this.mealSlots.filter((s) => s.isActive !== false);
     for (const slot of activeSlots) {
       const [startH, startM] = (slot.startTime || '00:00').split(':').map(Number);
       const [endH, endM] = (slot.endTime || '23:59').split(':').map(Number);
@@ -976,32 +508,23 @@ class CanteenService {
       }
     }
 
-    // Default fallback to first active slot or Lunch
     return activeSlots[0]?.name || 'Lunch';
   }
 
-  /**
-   * Duplicate Order Prevention: Only Lunch is restricted to 1 meal per employee per day.
-   * Tiffin and Tea/Snacks allow multiple quantities / orders up to 10 per day.
-   */
   public checkDuplicateBooking(userId: string, meal: MealSlotName): Order | undefined {
     if (meal.toLowerCase() !== 'lunch') {
       return undefined;
     }
     const today = new Date().toISOString().slice(0, 10);
-    return this.orders.find(o => 
-      o.userId === userId && 
-      o.meal.toLowerCase() === 'lunch' && 
-      o.dateStr === today &&
-      o.status !== 'CANCELLED'
+    return this.orders.find(
+      (o) =>
+        o.userId === userId &&
+        o.meal.toLowerCase() === 'lunch' &&
+        o.dateStr === today &&
+        o.status !== 'CANCELLED'
     );
   }
 
-  /**
-   * Creates multiple sequential orders/tokens when quantity > 1
-   * Each token gets its own unique token number, order UUID, and QR code!
-   * Enforces 10 tokens maximum per day per person for Tiffin / Tea/Snacks.
-   */
   public async createOrdersBatch(
     employee: Employee,
     meal: MealSlotName,
@@ -1016,7 +539,6 @@ class CanteenService {
 
     const count = Math.max(1, Math.min(10, qty || 1));
 
-    // Non-lunch tokens daily limit check (10 max per employee per day)
     if (meal.toLowerCase() !== 'lunch') {
       const alreadyTaken = this.getEmployeeMealTokensCountToday(employee.id, meal);
       if (alreadyTaken + count > 10) {
@@ -1027,44 +549,18 @@ class CanteenService {
       }
     }
     const configuredSlot = this.getMealSlots().find((s) => s.name === meal);
-    const resolvedRate = (rate !== undefined && rate !== null) 
-      ? rate 
-      : (configuredSlot?.rate ?? configuredSlot?.cost ?? 40);
+    const resolvedRate =
+      rate !== undefined && rate !== null ? rate : (configuredSlot?.rate ?? configuredSlot?.cost ?? 40);
 
-    const client = supabaseManager.getClient();
     const createdOrders: Order[] = [];
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const dateStr = now.toISOString().slice(0, 10);
 
     for (let i = 0; i < count; i++) {
-      let tokenNo = this.tokenSeq++;
+      const tokenNo = this.tokenSeq++;
       const uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-      let orderUuid = `ORD-${Date.now().toString(36).toUpperCase()}-${tokenNo}-${uniqueSuffix}`;
-
-      if (client) {
-        try {
-          const { data: inserted, error } = await client.from('canteen_orders').insert({
-            user_id: employee.id,
-            user_name: employee.name,
-            department: employee.dept,
-            meal_slot: meal,
-            items: items || [],
-            rate: resolvedRate,
-            qty: 1,
-            status: 'PRINTED',
-            issued_at: new Date().toISOString(),
-            order_date: dateStr,
-          }).select().single();
-
-          if (!error && inserted) {
-            if (inserted.token_number) tokenNo = inserted.token_number;
-            if (inserted.order_uuid) orderUuid = inserted.order_uuid;
-          }
-        } catch (err) {
-          console.warn('Supabase remote insert fallback:', err);
-        }
-      }
+      const orderUuid = `ORD-${Date.now().toString(36).toUpperCase()}-${tokenNo}-${uniqueSuffix}`;
 
       const newOrder: Order = {
         id: orderUuid.toLowerCase(),
@@ -1086,16 +582,20 @@ class CanteenService {
 
       createdOrders.push(newOrder);
       this.orders.unshift(newOrder);
-      supabaseManager.broadcastChange('canteen_orders', 'INSERT', newOrder);
     }
 
     this.saveLocal();
+
+    // Async sync to MongoDB backend
+    try {
+      await apiClient.createOrdersBatch(createdOrders);
+    } catch (e) {
+      console.warn('Backend createOrdersBatch warning:', e);
+    }
+
     return createdOrders;
   }
 
-  /**
-   * Creates new single order, or delegates to createOrdersBatch if qty > 1
-   */
   public async createOrder(
     employee: Employee,
     meal: MealSlotName,
@@ -1107,20 +607,17 @@ class CanteenService {
     return orders[0];
   }
 
-  /**
-   * Food Counter Verification (2D Barcode Scanner / Manual)
-   */
   public async verifyAndServe(rawQuery: string): Promise<VerificationResult> {
     const query = rawQuery.trim();
     if (!query) {
       return { type: 'INVALID_TOKEN', message: 'Empty scan payload' };
     }
 
-    // Match by exact orderUuid, pure token number, or substring
-    const order = this.orders.find(o => 
-      o.orderUuid.toUpperCase() === query.toUpperCase() ||
-      String(o.token) === query ||
-      query.toUpperCase().includes(o.orderUuid.toUpperCase())
+    const order = this.orders.find(
+      (o) =>
+        o.orderUuid.toUpperCase() === query.toUpperCase() ||
+        String(o.token) === query ||
+        query.toUpperCase().includes(o.orderUuid.toUpperCase())
     );
 
     if (!order) {
@@ -1130,7 +627,6 @@ class CanteenService {
       };
     }
 
-    // Check if already claimed / served
     if (order.status === 'SERVED') {
       return {
         type: 'DUPLICATE_CLAIM',
@@ -1140,26 +636,17 @@ class CanteenService {
       };
     }
 
-    // Valid & Unclaimed: Mark as served
     const now = new Date();
     const servedTimeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     order.status = 'SERVED';
     order.servedAt = servedTimeStr;
 
     this.saveLocal();
-    supabaseManager.broadcastChange('canteen_orders', 'UPDATE', order);
 
-    // Sync update to Supabase
-    const client = supabaseManager.getClient();
-    if (client) {
-      try {
-        await client
-          .from('canteen_orders')
-          .update({ status: 'SERVED', served_at: new Date().toISOString() })
-          .eq('order_uuid', order.orderUuid);
-      } catch (err) {
-        console.warn('Supabase remote update fallback:', err);
-      }
+    try {
+      await apiClient.serveOrder(order.orderUuid);
+    } catch (err) {
+      console.warn('Backend serveOrder warning:', err);
     }
 
     return {
@@ -1170,48 +657,26 @@ class CanteenService {
     };
   }
 
-  /**
-   * Reset / Cancel an order (e.g. printer error / paper jam)
-   * Completely removes the saved record from local storage and Supabase cloud.
-   */
   public async resetOrder(orderUuidOrId: string): Promise<boolean> {
     const target = this.orders.find(
       (o) => o.orderUuid === orderUuidOrId || o.id === orderUuidOrId || String(o.token) === orderUuidOrId
     );
     if (!target) return false;
 
-    // 1. Remove from local in-memory array
     this.orders = this.orders.filter(
       (o) => o.orderUuid !== target.orderUuid && o.id !== target.id
     );
     this.saveLocal();
 
-    // 2. Broadcast deletion to all tabs / clients
-    supabaseManager.broadcastChange('canteen_orders', 'DELETE', target);
     try {
-      await supabaseManager.broadcastRemote('order_cancelled', {
-        orderUuid: target.orderUuid,
-        token: target.token,
-      });
-    } catch {}
-
-    // 3. Delete from Supabase remote database
-    const client = supabaseManager.getClient();
-    if (client) {
-      try {
-        await client.from('canteen_orders').delete().eq('order_uuid', target.orderUuid);
-        await client.from('canteen_orders').delete().eq('id', target.id);
-      } catch (err) {
-        console.warn('Supabase remote order delete error:', err);
-      }
+      await apiClient.cancelOrder(target.orderUuid);
+    } catch (err) {
+      console.warn('Backend cancelOrder warning:', err);
     }
 
     return true;
   }
 
-  /**
-   * Simulate peak rush by issuing and claiming 5 rapid orders
-   */
   public simulatePeakRush(): void {
     const rushEmployees = [
       { id: 'EMP-1006', name: 'Sneha Patil', dept: 'Electronics & Comm' },
@@ -1228,7 +693,7 @@ class CanteenService {
       const token = this.tokenSeq++;
       const timeMs = now.getTime() - (rushEmployees.length - i) * 25000;
       const timeDate = new Date(timeMs);
-      const isServed = i < 3; // First 3 are served, last 2 in queue
+      const isServed = i < 3;
 
       const newOrder: Order = {
         id: `ord-rush-${token}`,
@@ -1249,15 +714,12 @@ class CanteenService {
     });
 
     this.saveLocal();
-    supabaseManager.broadcastChange('canteen_orders', 'INSERT', { type: 'RUSH_SIMULATION' });
   }
 
   public resetAllData(): void {
     this.seedDefaultOrders();
     this.employees = [...INITIAL_EMPLOYEES];
     this.saveEmployeesLocal();
-    supabaseManager.broadcastChange('canteen_orders', 'DELETE', { type: 'RESET' });
-    supabaseManager.broadcastChange('canteen_employees', 'DELETE', { type: 'RESET' });
   }
 
   private getTargetOrdersForExport(fromDate?: string, toDate?: string, customOrders?: Order[]): Order[] {
@@ -1303,19 +765,10 @@ class CanteenService {
     this.transportUnits.push(newUnit);
     this.saveTransportUnitsLocal();
 
-    const client = supabaseManager.getClient();
-    if (client) {
-      try {
-        await client.from('canteen_transport_units').insert({
-          id: newUnit.id,
-          name: newUnit.name,
-          location: newUnit.location || null,
-          contact_person: newUnit.contactPerson || null,
-        });
-        supabaseManager.broadcastChange('canteen_transport_units', 'INSERT', newUnit);
-      } catch (e) {
-        console.warn('Transport unit remote save fallback:', e);
-      }
+    try {
+      await apiClient.createTransportUnit(newUnit);
+    } catch (e) {
+      console.warn('Transport unit backend save warning:', e);
     }
     return newUnit;
   }
@@ -1324,14 +777,10 @@ class CanteenService {
     this.transportUnits = this.transportUnits.filter((u) => u.id !== id);
     this.saveTransportUnitsLocal();
 
-    const client = supabaseManager.getClient();
-    if (client) {
-      try {
-        await client.from('canteen_transport_units').delete().eq('id', id);
-        supabaseManager.broadcastChange('canteen_transport_units', 'DELETE', { id });
-      } catch (e) {
-        console.warn('Transport unit remote delete fallback:', e);
-      }
+    try {
+      await apiClient.deleteTransportUnit(id);
+    } catch (e) {
+      console.warn('Transport unit backend delete warning:', e);
     }
   }
 
@@ -1357,29 +806,10 @@ class CanteenService {
     this.foodTransports.unshift(newRecord);
     this.saveFoodTransportsLocal();
 
-    const client = supabaseManager.getClient();
-    if (client) {
-      try {
-        await client.from('canteen_food_transport').insert({
-          id: newRecord.id,
-          unit_name: newRecord.unitName,
-          meal_type: newRecord.mealType,
-          menu_items: newRecord.menuItems,
-          person_count: newRecord.personCount,
-          primary_quantity: newRecord.primaryQuantity,
-          primary_unit: newRecord.primaryUnit,
-          items_breakdown: newRecord.items || [],
-          dispatch_date: newRecord.dispatchDate,
-          dispatch_time: newRecord.dispatchTime,
-          vehicle_or_driver: newRecord.vehicleOrDriver || null,
-          status: newRecord.status,
-          notes: newRecord.notes || null,
-          created_at: newRecord.created_at,
-        });
-        supabaseManager.broadcastChange('canteen_food_transport', 'INSERT', newRecord);
-      } catch (e) {
-        console.warn('Food transport remote save fallback:', e);
-      }
+    try {
+      await apiClient.createFoodTransport(newRecord);
+    } catch (e) {
+      console.warn('Food transport backend save warning:', e);
     }
     return newRecord;
   }
@@ -1388,14 +818,10 @@ class CanteenService {
     this.foodTransports = this.foodTransports.filter((t) => t.id !== id);
     this.saveFoodTransportsLocal();
 
-    const client = supabaseManager.getClient();
-    if (client) {
-      try {
-        await client.from('canteen_food_transport').delete().eq('id', id);
-        supabaseManager.broadcastChange('canteen_food_transport', 'DELETE', { id });
-      } catch (e) {
-        console.warn('Food transport remote delete fallback:', e);
-      }
+    try {
+      await apiClient.deleteFoodTransport(id);
+    } catch (e) {
+      console.warn('Food transport backend delete warning:', e);
     }
   }
 
@@ -1414,20 +840,10 @@ class CanteenService {
     this.feedbacks.unshift(fb);
     this.saveFeedbacksLocal();
 
-    const client = supabaseManager.getClient();
-    if (client) {
-      try {
-        await client.from('canteen_feedback').insert({
-          id: fb.id,
-          meal_slot: fb.mealSlot,
-          rating: fb.rating,
-          comment: fb.comment || null,
-          created_at: new Date(fb.timestamp).toISOString(),
-        });
-        supabaseManager.broadcastChange('canteen_feedback', 'INSERT', fb);
-      } catch (e) {
-        console.warn('Feedback save fallback:', e);
-      }
+    try {
+      await apiClient.createFeedback(fb);
+    } catch (e) {
+      console.warn('Feedback save warning:', e);
     }
   }
 
@@ -1435,14 +851,10 @@ class CanteenService {
     this.feedbacks = this.feedbacks.filter((f) => f.id !== id);
     this.saveFeedbacksLocal();
 
-    const client = supabaseManager.getClient();
-    if (client) {
-      try {
-        await client.from('canteen_feedback').delete().eq('id', id);
-        supabaseManager.broadcastChange('canteen_feedback', 'DELETE', { id });
-      } catch (e) {
-        console.warn('Feedback delete fallback:', e);
-      }
+    try {
+      await apiClient.deleteFeedback(id);
+    } catch (e) {
+      console.warn('Feedback delete warning:', e);
     }
   }
 }

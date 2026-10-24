@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { Order, VerificationResult } from '../../types';
 import type { ScannerDiagnosticInfo } from '../../hooks/useBarcodeScanner';
 import { canteenService } from '../../services/canteenService';
-import { supabaseManager } from '../../services/supabase';
+import { apiClient } from '../../services/apiClient';
 import { soundEngine } from '../../services/soundEngine';
 import { startCameraWithFacingMode } from '../../services/faceMatcherService';
 import jsQR from 'jsqr';
@@ -74,7 +74,7 @@ export const StaffScannerView: React.FC<StaffScannerViewProps> = ({
 
   useEffect(() => {
     loadOrders();
-    const unsubscribe = supabaseManager.onRealtimeChange(() => {
+    const unsubscribe = apiClient.subscribe(() => {
       loadOrders();
     });
     return () => unsubscribe();

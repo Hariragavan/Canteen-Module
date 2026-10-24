@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { soundEngine } from '../services/soundEngine';
-import { supabaseManager } from '../services/supabase';
 import { canteenService } from '../services/canteenService';
+import { apiClient } from '../services/apiClient';
 import {
   Tablet,
   Scan,
@@ -22,7 +22,7 @@ interface NavbarProps {
   activeTab: ActiveTab;
   onSelectTab: (tab: ActiveTab) => void;
   onOpenHardwareModal: () => void;
-  onOpenSupabaseModal: () => void;
+  onOpenDatabaseModal: () => void;
   onOpenAdminModal: () => void;
   onOpenMenuModal?: () => void;
   unclaimedCount: number;
@@ -32,7 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   onSelectTab,
   onOpenHardwareModal,
-  onOpenSupabaseModal,
+  onOpenDatabaseModal,
   onOpenAdminModal,
   onOpenMenuModal,
   unclaimedCount,
@@ -41,7 +41,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [timeStr, setTimeStr] = useState<string>('');
   const [activeMealName, setActiveMealName] = useState<string>('Lunch');
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
-  const isSupabaseConnected = supabaseManager.getConfig().isConnected;
+  const [isDbConnected, setIsDbConnected] = useState<boolean>(false);
 
   useEffect(() => {
     const updateTime = () => {
@@ -54,6 +54,17 @@ export const Navbar: React.FC<NavbarProps> = ({
     updateTime();
     const timer = setInterval(updateTime, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Check MongoDB connection status
+  useEffect(() => {
+    const checkDb = async () => {
+      const status = await apiClient.getDbStatus();
+      setIsDbConnected(status.isConnected);
+    };
+    checkDb();
+    const unsub = apiClient.subscribe(checkDb);
+    return () => unsub();
   }, []);
 
   // Track fullscreen changes
@@ -112,7 +123,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             id="tabKioskBtn"
             onClick={() => onSelectTab('kiosk')}
-            className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 ${
+            className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
               activeTab === 'kiosk'
                 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -125,7 +136,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             id="tabStaffBtn"
             onClick={() => onSelectTab('staff')}
-            className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 ${
+            className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
               activeTab === 'staff'
                 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -143,7 +154,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             id="tabAnalyticsBtn"
             onClick={() => onSelectTab('analytics')}
-            className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 ${
+            className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
               activeTab === 'analytics'
                 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -161,7 +172,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={handleToggleFullscreen}
             title={isFullscreen ? "Exit Fullscreen" : "Enter Tablet Fullscreen Mode"}
-            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors"
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors cursor-pointer"
           >
             {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
           </button>
@@ -183,7 +194,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             id="btnOpenAdminPortal"
             onClick={onOpenAdminModal}
             title="Open Admin Portal (Registered Users, Edit & Delete, New Registration)"
-            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs transition-all shadow-2xs active:scale-95"
+            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs transition-all shadow-2xs active:scale-95 cursor-pointer"
           >
             <Shield className="w-4 h-4 text-emerald-600" />
             <span>Admin</span>
@@ -193,19 +204,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={onOpenHardwareModal}
             title="Hardware Device Test Bench (80mm Printer & Barcode Scanner)"
-            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors hidden sm:block"
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors hidden sm:block cursor-pointer"
           >
             <Cpu className="w-4 h-4" />
           </button>
 
-          {/* Supabase Config Trigger */}
+          {/* MongoDB Database Console Trigger */}
           <button
-            onClick={onOpenSupabaseModal}
-            title="Supabase Database Configuration & SQL"
-            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors relative hidden sm:block"
+            onClick={onOpenDatabaseModal}
+            title="MongoDB Database Console & Collections"
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors relative hidden sm:block cursor-pointer"
           >
             <Database className="w-4 h-4" />
-            {isSupabaseConnected && (
+            {isDbConnected && (
               <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-500"></span>
             )}
           </button>
@@ -214,7 +225,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={handleToggleAudio}
             title={isAudioOn ? "Audio Feedback Active (Click to Mute)" : "Audio Feedback Muted (Click to Enable)"}
-            className={`p-2 rounded-xl border transition-colors ${
+            className={`p-2 rounded-xl border transition-colors cursor-pointer ${
               isAudioOn
                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                 : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200'
