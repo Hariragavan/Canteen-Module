@@ -213,60 +213,57 @@ export const VirtualKeyboard: React.FC = () => {
   return (
     <>
       {/* ================================================================= */}
-      {/* 1. FLOATING BUTTON IN LEFT CORNER                                 */}
+      {/* 1. FLOATING SMALL CIRCLE BUTTON IN LEFT CORNER (WHITE THEME)       */}
       {/* ================================================================= */}
-      <div className="fixed bottom-3 left-3 sm:bottom-5 sm:left-5 z-50 print:hidden select-none">
+      <div className="fixed bottom-4 left-4 sm:bottom-6 sm:left-6 z-50 print:hidden select-none">
         <button
           type="button"
           onClick={() => {
             soundEngine.playSelectSound();
             setIsOpen((prev) => !prev);
           }}
-          title="விசைப்பலகை / Virtual Keyboard"
-          className={`flex items-center gap-2 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl shadow-xl transition-all duration-300 font-medium active:scale-95 group ${
+          title={isOpen ? 'விசைப்பலகையை மூடு / Close' : 'விசைப்பலகை / Virtual Keyboard'}
+          className={`relative w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all duration-200 active:scale-90 group shadow-lg ${
             isOpen
-              ? 'bg-emerald-600 text-white ring-4 ring-emerald-400/40 shadow-emerald-500/25'
-              : 'bg-slate-900/95 hover:bg-slate-800 text-slate-100 border border-slate-700/80 backdrop-blur-md shadow-slate-950/40 hover:border-emerald-500/50'
+              ? 'bg-emerald-600 text-white ring-4 ring-emerald-200 shadow-emerald-500/30'
+              : 'bg-white hover:bg-slate-50 text-slate-700 hover:text-emerald-600 border border-slate-200/90 shadow-slate-300/40 hover:shadow-xl'
           }`}
         >
-          {/* Animated Keyboard Icon */}
-          <div className="relative flex items-center justify-center">
-            <KeyboardIcon className={`w-5 h-5 transition-transform duration-300 ${isOpen ? 'scale-110 text-white' : 'text-emerald-400 group-hover:scale-110'}`} />
-            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          </div>
+          {/* Centered Keyboard Icon */}
+          <KeyboardIcon
+            className={`w-5 h-5 sm:w-6 sm:h-6 transition-transform duration-200 group-hover:scale-110 ${
+              isOpen ? 'text-white' : 'text-slate-700 group-hover:text-emerald-600'
+            }`}
+          />
 
-          {/* Dual-Language Indicator Label */}
-          <div className="flex flex-col text-left leading-none">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs sm:text-sm font-bold font-sans tracking-tight">
-                {mode === 'tamil' ? 'தமிழ்' : mode === 'english' ? 'English' : '123'}
-              </span>
-              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded-md bg-white/15 text-white/90">
-                {mode === 'tamil' ? 'TA' : 'EN'}
-              </span>
-            </div>
-            <span className="text-[9px] text-slate-300 tracking-wider font-mono mt-0.5 opacity-80">
-              {isOpen ? 'Close' : 'Keyboard'}
-            </span>
-          </div>
+          {/* Small Language Badge Dot on Corner */}
+          <span
+            className={`absolute -bottom-1 -right-1 text-[9px] font-bold font-mono px-1.5 py-0.2 rounded-full border shadow-2xs leading-tight transition-colors ${
+              isOpen
+                ? 'bg-white text-emerald-800 border-emerald-300'
+                : 'bg-slate-800 text-white border-white'
+            }`}
+          >
+            {mode === 'tamil' ? 'த' : mode === 'english' ? 'EN' : '#'}
+          </span>
         </button>
       </div>
 
       {/* ================================================================= */}
-      {/* 2. SLIDE-UP VIRTUAL KEYBOARD DOCK                                 */}
+      {/* 2. SLIDE-UP VIRTUAL KEYBOARD DOCK (CLEAN WHITE THEME)              */}
       {/* ================================================================= */}
       {isOpen && (
         <div
           ref={keyboardContainerRef}
           className="fixed bottom-0 sm:bottom-4 left-0 right-0 sm:left-1/2 sm:-translate-x-1/2 max-w-4xl w-full z-50 p-2 sm:p-3 print:hidden select-none animate-in fade-in slide-in-from-bottom-8 duration-200"
         >
-          <div className="bg-slate-900/98 backdrop-blur-2xl border border-slate-700/90 rounded-t-3xl sm:rounded-3xl shadow-2xl shadow-slate-950/80 flex flex-col overflow-hidden text-white">
+          <div className="bg-white/98 backdrop-blur-2xl border border-slate-200/90 rounded-t-3xl sm:rounded-3xl shadow-2xl shadow-slate-400/30 flex flex-col overflow-hidden text-slate-800">
             
-            {/* --- Keyboard Header & Controls --- */}
-            <div className="px-3 py-2 sm:px-4 sm:py-2.5 bg-slate-800/80 border-b border-slate-700/70 flex items-center justify-between gap-2 flex-wrap">
+            {/* --- Keyboard Header & Controls (White Theme) --- */}
+            <div className="px-3 py-2 sm:px-4 sm:py-2.5 bg-slate-50/90 border-b border-slate-200 flex items-center justify-between gap-2 flex-wrap">
               
               {/* Left: Language Tabs */}
-              <div className="flex items-center gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-700/60">
+              <div className="flex items-center gap-1 bg-slate-200/80 p-1 rounded-xl border border-slate-200">
                 <button
                   type="button"
                   onClick={() => {
@@ -276,7 +273,7 @@ export const VirtualKeyboard: React.FC = () => {
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     mode === 'tamil'
                       ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-400 hover:text-white'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   தமிழ் (Tamil)
@@ -291,7 +288,7 @@ export const VirtualKeyboard: React.FC = () => {
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     mode === 'english'
                       ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-400 hover:text-white'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   English
@@ -306,7 +303,7 @@ export const VirtualKeyboard: React.FC = () => {
                   className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     mode === 'symbols'
                       ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-400 hover:text-white'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   ?123
@@ -314,11 +311,11 @@ export const VirtualKeyboard: React.FC = () => {
               </div>
 
               {/* Center: Active Input Status & Preview */}
-              <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-slate-950/60 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
-                <span className="text-[10px] font-mono text-emerald-400 uppercase font-semibold shrink-0">
+              <div className="flex-1 min-w-[200px] flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 text-xs shadow-2xs">
+                <span className="text-[10px] font-mono text-emerald-600 uppercase font-bold shrink-0">
                   Target:
                 </span>
-                <span className="text-slate-300 font-medium truncate flex-1 font-sans">
+                <span className="text-slate-700 font-medium truncate flex-1 font-sans">
                   {activeTargetName || (buffer ? buffer : 'Tap any input box on screen to type')}
                 </span>
                 {buffer && (
@@ -326,9 +323,9 @@ export const VirtualKeyboard: React.FC = () => {
                     type="button"
                     onClick={handleCopyBuffer}
                     title="Copy text"
-                    className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-md shrink-0 transition-all"
+                    className="p-1 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-md shrink-0 transition-all"
                   >
-                    {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                 )}
               </div>
@@ -337,15 +334,15 @@ export const VirtualKeyboard: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="p-1.5 hover:bg-slate-700/80 rounded-xl text-slate-400 hover:text-white transition-all active:scale-95 shrink-0"
+                className="p-1.5 hover:bg-slate-200/80 rounded-xl text-slate-500 hover:text-slate-800 transition-all active:scale-95 shrink-0"
                 title="விசைப்பலகையை மூடு / Close Keyboard"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* --- Keyboard Keys Surface --- */}
-            <div className="p-2 sm:p-3 flex flex-col gap-1.5 sm:gap-2">
+            {/* --- Keyboard Keys Surface (Clean White Theme) --- */}
+            <div className="p-2 sm:p-3 flex flex-col gap-1.5 sm:gap-2 bg-slate-50/40">
 
               {/* ======================================================= */}
               {/* LAYOUT 1: TAMIL (தமிழ் 99 / Classical)                 */}
@@ -361,22 +358,22 @@ export const VirtualKeyboard: React.FC = () => {
                     <KeyButton label="ஃ" sub="ஆய்தம்" highlight onClick={() => insertText('ஃ')} />
                     <KeyButton
                       label="Backspace"
-                      icon={<Delete className="w-4 h-4 text-amber-300" />}
-                      className="bg-amber-950/40 border-amber-700/60 hover:bg-amber-900/60 text-amber-200 flex-1 max-w-[90px]"
+                      icon={<Delete className="w-4 h-4 text-amber-700" />}
+                      className="bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800 flex-1 max-w-[90px]"
                       onClick={handleBackspace}
                     />
                   </div>
 
                   {/* Row 2: Uyir (Vowels) */}
                   <div className="flex items-center gap-1 sm:gap-1.5 justify-center flex-wrap">
-                    <span className="hidden sm:inline-block text-[10px] font-mono text-emerald-400/80 mr-1 shrink-0">
+                    <span className="hidden sm:inline-block text-[10px] font-mono text-emerald-700 font-bold mr-1 shrink-0">
                       உயிர்:
                     </span>
                     {TAMIL_VOWELS.map((vowel) => (
                       <KeyButton
                         key={vowel}
                         label={vowel}
-                        className="bg-emerald-950/30 border-emerald-800/40 hover:bg-emerald-900/50 text-emerald-100 font-bold"
+                        className="bg-emerald-50/80 hover:bg-emerald-100 border-emerald-200 text-emerald-900 font-bold"
                         onClick={() => insertText(vowel)}
                       />
                     ))}
@@ -384,7 +381,7 @@ export const VirtualKeyboard: React.FC = () => {
 
                   {/* Row 3: Consonants Part 1 (க ங ச ஞ ட ண த ந ப ம) */}
                   <div className="flex items-center gap-1 sm:gap-1.5 justify-center flex-wrap">
-                    <span className="hidden sm:inline-block text-[10px] font-mono text-blue-400/80 mr-1 shrink-0">
+                    <span className="hidden sm:inline-block text-[10px] font-mono text-slate-500 font-bold mr-1 shrink-0">
                       மெய் 1:
                     </span>
                     {TAMIL_CONSONANTS_1.map((c) => (
@@ -394,7 +391,7 @@ export const VirtualKeyboard: React.FC = () => {
 
                   {/* Row 4: Consonants Part 2 + Grantha (ய ர ல வ ழ ள ற ன + ஜ ஷ ஸ ஹ ஸ்ரீ) */}
                   <div className="flex items-center gap-1 sm:gap-1.5 justify-center flex-wrap">
-                    <span className="hidden sm:inline-block text-[10px] font-mono text-blue-400/80 mr-1 shrink-0">
+                    <span className="hidden sm:inline-block text-[10px] font-mono text-slate-500 font-bold mr-1 shrink-0">
                       மெய் 2:
                     </span>
                     {TAMIL_CONSONANTS_2.map((c) => (
@@ -404,22 +401,22 @@ export const VirtualKeyboard: React.FC = () => {
                       <KeyButton
                         key={g}
                         label={g}
-                        className="bg-purple-950/30 border-purple-800/40 hover:bg-purple-900/50 text-purple-200"
+                        className="bg-purple-50/80 hover:bg-purple-100 border-purple-200 text-purple-900 font-bold"
                         onClick={() => insertText(g)}
                       />
                     ))}
                   </div>
 
                   {/* Row 5: Vowel Signs / Diacritics (் ா ி ீ ு ூ ெ ே ை ொ ோ ௌ) */}
-                  <div className="flex items-center gap-1 sm:gap-1.5 justify-center flex-wrap bg-slate-950/40 py-1.5 px-2 rounded-2xl border border-slate-800/70">
-                    <span className="text-[10px] font-mono text-amber-400/80 mr-1.5 shrink-0 font-bold">
+                  <div className="flex items-center gap-1 sm:gap-1.5 justify-center flex-wrap bg-amber-50/40 py-1.5 px-2 rounded-2xl border border-amber-200/80">
+                    <span className="text-[10px] font-mono text-amber-800 mr-1.5 shrink-0 font-bold">
                       குறியீடு:
                     </span>
                     {TAMIL_DIACRITICS.map((d) => (
                       <KeyButton
                         key={d}
                         label={d}
-                        className="bg-amber-950/30 border-amber-800/40 hover:bg-amber-900/50 text-amber-200 font-extrabold text-base sm:text-lg min-w-[34px] sm:min-w-[42px]"
+                        className="bg-white hover:bg-amber-100 border-amber-200 text-amber-900 font-extrabold text-base sm:text-lg min-w-[34px] sm:min-w-[42px] shadow-2xs"
                         onClick={() => insertText(d)}
                       />
                     ))}
@@ -427,13 +424,13 @@ export const VirtualKeyboard: React.FC = () => {
 
                   {/* Quick Canteen Words Pill Bar */}
                   <div className="hidden sm:flex items-center gap-1.5 justify-center overflow-x-auto py-0.5">
-                    <span className="text-[10px] text-slate-400 shrink-0 font-mono">சொற்கள்:</span>
+                    <span className="text-[10px] text-slate-500 shrink-0 font-mono font-bold">சொற்கள்:</span>
                     {TAMIL_QUICK_WORDS.map((w) => (
                       <button
                         key={w}
                         type="button"
                         onClick={() => insertText(w + ' ')}
-                        className="px-2.5 py-1 rounded-lg text-xs bg-slate-800/90 hover:bg-slate-700 border border-slate-700/60 text-slate-200 shrink-0 transition-all active:scale-95"
+                        className="px-2.5 py-1 rounded-lg text-xs bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 shrink-0 transition-all active:scale-95 shadow-2xs"
                       >
                         {w}
                       </button>
@@ -445,16 +442,16 @@ export const VirtualKeyboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setMode('english')}
-                      className="px-3 py-2 sm:py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-300 flex items-center gap-1.5 active:scale-95 transition-all"
+                      className="px-3 py-2 sm:py-2.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 flex items-center gap-1.5 active:scale-95 transition-all shadow-2xs"
                     >
-                      <Languages className="w-3.5 h-3.5 text-emerald-400" />
+                      <Languages className="w-3.5 h-3.5 text-emerald-600" />
                       <span>English</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={handleClear}
-                      className="px-3 py-2 sm:py-2.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/50 border border-rose-800/50 text-xs font-bold text-rose-300 flex items-center gap-1 active:scale-95 transition-all"
+                      className="px-3 py-2 sm:py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs font-bold text-rose-700 flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Clear</span>
@@ -464,7 +461,7 @@ export const VirtualKeyboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => insertText(' ')}
-                      className="flex-1 py-2 sm:py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700/80 text-xs font-medium text-slate-300 flex items-center justify-center gap-1.5 active:scale-98 transition-all shadow-inner"
+                      className="flex-1 py-2 sm:py-2.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700 flex items-center justify-center gap-1.5 active:scale-98 transition-all shadow-2xs"
                     >
                       <Space className="w-4 h-4 text-slate-400" />
                       <span>இடைவெளி (Space)</span>
@@ -476,7 +473,7 @@ export const VirtualKeyboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleEnter}
-                      className="px-4 py-2 sm:py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-emerald-600/30"
+                      className="px-4 py-2 sm:py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-emerald-600/30"
                     >
                       <span>உள்ளிடு</span>
                       <CornerDownLeft className="w-3.5 h-3.5" />
@@ -499,8 +496,8 @@ export const VirtualKeyboard: React.FC = () => {
                     ))}
                     <KeyButton
                       label="Backspace"
-                      icon={<Delete className="w-4 h-4 text-amber-300" />}
-                      className="bg-amber-950/40 border-amber-700/60 hover:bg-amber-900/60 text-amber-200 flex-1 max-w-[90px]"
+                      icon={<Delete className="w-4 h-4 text-amber-700" />}
+                      className="bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800 flex-1 max-w-[90px]"
                       onClick={handleBackspace}
                     />
                   </div>
@@ -538,10 +535,10 @@ export const VirtualKeyboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setIsShiftActive((prev) => !prev)}
-                      className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-all active:scale-95 ${
+                      className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-2xs ${
                         isShiftActive
                           ? 'bg-emerald-600 text-white shadow-xs'
-                          : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
                       }`}
                     >
                       <ArrowUp className="w-3.5 h-3.5" />
@@ -569,16 +566,16 @@ export const VirtualKeyboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setMode('tamil')}
-                      className="px-3 py-2 sm:py-2.5 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-700/60 text-xs font-bold text-emerald-200 flex items-center gap-1.5 active:scale-95 transition-all"
+                      className="px-3 py-2 sm:py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-xs font-bold text-emerald-800 flex items-center gap-1.5 active:scale-95 transition-all shadow-2xs"
                     >
-                      <Languages className="w-3.5 h-3.5" />
+                      <Languages className="w-3.5 h-3.5 text-emerald-600" />
                       <span>தமிழ் (Tamil)</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={handleClear}
-                      className="px-3 py-2 sm:py-2.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/50 border border-rose-800/50 text-xs font-bold text-rose-300 flex items-center gap-1 active:scale-95 transition-all"
+                      className="px-3 py-2 sm:py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs font-bold text-rose-700 flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Clear</span>
@@ -588,7 +585,7 @@ export const VirtualKeyboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => insertText(' ')}
-                      className="flex-1 py-2 sm:py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700/80 text-xs font-medium text-slate-300 flex items-center justify-center gap-1.5 active:scale-98 transition-all shadow-inner"
+                      className="flex-1 py-2 sm:py-2.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700 flex items-center justify-center gap-1.5 active:scale-98 transition-all shadow-2xs"
                     >
                       <Space className="w-4 h-4 text-slate-400" />
                       <span>Spacebar</span>
@@ -597,7 +594,7 @@ export const VirtualKeyboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleEnter}
-                      className="px-4 py-2 sm:py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-emerald-600/30"
+                      className="px-4 py-2 sm:py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-emerald-600/30"
                     >
                       <span>Enter</span>
                       <CornerDownLeft className="w-3.5 h-3.5" />
@@ -618,8 +615,8 @@ export const VirtualKeyboard: React.FC = () => {
                     ))}
                     <KeyButton
                       label="Backspace"
-                      icon={<Delete className="w-4 h-4 text-amber-300" />}
-                      className="bg-amber-950/40 border-amber-700/60 hover:bg-amber-900/60 text-amber-200 flex-1 max-w-[90px]"
+                      icon={<Delete className="w-4 h-4 text-amber-700" />}
+                      className="bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-800 flex-1 max-w-[90px]"
                       onClick={handleBackspace}
                     />
                   </div>
@@ -641,16 +638,16 @@ export const VirtualKeyboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setMode('tamil')}
-                      className="px-3 py-2 sm:py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-300 flex items-center gap-1.5 active:scale-95 transition-all"
+                      className="px-3 py-2 sm:py-2.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 flex items-center gap-1.5 active:scale-95 transition-all shadow-2xs"
                     >
-                      <Languages className="w-3.5 h-3.5 text-emerald-400" />
+                      <Languages className="w-3.5 h-3.5 text-emerald-600" />
                       <span>தமிழ்</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setMode('english')}
-                      className="px-3 py-2 sm:py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-300 active:scale-95 transition-all"
+                      className="px-3 py-2 sm:py-2.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 active:scale-95 transition-all shadow-2xs"
                     >
                       ABC
                     </button>
@@ -658,7 +655,7 @@ export const VirtualKeyboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleClear}
-                      className="px-3 py-2 sm:py-2.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/50 border border-rose-800/50 text-xs font-bold text-rose-300 flex items-center gap-1 active:scale-95 transition-all"
+                      className="px-3 py-2 sm:py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs font-bold text-rose-700 flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Clear</span>
@@ -667,7 +664,7 @@ export const VirtualKeyboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => insertText(' ')}
-                      className="flex-1 py-2 sm:py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700/80 text-xs font-medium text-slate-300 flex items-center justify-center gap-1.5 active:scale-98 transition-all shadow-inner"
+                      className="flex-1 py-2 sm:py-2.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700 flex items-center justify-center gap-1.5 active:scale-98 transition-all shadow-2xs"
                     >
                       <Space className="w-4 h-4 text-slate-400" />
                       <span>Spacebar</span>
@@ -676,7 +673,7 @@ export const VirtualKeyboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleEnter}
-                      className="px-4 py-2 sm:py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-emerald-600/30"
+                      className="px-4 py-2 sm:py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shadow-emerald-600/30"
                     >
                       <span>Enter</span>
                       <CornerDownLeft className="w-3.5 h-3.5" />
@@ -694,7 +691,7 @@ export const VirtualKeyboard: React.FC = () => {
 };
 
 // ==============================================================================
-// KEY BUTTON REUSABLE SUB-COMPONENT
+// KEY BUTTON REUSABLE SUB-COMPONENT (CLEAN WHITE THEME)
 // ==============================================================================
 interface KeyButtonProps {
   label: string;
@@ -717,10 +714,10 @@ const KeyButton: React.FC<KeyButtonProps> = ({
     <button
       type="button"
       onClick={onClick}
-      className={`relative min-w-[30px] sm:min-w-[40px] md:min-w-[46px] h-9 sm:h-11 px-1.5 sm:px-2 rounded-xl flex flex-col items-center justify-center transition-all duration-150 active:scale-90 select-none shadow-xs text-xs sm:text-sm font-medium ${
+      className={`relative min-w-[30px] sm:min-w-[40px] md:min-w-[46px] h-9 sm:h-11 px-1.5 sm:px-2 rounded-xl flex flex-col items-center justify-center transition-all duration-150 active:scale-90 select-none text-xs sm:text-sm font-medium ${
         highlight
-          ? 'bg-emerald-700 hover:bg-emerald-600 text-white border border-emerald-500'
-          : 'bg-slate-800/95 hover:bg-slate-700 text-slate-100 border border-slate-700/80'
+          ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 font-bold shadow-2xs'
+          : 'bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 shadow-2xs hover:border-slate-300'
       } ${className}`}
     >
       {icon ? (
@@ -728,10 +725,11 @@ const KeyButton: React.FC<KeyButtonProps> = ({
       ) : (
         <>
           <span className="font-sans leading-none">{label}</span>
-          {sub && <span className="text-[8px] text-emerald-400 font-mono scale-90">{sub}</span>}
+          {sub && <span className="text-[8px] text-emerald-600 font-mono scale-90">{sub}</span>}
         </>
       )}
     </button>
   );
 };
+
 export default VirtualKeyboard;
