@@ -33,30 +33,37 @@ export const App: React.FC = () => {
   useEffect(() => {
     const rawPath = decodeURIComponent(location.pathname || '').toLowerCase();
     
-    if (rawPath.includes('kitchen') || rawPath.includes('analysis') || rawPath.includes('analytics')) {
+    if (rawPath.includes('admin')) {
+      setActiveTabState('admin');
+      document.title = 'SmartCanteen OS • Production Kiosk & Verification Counter';
+    } else if (rawPath.includes('kitchen') || rawPath.includes('analysis') || rawPath.includes('analytics')) {
       setActiveTabState('analytics');
+      document.title = 'SmartCanteen OS • Kitchen Analytics';
     } else if (rawPath.includes('staff') || rawPath.includes('counter')) {
       setActiveTabState('staff');
-    } else if (rawPath.startsWith('/admin')) {
-      setActiveTabState('admin');
-    } else if (rawPath === '/' || rawPath.includes('kiosk')) {
+      document.title = 'SmartCanteen OS • Staff Verification Counter';
+    } else {
       setActiveTabState('kiosk');
+      document.title = 'SmartCanteen OS • Production Kiosk & Verification Counter';
     }
   }, [location.pathname]);
 
-  // Tab switch handler that keeps URL cleanly in sync
+  // Tab switch handler that keeps URL cleanly in sync with base prefix (e.g. /canteen-module)
   const switchTab = useCallback((tab: ActiveTab) => {
     setActiveTabState(tab);
+    const hasCanteenModulePrefix = location.pathname.toLowerCase().startsWith('/canteen-module');
+    const basePrefix = hasCanteenModulePrefix ? '/canteen-module' : '';
+    
     if (tab === 'analytics') {
-      navigate('/kitchen-analysis');
+      navigate(`${basePrefix}/kitchen-analysis`);
     } else if (tab === 'staff') {
-      navigate('/staff-counter');
+      navigate(`${basePrefix}/staff-counter`);
     } else if (tab === 'admin') {
-      navigate('/admin');
+      navigate(`${basePrefix}/admin`);
     } else {
-      navigate('/kiosk');
+      navigate(`${basePrefix}/kiosk`);
     }
-  }, [navigate]);
+  }, [location.pathname, navigate]);
 
   // Protected Admin Portal Gatekeeper (admin / admin@123)
   const handleOpenAdminPortal = useCallback(() => {
@@ -125,25 +132,23 @@ export const App: React.FC = () => {
       activeTab === 'kiosk' || activeTab === 'admin' ? 'h-screen max-h-[100dvh] overflow-hidden' : 'min-h-screen'
     }`}>
       
-      {/* Top Application Header - Rendered on Analytics only; Kiosk, Admin, and Staff Counter have dedicated layouts */}
-      {activeTab !== 'kiosk' && activeTab !== 'admin' && activeTab !== 'staff' && (
-        <Navbar
-          activeTab={activeTab}
-          onSelectTab={switchTab}
-          onOpenHardwareModal={() => setIsHardwareModalOpen(true)}
-          onOpenDatabaseModal={() => setIsDbModalOpen(true)}
-          onOpenAdminModal={handleOpenAdminPortal}
-          onOpenMenuModal={() => setIsMenuModalOpen(true)}
-          unclaimedCount={unclaimedCount}
-        />
-      )}
+      {/* Top Application Header - Rendered across all views to show App Name & all page tabs */}
+      <Navbar
+        activeTab={activeTab}
+        onSelectTab={switchTab}
+        onOpenHardwareModal={() => setIsHardwareModalOpen(true)}
+        onOpenDatabaseModal={() => setIsDbModalOpen(true)}
+        onOpenAdminModal={handleOpenAdminPortal}
+        onOpenMenuModal={() => setIsMenuModalOpen(true)}
+        unclaimedCount={unclaimedCount}
+      />
 
       {/* Main Content Area */}
       <main className={
         activeTab === 'kiosk'
           ? 'flex-1 w-full max-w-5xl lg:max-w-6xl mx-auto px-2 py-2 sm:px-4 sm:py-2.5 flex flex-col min-h-0 overflow-y-auto md:overflow-hidden'
           : activeTab === 'admin'
-          ? 'flex-1 w-full h-full min-h-0 overflow-hidden flex flex-col p-0 m-0'
+          ? 'flex-1 w-full h-[calc(100dvh-64px)] min-h-0 overflow-hidden flex flex-col p-0 m-0'
           : activeTab === 'staff'
           ? 'flex-1 w-full flex flex-col min-h-0 bg-slate-50 p-0 m-0 overflow-y-auto'
           : 'flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col justify-start'

@@ -740,7 +740,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   };
 
   return (
-    <div className="w-full h-screen min-h-screen flex flex-row overflow-hidden bg-slate-50 select-none">
+    <div className="w-full h-full min-h-0 flex-1 flex flex-row overflow-hidden bg-slate-50 select-none">
       
       {/* ============================================================= */}
       {/* LEFT SIDEBAR NAVIGATION                                       */}

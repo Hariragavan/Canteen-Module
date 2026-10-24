@@ -33,6 +33,7 @@ app.get('/health', (req, res) => {
 // Serve frontend in production if built
 const distPath = path.join(__dirname, '..', 'dist');
 app.use(express.static(distPath));
+app.use('/canteen-module', express.static(distPath));
 
 // For React Router HTML5 History fallback in production (Express 5 compatible)
 app.use((req, res, next) => {
