@@ -10,6 +10,13 @@ export default defineConfig({
       name: 'root-redirect',
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
+          // Prevent 304 Not Modified by stripping caching conditional headers
+          delete req.headers['if-none-match'];
+          delete req.headers['if-modified-since'];
+          res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
+
           const url = req.url || '';
           if (url === '/' || url === '') {
             res.writeHead(302, { Location: '/canteen-module/' });

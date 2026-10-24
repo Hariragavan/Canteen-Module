@@ -31,6 +31,21 @@ class ApiClient {
     this.startPolling();
   }
 
+  // Helper method enforcing no-cache and fresh 200 OK responses
+  private async request(endpoint: string, init: RequestInit = {}): Promise<Response> {
+    const url = `${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    const headers = new Headers(init.headers || {});
+    headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    headers.set('Pragma', 'no-cache');
+    headers.set('Expires', '0');
+
+    return fetch(url, {
+      ...init,
+      cache: 'no-store',
+      headers,
+    });
+  }
+
   public subscribe(callback: () => void): () => void {
     this.subscribers.add(callback);
     return () => {
@@ -61,7 +76,7 @@ class ApiClient {
   // ==========================================================================
   public async getDbStatus(): Promise<DbStatusInfo> {
     try {
-      const res = await fetch(`${this.baseUrl}/status`);
+      const res = await this.request('/status');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch {
@@ -79,7 +94,7 @@ class ApiClient {
   // ==========================================================================
   public async getEmployees(): Promise<Employee[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/employees`);
+      const res = await this.request('/employees');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       return data.map((d: any) => ({
@@ -112,7 +127,7 @@ class ApiClient {
         subsidy_rate: emp.subsidyRate ?? 1.0,
       };
 
-      const res = await fetch(`${this.baseUrl}/employees`, {
+      const res = await this.request('/employees', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -153,7 +168,7 @@ class ApiClient {
       if (emp.face_descriptor !== undefined) payload.face_descriptor = emp.face_descriptor;
       if (emp.subsidyRate !== undefined) payload.subsidy_rate = emp.subsidyRate;
 
-      const res = await fetch(`${this.baseUrl}/employees/${encodeURIComponent(id)}`, {
+      const res = await this.request(`/employees/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -172,7 +187,7 @@ class ApiClient {
 
   public async deleteEmployee(id: string): Promise<void> {
     try {
-      const res = await fetch(`${this.baseUrl}/employees/${encodeURIComponent(id)}`, {
+      const res = await this.request(`/employees/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -188,7 +203,7 @@ class ApiClient {
   // ==========================================================================
   public async getOrders(limit = 3000): Promise<Order[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/orders?limit=${limit}`);
+      const res = await this.request(`/orders?limit=${limit}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       return data.map((o: any) => ({
@@ -216,7 +231,7 @@ class ApiClient {
 
   public async createOrdersBatch(orders: Order[]): Promise<Order[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/orders/batch`, {
+      const res = await this.request('/orders/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orders }),
@@ -250,7 +265,7 @@ class ApiClient {
 
   public async serveOrder(orderUuid: string): Promise<any> {
     try {
-      const res = await fetch(`${this.baseUrl}/orders/${encodeURIComponent(orderUuid)}/serve`, {
+      const res = await this.request(`/orders/${encodeURIComponent(orderUuid)}/serve`, {
         method: 'PATCH',
       });
       const data = await res.json();
@@ -264,7 +279,7 @@ class ApiClient {
 
   public async cancelOrder(orderUuid: string): Promise<void> {
     try {
-      await fetch(`${this.baseUrl}/orders/${encodeURIComponent(orderUuid)}`, {
+      await this.request(`/orders/${encodeURIComponent(orderUuid)}`, {
         method: 'DELETE',
       });
       this.notifySubscribers();
@@ -278,7 +293,7 @@ class ApiClient {
   // ==========================================================================
   public async getMealSlots(): Promise<MealSlotConfig[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/meal-slots`);
+      const res = await this.request('/meal-slots');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch (e) {
@@ -289,7 +304,7 @@ class ApiClient {
 
   public async updateMealSlots(slots: MealSlotConfig[]): Promise<MealSlotConfig[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/meal-slots`, {
+      const res = await this.request('/meal-slots', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ slots }),
@@ -309,7 +324,7 @@ class ApiClient {
   // ==========================================================================
   public async getTransportUnits(): Promise<TransportUnit[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/transport-units`);
+      const res = await this.request('/transport-units');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch (e) {
@@ -320,7 +335,7 @@ class ApiClient {
 
   public async createTransportUnit(unit: TransportUnit): Promise<TransportUnit> {
     try {
-      const res = await fetch(`${this.baseUrl}/transport-units`, {
+      const res = await this.request('/transport-units', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(unit),
@@ -337,7 +352,7 @@ class ApiClient {
 
   public async deleteTransportUnit(id: string): Promise<void> {
     try {
-      await fetch(`${this.baseUrl}/transport-units/${encodeURIComponent(id)}`, {
+      await this.request(`/transport-units/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
       this.notifySubscribers();
@@ -351,7 +366,7 @@ class ApiClient {
   // ==========================================================================
   public async getFoodTransports(): Promise<FoodTransportRecord[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/food-transports`);
+      const res = await this.request('/food-transports');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       return data.map((t: any) => ({
@@ -379,7 +394,7 @@ class ApiClient {
 
   public async createFoodTransport(record: Partial<FoodTransportRecord>): Promise<FoodTransportRecord> {
     try {
-      const res = await fetch(`${this.baseUrl}/food-transports`, {
+      const res = await this.request('/food-transports', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(record),
@@ -396,7 +411,7 @@ class ApiClient {
 
   public async deleteFoodTransport(id: string): Promise<void> {
     try {
-      await fetch(`${this.baseUrl}/food-transports/${encodeURIComponent(id)}`, {
+      await this.request(`/food-transports/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
       this.notifySubscribers();
@@ -410,7 +425,7 @@ class ApiClient {
   // ==========================================================================
   public async getFeedbacks(): Promise<MealFeedback[]> {
     try {
-      const res = await fetch(`${this.baseUrl}/feedbacks`);
+      const res = await this.request('/feedbacks');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       return data.map((f: any) => ({
@@ -429,7 +444,7 @@ class ApiClient {
 
   public async createFeedback(fb: MealFeedback): Promise<MealFeedback> {
     try {
-      const res = await fetch(`${this.baseUrl}/feedbacks`, {
+      const res = await this.request('/feedbacks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(fb),
@@ -446,7 +461,7 @@ class ApiClient {
 
   public async deleteFeedback(id: string): Promise<void> {
     try {
-      await fetch(`${this.baseUrl}/feedbacks/${encodeURIComponent(id)}`, {
+      await this.request(`/feedbacks/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
       this.notifySubscribers();
