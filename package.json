@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "start": "node server/index.js",
     "server": "node server/index.js",
     "db:import": "node server/import_exported_faces.js",
     "build": "tsc -b && vite build",
