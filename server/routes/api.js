@@ -6,9 +6,19 @@ import { TransportUnit } from '../models/TransportUnit.js';
 import { FoodTransport } from '../models/FoodTransport.js';
 import { Feedback } from '../models/Feedback.js';
 import { DailyCounter } from '../models/DailyCounter.js';
-import { getDbStatus } from '../config/db.js';
+import { connectDB, getDbStatus } from '../config/db.js';
 
 const router = Router();
+
+// Ensure DB is connected (vital for serverless cold starts on Vercel)
+router.use(async (req, res, next) => {
+  try {
+    await connectDB();
+  } catch {
+    // continue, errors handled gracefully in endpoints
+  }
+  next();
+});
 
 // ============================================================================
 // SYSTEM / DATABASE STATUS

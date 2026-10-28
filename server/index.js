@@ -66,10 +66,12 @@ app.use((req, res, next) => {
   });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[Smart Canteen Server] Backend listening on http://localhost:${PORT}`);
-  console.log(`[Smart Canteen Server] API endpoints available at http://localhost:${PORT}/api`);
-  console.log(`[Smart Canteen Server] Base path: http://localhost:${PORT}/canteen-module/`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Smart Canteen Server] Backend listening on http://localhost:${PORT}`);
+    console.log(`[Smart Canteen Server] API endpoints available at http://localhost:${PORT}/api`);
+    console.log(`[Smart Canteen Server] Base path: http://localhost:${PORT}/canteen-module/`);
+  });
+}
 
 export default app;

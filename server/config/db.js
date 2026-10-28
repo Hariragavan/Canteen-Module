@@ -5,23 +5,39 @@ dotenv.config();
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/canteen_db';
 
-let isConnected = false;
+// Cache connection across serverless invocations (e.g. Vercel)
+let cached = global.mongoose;
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
 
 export const connectDB = async () => {
-  if (isConnected) return;
+  if (cached.conn && mongoose.connection.readyState === 1) {
+    return cached.conn;
+  }
+
+  if (!cached.promise) {
+    const opts = {
+      serverSelectionTimeoutMS: 10000,
+      autoIndex: true,
+      maxPoolSize: 10,
+    };
+
+    cached.promise = mongoose.connect(MONGODB_URI, opts).then((m) => {
+      console.log(`[MongoDB] Connected successfully to host: ${m.connection.host}, database: ${m.connection.name}`);
+      return m;
+    });
+  }
 
   try {
-    const conn = await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000,
-      autoIndex: true,
-    });
-    isConnected = true;
-    console.log(`[MongoDB] Connected successfully to host: ${conn.connection.host}, database: ${conn.connection.name}`);
+    cached.conn = await cached.promise;
   } catch (error) {
-    isConnected = false;
+    cached.promise = null;
     console.error(`[MongoDB] Connection error: ${error.message}`);
-    console.warn(`[MongoDB] Ensure your MongoDB server is running (e.g. 'mongod' or MongoDB Atlas). The API will retry.`);
+    console.warn(`[MongoDB] Ensure MongoDB Atlas network access (0.0.0.0/0) is allowed and credentials are correct.`);
   }
+
+  return cached.conn;
 };
 
 export const getDbStatus = () => {
