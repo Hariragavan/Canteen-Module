@@ -31,6 +31,7 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
   const [timeLeft, setTimeLeft] = useState<number>(20);
   const [scanState, setScanState] = useState<HUDScanState>('READY');
   const [statusMessage, setStatusMessage] = useState<string>('Place your finger');
+  const [deviceMessage, setDeviceMessage] = useState<string>('Sensor active • Place finger on glass');
   const [qualityScore, setQualityScore] = useState<number | null>(null);
 
   const isBusyRef = useRef<boolean>(false);
@@ -73,6 +74,7 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
           isScanningActiveRef.current = false;
           setScanState('OFF');
           setStatusMessage('Turn on scanning');
+          setDeviceMessage('Tap anywhere to activate');
           setQualityScore(null);
           return 0;
         }
@@ -85,20 +87,26 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
     };
   }, [isScanningActive]);
 
-  // 2. Hardware Capture & Identification Routine (Steady - Zero Flickering)
+  // 2. Hardware Capture & Identification Routine (Stable hardware cycle - Sensor light reliable)
   const runCaptureCycle = useCallback(async () => {
     if (isBusyRef.current || !isMountedRef.current || !isScanningActiveRef.current) return;
     isBusyRef.current = true;
 
+    setDeviceMessage('Sensor active • Place finger on glass');
+
     try {
-      // Capture window on scanner (timeout dynamic up to 8s, minimum quality 30%)
-      const captureTimeout = Math.min(8, Math.max(3, timeLeftRef.current));
+      // 10-second capture window on Mantra scanner (minimum quality 30%)
+      const captureTimeout = Math.min(10, Math.max(5, timeLeftRef.current));
       const captureResult = await mantraService.captureFingerprint(30, captureTimeout);
 
       if (!isMountedRef.current) return;
 
+      // Always display the default message from the device
+      const rawDeviceMsg = captureResult.errorDescription || 'Device ready';
+      setDeviceMessage(rawDeviceMsg);
+
       // Condition: No finger touched / timed out / cancelled
-      // KEEP UI STEADY - DO NOT FLICKER OR CHANGE STATE WHILE WAITING FOR FINGER!
+      // KEEP UI STEADY - Give 1 second hardware cooldown before next listen so sensor light resets
       if (!captureResult.success || !captureResult.isoTemplate) {
         isBusyRef.current = false;
 
@@ -108,16 +116,17 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
           isScanningActiveRef.current = false;
           setScanState('OFF');
           setStatusMessage('Turn on scanning');
+          setDeviceMessage('Tap anywhere to activate');
           setQualityScore(null);
           return;
         }
 
-        // Window still running: silently loop for next touch without flickering the UI
+        // Window still running: wait 1000ms cooldown so USB driver releases before next capture
         setTimeout(() => {
           if (isMountedRef.current && isScanningActiveRef.current && timeLeftRef.current > 1) {
             runCaptureCycle();
           }
-        }, 200);
+        }, 1000);
         return;
       }
 
@@ -129,9 +138,10 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
       if (q > 0 && q < 30) {
         setScanState('TRY_AGAIN');
         setStatusMessage('Try again');
+        setDeviceMessage(`Low Quality (${q}%) • Please press finger firmly`);
         setQualityScore(q);
         soundEngine.playWarningBuzzer();
-        if (onErrorRef.current) onErrorRef.current('Quality too low (< 30%). Try again.');
+        if (onErrorRef.current) onErrorRef.current(`Quality too low (${q}%). Try again.`);
         isBusyRef.current = false;
         return;
       }
@@ -163,6 +173,7 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
           soundEngine.playVerificationChime();
           const fingerLabel = matchResult.matchedFinger || 'Touch ID';
           setStatusMessage(`Verified: ${matchedEmp.name}`);
+          setDeviceMessage(`Success • ${fingerLabel}`);
           setQualityScore(q);
 
           setTimeout(() => {
@@ -178,13 +189,17 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
       // Condition 3: Success received from hardware, but touch is NOT matched to any enrolled person
       setScanState('TRY_AGAIN');
       setStatusMessage('Try again');
+      setDeviceMessage('Unmatched • Please try registered finger');
       setQualityScore(q);
       soundEngine.playWarningBuzzer();
       if (onErrorRef.current) onErrorRef.current('Try again');
       isBusyRef.current = false;
-    } catch {
+    } catch (err: any) {
       if (!isMountedRef.current) return;
       isBusyRef.current = false;
+
+      const errMsg = err?.message || 'Device communication error';
+      setDeviceMessage(errMsg);
 
       if (timeLeftRef.current <= 1 || !isScanningActiveRef.current) {
         setIsScanningActive(false);
@@ -199,15 +214,15 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
         if (isMountedRef.current && isScanningActiveRef.current && timeLeftRef.current > 1) {
           runCaptureCycle();
         }
-      }, 200);
+      }, 1000);
     }
   }, []);
 
-  // 3. Start scanning on initial mount only once
+  // 3. Start scanning on initial mount after sensor settles
   useEffect(() => {
     const initTimer = setTimeout(() => {
       runCaptureCycle();
-    }, 300);
+    }, 500);
 
     return () => clearTimeout(initTimer);
   }, [runCaptureCycle]);
@@ -221,9 +236,15 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
     setQualityScore(null);
     setScanState('READY');
     setStatusMessage('Place your finger');
+    setDeviceMessage('Initializing sensor...');
     soundEngine.playSelectSound();
-    isBusyRef.current = false;
-    runCaptureCycle();
+
+    // If sensor was already in capture, give it 300ms to settle then start clean capture
+    if (!isBusyRef.current) {
+      setTimeout(() => {
+        runCaptureCycle();
+      }, 200);
+    }
   };
 
   return (
@@ -298,7 +319,7 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
       </div>
 
       {/* Dynamic Status Feedback */}
-      <div className="mt-5 text-center">
+      <div className="mt-5 text-center flex flex-col items-center">
         <h3
           className={`text-lg sm:text-xl font-bold transition-colors ${
             scanState === 'OFF'
@@ -313,17 +334,24 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
           {statusMessage}
         </h3>
 
+        {/* Default Message from Mantra Hardware Device */}
+        {deviceMessage && (
+          <p className="text-xs text-slate-600 font-mono mt-1 px-3 py-0.5 rounded-full bg-slate-100/90 border border-slate-200 shadow-2xs">
+            {deviceMessage}
+          </p>
+        )}
+
         {/* Feedback Subtitle */}
         {scanState === 'OFF' ? (
-          <p className="text-xs text-slate-400 mt-1 font-medium group-hover:text-emerald-600 transition-colors">
+          <p className="text-xs text-slate-400 mt-1.5 font-medium group-hover:text-emerald-600 transition-colors">
             Tap anywhere to start scanning
           </p>
         ) : scanState === 'TRY_AGAIN' ? (
-          <p className="text-xs text-rose-500 mt-1 font-medium group-hover:text-emerald-600 transition-colors">
+          <p className="text-xs text-rose-500 mt-1.5 font-medium group-hover:text-emerald-600 transition-colors">
             Tap anywhere to scan again
           </p>
         ) : isScanningActive && scanState !== 'SUCCESS' ? (
-          <p className="text-[11px] text-slate-400 mt-1 font-mono font-medium">
+          <p className="text-[11px] text-slate-400 mt-1.5 font-mono font-medium">
             Active: {timeLeft}s
           </p>
         ) : null}
