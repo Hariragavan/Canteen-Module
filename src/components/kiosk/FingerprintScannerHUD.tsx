@@ -91,25 +91,10 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
       if (q > 0 && q < 30) {
         setScanState('TRY_AGAIN');
         setStatusMessage('Try again');
+        setQualityScore(q);
         soundEngine.playWarningBuzzer();
         if (onError) onError('Quality too low (< 30%). Try again.');
-
-        setTimeout(() => {
-          if (!isMountedRef.current) return;
-          isBusyRef.current = false;
-          setTimeLeft((current) => {
-            if (current > 0) {
-              setScanState('IDLE');
-              setStatusMessage('Place your finger');
-              runCaptureCycle();
-            } else {
-              setIsScanningActive(false);
-              setScanState('OFF');
-              setStatusMessage('Turn on scanning');
-            }
-            return current;
-          });
-        }, 1800);
+        isBusyRef.current = false;
         return;
       }
 
@@ -117,25 +102,10 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
       if (!captureResult.success || !captureResult.isoTemplate) {
         setScanState('TRY_AGAIN');
         setStatusMessage('Try again');
+        setQualityScore(q > 0 ? q : null);
         soundEngine.playWarningBuzzer();
         if (onError) onError('Try again');
-
-        setTimeout(() => {
-          if (!isMountedRef.current) return;
-          isBusyRef.current = false;
-          setTimeLeft((current) => {
-            if (current > 0) {
-              setScanState('IDLE');
-              setStatusMessage('Place your finger');
-              runCaptureCycle();
-            } else {
-              setIsScanningActive(false);
-              setScanState('OFF');
-              setStatusMessage('Turn on scanning');
-            }
-            return current;
-          });
-        }, 1800);
+        isBusyRef.current = false;
         return;
       }
 
@@ -157,6 +127,7 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
           soundEngine.playVerificationChime();
           const fingerLabel = matchResult.matchedFinger || 'Touch ID';
           setStatusMessage(`Verified: ${matchedEmp.name}`);
+          setQualityScore(q);
 
           setTimeout(() => {
             if (isMountedRef.current) {
@@ -168,50 +139,19 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
         }
       }
 
-      // Condition 4: Fingerprint not matched -> "Try again"
+      // Condition 4: Fingerprint not matched -> Strictly "Try again" (no continuous scanning loop)
       setScanState('TRY_AGAIN');
       setStatusMessage('Try again');
+      setQualityScore(q);
       soundEngine.playWarningBuzzer();
       if (onError) onError('Try again');
-
-      setTimeout(() => {
-        if (!isMountedRef.current) return;
-        isBusyRef.current = false;
-        setTimeLeft((current) => {
-          if (current > 0) {
-            setScanState('IDLE');
-            setStatusMessage('Place your finger');
-            runCaptureCycle();
-          } else {
-            setIsScanningActive(false);
-            setScanState('OFF');
-            setStatusMessage('Turn on scanning');
-          }
-          return current;
-        });
-      }, 1800);
+      isBusyRef.current = false;
     } catch {
       if (!isMountedRef.current) return;
       setScanState('TRY_AGAIN');
       setStatusMessage('Try again');
       soundEngine.playWarningBuzzer();
-
-      setTimeout(() => {
-        if (!isMountedRef.current) return;
-        isBusyRef.current = false;
-        setTimeLeft((current) => {
-          if (current > 0) {
-            setScanState('IDLE');
-            setStatusMessage('Place your finger');
-            runCaptureCycle();
-          } else {
-            setIsScanningActive(false);
-            setScanState('OFF');
-            setStatusMessage('Turn on scanning');
-          }
-          return current;
-        });
-      }, 1800);
+      isBusyRef.current = false;
     }
   }, [employees, fingerprints, onUserIdentified, onError]);
 
@@ -288,21 +228,33 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
           </div>
         </div>
 
-        {/* Live Quality Percent Badge */}
-        {qualityScore !== null && scanState !== 'OFF' && (
+        {/* Final Quality Percent Badge - Only shown when a scan finishes */}
+        {qualityScore !== null && (scanState === 'SUCCESS' || scanState === 'TRY_AGAIN') && (
           <div
             className={`absolute -bottom-3 px-3 py-1 rounded-full border shadow-sm flex items-center gap-1.5 text-xs font-mono font-bold transition-all ${
-              qualityScore < 30
+              scanState === 'SUCCESS'
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                : qualityScore < 30
                 ? 'bg-rose-50 text-rose-700 border-rose-300 animate-pulse'
-                : 'bg-white text-slate-800 border-slate-300'
+                : 'bg-amber-50 text-amber-800 border-amber-300'
             }`}
           >
             <ShieldCheck
               className={`w-3.5 h-3.5 ${
-                qualityScore < 30 ? 'text-rose-600' : 'text-emerald-600'
+                scanState === 'SUCCESS'
+                  ? 'text-emerald-600'
+                  : qualityScore < 30
+                  ? 'text-rose-600'
+                  : 'text-amber-600'
               }`}
             />
-            <span>Quality: {qualityScore}%</span>
+            <span>
+              {scanState === 'SUCCESS'
+                ? `Quality: ${qualityScore}% • Verified`
+                : qualityScore < 30
+                ? `Quality: ${qualityScore}% • Low Quality`
+                : `Quality: ${qualityScore}% • Unmatched`}
+            </span>
           </div>
         )}
       </div>
@@ -325,19 +277,20 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
           {statusMessage}
         </h3>
 
-        {/* Subtle Tap Hint when OFF */}
-        {scanState === 'OFF' && (
+        {/* Feedback Subtitle */}
+        {scanState === 'OFF' ? (
           <p className="text-xs text-slate-400 mt-1 font-medium group-hover:text-emerald-600 transition-colors">
             Tap anywhere to start scanning
           </p>
-        )}
-
-        {/* Active 20-second window indicator when ON */}
-        {isScanningActive && scanState !== 'OFF' && scanState !== 'SUCCESS' && (
+        ) : scanState === 'TRY_AGAIN' ? (
+          <p className="text-xs text-rose-500 mt-1 font-medium group-hover:text-emerald-600 transition-colors">
+            Tap anywhere to scan again
+          </p>
+        ) : isScanningActive && scanState !== 'SUCCESS' ? (
           <p className="text-[11px] text-slate-400 mt-1 font-mono font-medium">
             Active: {timeLeft}s
           </p>
-        )}
+        ) : null}
       </div>
     </div>
   );
