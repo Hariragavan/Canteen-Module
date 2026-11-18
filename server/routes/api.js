@@ -572,6 +572,17 @@ router.post('/mantra/capture', async (req, res) => {
       });
     }
   } catch (e) {
+    if (e.message && e.message.includes('timed out')) {
+      return res.json({
+        success: false,
+        errorCode: 700,
+        errorDescription: 'Capture timed out',
+        quality: 0,
+        isoTemplate: '',
+        bitmapData: '',
+        model: 'MFS110'
+      });
+    }
     // Port 11100 failed or not running, try Port 8032 (MFS100)
   }
 
@@ -615,7 +626,7 @@ router.post('/mantra/capture', async (req, res) => {
       });
     }
   } catch (err) {
-    return res.status(500).json({
+    return res.json({
       success: false,
       errorCode: -1,
       errorDescription: err.message || 'Mantra communication error'

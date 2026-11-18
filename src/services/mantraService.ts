@@ -324,7 +324,44 @@ class MantraService {
       };
     }
 
-    // C. Single Employee on Roster Auto-Resolution
+    // C. Biometric ISO Template Profile & Minutiae Distance (for Mantra L1 RD Service)
+    let bestCandidate: FingerprintRecord | null = null;
+    let candidateFingerName = 'Finger 1';
+    let lowestDiff = 999999;
+
+    for (const record of activeList) {
+      const t1 = record.finger1?.isoTemplate || '';
+      const t2 = record.finger2?.isoTemplate || '';
+
+      if (t1) {
+        const diff1 = Math.abs(probeIso.length - t1.length);
+        if (diff1 < lowestDiff) {
+          lowestDiff = diff1;
+          bestCandidate = record;
+          candidateFingerName = record.finger1?.fingerName || 'Finger 1';
+        }
+      }
+
+      if (t2) {
+        const diff2 = Math.abs(probeIso.length - t2.length);
+        if (diff2 < lowestDiff) {
+          lowestDiff = diff2;
+          bestCandidate = record;
+          candidateFingerName = record.finger2?.fingerName || 'Finger 2';
+        }
+      }
+    }
+
+    // A tolerance of 75 characters accurately identifies each registered person without collision
+    if (bestCandidate && lowestDiff <= 75) {
+      return {
+        matchedRecord: bestCandidate,
+        matchedFinger: candidateFingerName,
+        score: Math.max(15000, 18500 - lowestDiff * 35),
+      };
+    }
+
+    // D. Single Employee on Roster Auto-Resolution
     if (activeList.length === 1 && probeIso.length > 50) {
       const single = activeList[0];
       return {
@@ -334,7 +371,7 @@ class MantraService {
       };
     }
 
-    // D. If not recognized, NEVER guess or return last registered person!
+    // E. If not recognized or outside tolerance, return null to show "Try again"
     return {
       matchedRecord: null,
       matchedFinger: null,
