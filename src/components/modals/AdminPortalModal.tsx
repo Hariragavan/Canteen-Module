@@ -459,7 +459,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         );
         await canteenService.deleteEmployee(id);
         soundEngine.playWarningBuzzer();
-        setSuccessMessage(`User ${name} (${id}) permanently deleted.`);
+        setSuccessMessage(`User ${name} (${id}) and all registered details permanently deleted.`);
         setTimeout(() => setSuccessMessage(null), 3000);
         await loadEmployees();
         if (onRosterUpdated) onRosterUpdated();

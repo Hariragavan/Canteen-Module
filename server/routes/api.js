@@ -125,7 +125,8 @@ router.delete('/employees/:id', async (req, res) => {
   try {
     const cleanId = String(req.params.id).trim().toUpperCase();
     await Employee.findOneAndDelete({ id: cleanId });
-    res.json({ success: true, message: `Employee ${cleanId} deleted.` });
+    await Fingerprint.findOneAndDelete({ employeeId: cleanId });
+    res.json({ success: true, message: `Employee and fingerprint details for ${cleanId} permanently deleted.` });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

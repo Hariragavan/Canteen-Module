@@ -491,10 +491,19 @@ class CanteenService {
     this.employees = this.employees.filter((e) => String(e.id).trim().toUpperCase() !== targetId);
     this.saveEmployeesLocal();
 
+    // Also remove from local fingerprints state
+    this.fingerprints = this.fingerprints.filter((fp) => String(fp.employeeId).trim().toUpperCase() !== targetId);
+
     try {
       await apiClient.deleteEmployee(id);
     } catch (err) {
       console.warn('Backend employee delete warning:', err);
+    }
+
+    try {
+      await apiClient.deleteFingerprint(id);
+    } catch (err) {
+      console.warn('Backend fingerprint delete warning:', err);
     }
   }
 
