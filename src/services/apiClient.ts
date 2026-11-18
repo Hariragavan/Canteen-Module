@@ -1,5 +1,6 @@
 import type {
   Employee,
+  FingerprintRecord,
   FoodTransportRecord,
   MealFeedback,
   MealSlotConfig,
@@ -15,6 +16,7 @@ export interface DbStatusInfo {
   uri?: string;
   counts?: {
     employees: number;
+    fingerprints?: number;
     orders: number;
     mealSlots: number;
     foodTransports: number;
@@ -467,6 +469,61 @@ class ApiClient {
       this.notifySubscribers();
     } catch (err) {
       console.warn('API deleteFeedback error:', err);
+    }
+  }
+
+  // ==========================================================================
+  // FINGERPRINTS (Mantra MFS100 Biometric Store)
+  // ==========================================================================
+  public async getFingerprints(): Promise<FingerprintRecord[]> {
+    try {
+      const res = await this.request('/fingerprints');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (e) {
+      console.warn('API getFingerprints offline:', e);
+      return [];
+    }
+  }
+
+  public async getFingerprintByEmployeeId(employeeId: string): Promise<FingerprintRecord | null> {
+    try {
+      const res = await this.request(`/fingerprints/${encodeURIComponent(employeeId)}`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
+
+  public async saveFingerprint(fp: Partial<FingerprintRecord>): Promise<FingerprintRecord> {
+    try {
+      const res = await this.request('/fingerprints', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fp),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Failed to save fingerprint (HTTP ${res.status})`);
+      }
+      const data = await res.json();
+      this.notifySubscribers();
+      return data;
+    } catch (err) {
+      console.warn('API saveFingerprint error:', err);
+      throw err;
+    }
+  }
+
+  public async deleteFingerprint(employeeId: string): Promise<void> {
+    try {
+      await this.request(`/fingerprints/${encodeURIComponent(employeeId)}`, {
+        method: 'DELETE',
+      });
+      this.notifySubscribers();
+    } catch (err) {
+      console.warn('API deleteFingerprint error:', err);
     }
   }
 }

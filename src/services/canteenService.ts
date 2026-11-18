@@ -1,5 +1,6 @@
 import type {
   Employee,
+  FingerprintRecord,
   MealFeedback,
   MealSlotConfig,
   MealSlotName,
@@ -119,6 +120,7 @@ export const isStaleDummyDescription = (desc?: string): boolean => {
 
 class CanteenService {
   private employees: Employee[] = [];
+  private fingerprints: FingerprintRecord[] = [];
   private orders: Order[] = [];
   private mealSlots: MealSlotConfig[] = [...DEFAULT_MEAL_SLOTS];
   private transportUnits: TransportUnit[] = [...DEFAULT_TRANSPORT_UNITS];
@@ -371,8 +373,61 @@ class CanteenService {
         this.feedbacks = remoteFbs;
         this.saveFeedbacksLocal();
       }
+
+      // 7. Fetch remote fingerprints (Mantra MFS100) & attach to employees
+      const remoteFps = await apiClient.getFingerprints();
+      if (Array.isArray(remoteFps)) {
+        this.fingerprints = remoteFps;
+        const fpMap = new Map<string, FingerprintRecord>();
+        remoteFps.forEach((fp) => {
+          if (fp.employeeId) fpMap.set(fp.employeeId.toUpperCase(), fp);
+        });
+
+        this.employees.forEach((emp) => {
+          const matchedFp = fpMap.get(emp.id.toUpperCase());
+          if (matchedFp) {
+            emp.fingerprints = matchedFp;
+            emp.hasFingerprint = true;
+          } else {
+            emp.hasFingerprint = false;
+          }
+        });
+      }
     } catch (err) {
       console.warn('syncFromDatabase warning:', err);
+    }
+  }
+
+  public getFingerprints(): FingerprintRecord[] {
+    return this.fingerprints.filter((f) => f.isActive !== false);
+  }
+
+  public async saveFingerprint(fp: Partial<FingerprintRecord>): Promise<FingerprintRecord> {
+    const saved = await apiClient.saveFingerprint(fp);
+    const cleanId = String(saved.employeeId).toUpperCase();
+    const existingIdx = this.fingerprints.findIndex((f) => String(f.employeeId).toUpperCase() === cleanId);
+    if (existingIdx >= 0) {
+      this.fingerprints[existingIdx] = saved;
+    } else {
+      this.fingerprints.unshift(saved);
+    }
+
+    const emp = this.employees.find((e) => String(e.id).toUpperCase() === cleanId);
+    if (emp) {
+      emp.fingerprints = saved;
+      emp.hasFingerprint = true;
+    }
+    return saved;
+  }
+
+  public async deleteFingerprint(employeeId: string): Promise<void> {
+    await apiClient.deleteFingerprint(employeeId);
+    const cleanId = String(employeeId).toUpperCase();
+    this.fingerprints = this.fingerprints.filter((f) => String(f.employeeId).toUpperCase() !== cleanId);
+    const emp = this.employees.find((e) => String(e.id).toUpperCase() === cleanId);
+    if (emp) {
+      emp.fingerprints = null;
+      emp.hasFingerprint = false;
     }
   }
 

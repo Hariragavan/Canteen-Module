@@ -2,16 +2,42 @@ export type MealSlotName = 'Tiffin' | 'Lunch' | 'Tea/Snacks' | 'Breakfast' | 'Te
 
 export type UserRole = 'Employee' | 'Staff';
 
+export interface SingleFingerData {
+  fingerName: string;   // e.g. 'Right Thumb', 'Right Index', 'Left Thumb', 'Left Index'
+  isoTemplate: string;  // Base64 encoded ISO-19794-2 template from Mantra MFS100
+  ansiTemplate?: string;
+  bitmapData?: string;  // Base64 preview image
+  quality: number;      // Capture quality score 0-100
+}
+
+export interface FingerprintRecord {
+  id?: string;
+  _id?: string;
+  employeeId: string;
+  employeeName?: string;
+  dept?: string;
+  finger1: SingleFingerData;
+  finger2: SingleFingerData;
+  deviceModel?: string;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Employee {
   id: string;          // e.g. EMP-1001 or STF-2001
   name: string;
   dept: string;
-  photo: string;
-  confidence: number;
+  photo?: string;
+  confidence?: number;
   subsidyRate: number; // 1.0 = 100% covered
   role: UserRole;
-  face_descriptor?: number[] | null; // 128-dimensional biometric embedding vector
-  embedding?: number[] | null;       // Alias for face_descriptor
+  // Biometric details:
+  fingerprints?: FingerprintRecord | null;
+  hasFingerprint?: boolean;
+  // Backup / Legacy Face Recognition details (dormant/inactive):
+  face_descriptor?: number[] | null;
+  embedding?: number[] | null;
 }
 
 export interface MealSlotConfig {

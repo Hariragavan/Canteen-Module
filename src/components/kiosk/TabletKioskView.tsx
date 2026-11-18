@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { Employee, MealSlotConfig, MealSlotName, Order } from '../../types';
+import type { Employee, FingerprintRecord, MealSlotConfig, MealSlotName, Order } from '../../types';
 import { canteenService, DEFAULT_MEAL_SLOTS } from '../../services/canteenService';
 import { apiClient } from '../../services/apiClient';
 import { soundEngine } from '../../services/soundEngine';
 import { faceMatcherService } from '../../services/faceMatcherService';
 import { FaceScannerHUD } from './FaceScannerHUD';
 import type { FaceScannerHUDHandle } from './FaceScannerHUD';
+import { FingerprintScannerHUD } from './FingerprintScannerHUD';
 import { CameraVerifyModal } from './CameraVerifyModal';
 import { ThermalReceipt, type ThermalReceiptHandle } from '../printer/ThermalReceipt';
 import {
@@ -40,7 +41,9 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
   onOpenAdminModal,
 }) => {
   const [kioskStep, setKioskStep] = useState<'SCANNING' | 'VERIFIED'>('SCANNING');
+  const [authMode, setAuthMode] = useState<'fingerprint' | 'face'>('fingerprint'); // Default to Mantra Fingerprint, Face is backup
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [fingerprints, setFingerprints] = useState<FingerprintRecord[]>([]);
   const [mealSlots, setMealSlots] = useState<MealSlotConfig[]>(canteenService.getMealSlots());
   const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
   const [verificationError, setVerificationError] = useState<string | null>(null);
@@ -106,6 +109,8 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
   const loadRoster = useCallback(() => {
     const emps = canteenService.getEmployees();
     setEmployees(emps);
+    const fps = canteenService.getFingerprints();
+    setFingerprints(fps);
   }, []);
 
   const loadMealSlots = useCallback(() => {
@@ -344,14 +349,14 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     setAutoResetSeconds(10);
     setVerifiedTimeoutSeconds(30);
 
-    if (turnOnCamera) {
+    if (turnOnCamera && authMode === 'face') {
       setAutoStartCamera(true);
       setTimeout(() => {
         hudRef.current?.startCamera();
         setAutoStartCamera(false);
       }, 150);
     }
-  }, []);
+  }, [authMode]);
 
   // Auto-close food type selection in 30 seconds after verified user, returning to scanning page
   useEffect(() => {
@@ -605,35 +610,71 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
             );
           })()}
 
-          {/* Centered Camera Viewfinder Box */}
+          {/* Centered Biometric Authentication Box (Fingerprint Default / Camera Face Backup) */}
           <div className="w-full bg-white border border-slate-200 rounded-3xl p-3 sm:p-4 shadow-sm flex flex-col items-center gap-2.5">
             
             <div className="w-full flex items-center justify-between pb-1.5 border-b border-slate-100">
               <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                 <Scan className="w-4 h-4 text-emerald-600" />
-                <span>Biometric Camera Face Verification</span>
+                <span>
+                  {authMode === 'fingerprint'
+                    ? 'Mantra USB Fingerprint Authentication'
+                    : 'Biometric Camera Face Verification (Backup)'}
+                </span>
               </span>
-              <span className="text-[10px] font-mono text-slate-500">
-                {currentTimeStr} • Live Roster Matching
-              </span>
+              
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono text-slate-500 hidden sm:inline">
+                  {currentTimeStr} • Live Roster Matching
+                </span>
+                
+                {/* Discrete Backup Mode Switcher */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextMode = authMode === 'fingerprint' ? 'face' : 'fingerprint';
+                    setAuthMode(nextMode);
+                    setVerificationError(null);
+                    if (nextMode === 'face') {
+                      setTimeout(() => hudRef.current?.startCamera(), 200);
+                    }
+                  }}
+                  className="px-2 py-0.5 rounded-lg text-[10px] font-bold border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 transition-colors"
+                  title="Switch between Mantra Fingerprint and Backup Face Scanner"
+                >
+                  {authMode === 'fingerprint' ? 'Backup Face Scan' : 'Switch to Fingerprint'}
+                </button>
+              </div>
             </div>
 
-            {/* Camera Viewfinder with Head & Shoulder Silhouette Overlay */}
-            <FaceScannerHUD
-              ref={hudRef}
-              currentEmployee={currentEmployee}
-              knownEmployees={employees}
-              isScanning={isProcessingScan}
-              isCapturing={isCapturing}
-              isVerified={isScanVerified}
-              autoStartCamera={autoStartCamera}
-              onUserIdentified={handleUserIdentified}
-              onFaceNotRegistered={(reason) => {
-                soundEngine.playWarningBuzzer();
-                setVerificationError(reason);
-              }}
-              onAutoScan={handleCaptureAndScan}
-            />
+            {/* Primary Mode: Mantra USB Fingerprint Scanner */}
+            {authMode === 'fingerprint' && (
+              <FingerprintScannerHUD
+                employees={employees}
+                fingerprints={fingerprints}
+                onUserIdentified={(emp) => handleUserIdentified(emp)}
+                onError={(err) => setVerificationError(err)}
+              />
+            )}
+
+            {/* Backup Mode: Camera Viewfinder with Head & Shoulder Silhouette Overlay */}
+            {authMode === 'face' && (
+              <FaceScannerHUD
+                ref={hudRef}
+                currentEmployee={currentEmployee}
+                knownEmployees={employees}
+                isScanning={isProcessingScan}
+                isCapturing={isCapturing}
+                isVerified={isScanVerified}
+                autoStartCamera={autoStartCamera}
+                onUserIdentified={handleUserIdentified}
+                onFaceNotRegistered={(reason) => {
+                  soundEngine.playWarningBuzzer();
+                  setVerificationError(reason);
+                }}
+                onAutoScan={handleCaptureAndScan}
+              />
+            )}
 
           </div>
 

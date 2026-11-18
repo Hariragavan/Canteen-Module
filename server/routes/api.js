@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { Employee } from '../models/Employee.js';
+import { Fingerprint } from '../models/Fingerprint.js';
 import { Order } from '../models/Order.js';
 import { MealSlot } from '../models/MealSlot.js';
 import { TransportUnit } from '../models/TransportUnit.js';
@@ -27,8 +28,9 @@ router.get('/status', async (req, res) => {
   try {
     const status = getDbStatus();
     if (status.isConnected) {
-      const [empCount, orderCount, slotCount, transportCount, feedbackCount] = await Promise.all([
+      const [empCount, fpCount, orderCount, slotCount, transportCount, feedbackCount] = await Promise.all([
         Employee.countDocuments(),
+        Fingerprint.countDocuments(),
         Order.countDocuments(),
         MealSlot.countDocuments(),
         FoodTransport.countDocuments(),
@@ -38,6 +40,7 @@ router.get('/status', async (req, res) => {
         ...status,
         counts: {
           employees: empCount,
+          fingerprints: fpCount,
           orders: orderCount,
           mealSlots: slotCount,
           foodTransports: transportCount,
@@ -336,6 +339,88 @@ router.delete('/feedbacks/:id', async (req, res) => {
   try {
     await Feedback.findByIdAndDelete(req.params.id);
     res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================================
+// 6. FINGERPRINTS (Mantra MFS100 Biometric Store)
+// ============================================================================
+router.get('/fingerprints', async (req, res) => {
+  try {
+    const list = await Fingerprint.find({ isActive: true }).lean();
+    res.json(list);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/fingerprints/:employeeId', async (req, res) => {
+  try {
+    const cleanId = String(req.params.employeeId).trim().toUpperCase();
+    const fp = await Fingerprint.findOne({ employeeId: cleanId, isActive: true }).lean();
+    if (!fp) {
+      return res.status(404).json({ error: 'Fingerprint not found for employee' });
+    }
+    res.json(fp);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/fingerprints', async (req, res) => {
+  try {
+    const { employeeId, employeeName, dept, finger1, finger2, deviceModel } = req.body;
+    if (!employeeId) {
+      return res.status(400).json({ error: 'employeeId is required.' });
+    }
+    if (!finger1?.isoTemplate || !finger2?.isoTemplate) {
+      return res.status(400).json({ error: 'Both Finger 1 and Finger 2 ISO templates are required.' });
+    }
+
+    const cleanId = String(employeeId).trim().toUpperCase();
+
+    // Upsert fingerprint record for this employee
+    const record = await Fingerprint.findOneAndUpdate(
+      { employeeId: cleanId },
+      {
+        $set: {
+          employeeId: cleanId,
+          employeeName: employeeName || '',
+          dept: dept || 'Employee',
+          finger1: {
+            fingerName: finger1.fingerName || 'Right Thumb',
+            isoTemplate: finger1.isoTemplate,
+            ansiTemplate: finger1.ansiTemplate || '',
+            bitmapData: finger1.bitmapData || '',
+            quality: finger1.quality || 0,
+          },
+          finger2: {
+            fingerName: finger2.fingerName || 'Right Index',
+            isoTemplate: finger2.isoTemplate,
+            ansiTemplate: finger2.ansiTemplate || '',
+            bitmapData: finger2.bitmapData || '',
+            quality: finger2.quality || 0,
+          },
+          deviceModel: deviceModel || 'Mantra MFS100',
+          isActive: true,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    res.status(201).json(record);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete('/fingerprints/:employeeId', async (req, res) => {
+  try {
+    const cleanId = String(req.params.employeeId).trim().toUpperCase();
+    await Fingerprint.findOneAndDelete({ employeeId: cleanId });
+    res.json({ success: true, message: `Fingerprint for ${cleanId} deleted.` });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

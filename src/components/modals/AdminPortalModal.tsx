@@ -31,8 +31,12 @@ import {
   ArrowLeft,
   Truck,
   MessageSquareHeart,
+  Fingerprint as FingerprintIcon,
+  Usb,
+  ShieldCheck,
 } from 'lucide-react';
 import type { MealSlotConfig, MealSlotName } from '../../types';
+import { mantraService } from '../../services/mantraService';
 
 import {
   faceMatcherService,
@@ -90,6 +94,116 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     photo: '',
     face_descriptor: null,
   });
+
+  // Biometric Mode for New Personnel Registration: 'fingerprint' (Default Mantra MFS100) or 'face' (Backup)
+  const [regMode, setRegMode] = useState<'fingerprint' | 'face'>('fingerprint');
+
+  const FINGER_OPTIONS = [
+    'Right Thumb',
+    'Right Index',
+    'Right Middle',
+    'Right Ring',
+    'Right Little',
+    'Left Thumb',
+    'Left Index',
+    'Left Middle',
+    'Left Ring',
+    'Left Little',
+  ];
+
+  const [finger1, setFinger1] = useState<{
+    fingerName: string;
+    isoTemplate: string;
+    bitmapData: string;
+    quality: number;
+  }>({
+    fingerName: 'Right Thumb',
+    isoTemplate: '',
+    bitmapData: '',
+    quality: 0,
+  });
+
+  const [finger2, setFinger2] = useState<{
+    fingerName: string;
+    isoTemplate: string;
+    bitmapData: string;
+    quality: number;
+  }>({
+    fingerName: 'Right Index',
+    isoTemplate: '',
+    bitmapData: '',
+    quality: 0,
+  });
+
+  const [isScanningFp1, setIsScanningFp1] = useState<boolean>(false);
+  const [isScanningFp2, setIsScanningFp2] = useState<boolean>(false);
+  const [mantraInfo, setMantraInfo] = useState<{ isConnected: boolean; model: string }>({
+    isConnected: false,
+    model: 'MFS100',
+  });
+
+  const checkMantraInAdmin = async () => {
+    const info = await mantraService.checkDevice();
+    setMantraInfo({ isConnected: info.isConnected, model: info.model });
+  };
+
+  useEffect(() => {
+    if (isOpen && isRegisteringNew && regMode === 'fingerprint') {
+      checkMantraInAdmin();
+    }
+  }, [isOpen, isRegisteringNew, regMode]);
+
+  const handleScanFinger1 = async () => {
+    setIsScanningFp1(true);
+    setErrorMessage(null);
+    soundEngine.playScannerBeep();
+    try {
+      const res = await mantraService.captureFingerprint(60, 8);
+      if (res.success && res.isoTemplate) {
+        soundEngine.playVerificationChime();
+        setFinger1((prev) => ({
+          ...prev,
+          isoTemplate: res.isoTemplate,
+          bitmapData: res.bitmapData,
+          quality: res.quality,
+        }));
+      } else {
+        soundEngine.playWarningBuzzer();
+        setErrorMessage(res.errorDescription || 'Fingerprint capture timed out or failed.');
+      }
+    } catch (e: any) {
+      soundEngine.playWarningBuzzer();
+      setErrorMessage(e.message || 'Mantra communication error.');
+    } finally {
+      setIsScanningFp1(false);
+    }
+  };
+
+  const handleScanFinger2 = async () => {
+    setIsScanningFp2(true);
+    setErrorMessage(null);
+    soundEngine.playScannerBeep();
+    try {
+      const res = await mantraService.captureFingerprint(60, 8);
+      if (res.success && res.isoTemplate) {
+        soundEngine.playVerificationChime();
+        setFinger2((prev) => ({
+          ...prev,
+          isoTemplate: res.isoTemplate,
+          bitmapData: res.bitmapData,
+          quality: res.quality,
+        }));
+      } else {
+        soundEngine.playWarningBuzzer();
+        setErrorMessage(res.errorDescription || 'Fingerprint capture timed out or failed.');
+      }
+    } catch (e: any) {
+      soundEngine.playWarningBuzzer();
+      setErrorMessage(e.message || 'Mantra communication error.');
+    } finally {
+      setIsScanningFp2(false);
+    }
+  };
 
   // Camera capture state
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -196,13 +310,14 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   }, [isCameraActive]);
 
   useEffect(() => {
-    if (isOpen && activeTab === 'registered' && isRegisteringNew && !formData.photo) {
+    // Only engage camera when user explicitly opts into Backup Face Scan mode
+    if (isOpen && activeTab === 'registered' && isRegisteringNew && !formData.photo && regMode === 'face') {
       startCamera(facingMode);
-    } else if (!isOpen || activeTab !== 'registered' || !isRegisteringNew || formData.photo) {
+    } else if (!isOpen || activeTab !== 'registered' || !isRegisteringNew || formData.photo || regMode !== 'face') {
       stopCamera();
     }
     return () => stopCamera();
-  }, [isOpen, activeTab, isRegisteringNew, formData.photo]);
+  }, [isOpen, activeTab, isRegisteringNew, formData.photo, regMode]);
 
   // Take photo snapshot from video stream and compute 128D biometric descriptor
   const capturePhoto = async () => {
@@ -426,36 +541,129 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     });
   };
 
-  // Submit New Registration
+  // Submit New Registration (Fingerprint or Backup Face)
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    if (!formData.name.trim()) {
+    const cleanName = formData.name.trim();
+    const cleanId = formData.id.trim().toUpperCase();
+
+    if (!cleanName) {
       setErrorMessage('Please enter Full Name.');
       return;
     }
-    if (!formData.id.trim()) {
+    if (!cleanId) {
       setErrorMessage('Please enter an Employee/Staff ID.');
-      return;
-    }
-    if (!formData.photo) {
-      setErrorMessage('Please capture or upload a photo for biometric face recognition.');
       return;
     }
 
     // Safety Check 1: Prevent duplicate ID
     const existingIdMatch = employees.find(
-      (emp) => emp.id.toUpperCase() === formData.id.trim().toUpperCase()
+      (emp) => emp.id.toUpperCase() === cleanId
     );
     if (existingIdMatch) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage(`ID Conflict: Employee ID "${formData.id.trim().toUpperCase()}" is already registered to ${existingIdMatch.name}.`);
+      setErrorMessage(`ID Conflict: Personnel ID "${cleanId}" is already registered to ${existingIdMatch.name}.`);
       return;
     }
 
-    // Safety Check 2: Require valid biometric descriptor & prevent duplicate face
+    const role: 'Staff' | 'Employee' = formData.dept.toLowerCase().includes('staff') ? 'Staff' : 'Employee';
+
+    // FINGERPRINT REGISTRATION MODE (Mantra MFS100 Two-Finger Enrollment)
+    if (regMode === 'fingerprint') {
+      if (!finger1.isoTemplate) {
+        soundEngine.playWarningBuzzer();
+        setErrorMessage('Biometric Requirement: Please scan Finger 1 (Primary finger).');
+        return;
+      }
+      if (!finger2.isoTemplate) {
+        soundEngine.playWarningBuzzer();
+        setErrorMessage('Biometric Requirement: Please scan Finger 2 (Secondary backup finger).');
+        return;
+      }
+
+      try {
+        const newEmployee: Employee = {
+          id: cleanId,
+          name: cleanName,
+          dept: formData.dept,
+          photo: finger1.bitmapData || '',
+          confidence: 0.99,
+          subsidyRate: 1.0,
+          role,
+          hasFingerprint: true,
+        };
+
+        // 1. Save to Employee store
+        await canteenService.addEmployee(newEmployee);
+
+        // 2. Save Two-Finger biometrics to dedicated Fingerprints store
+        await canteenService.saveFingerprint({
+          employeeId: cleanId,
+          employeeName: cleanName,
+          dept: formData.dept,
+          finger1: {
+            fingerName: finger1.fingerName,
+            isoTemplate: finger1.isoTemplate,
+            bitmapData: finger1.bitmapData,
+            quality: finger1.quality,
+          },
+          finger2: {
+            fingerName: finger2.fingerName,
+            isoTemplate: finger2.isoTemplate,
+            bitmapData: finger2.bitmapData,
+            quality: finger2.quality,
+          },
+        });
+
+        soundEngine.playVerificationChime();
+        setSuccessMessage(`✓ Successfully registered ${cleanName} (${cleanId}) with 2 fingerprints enrolled! Ready for next personnel.`);
+        loadEmployees();
+        if (onRosterUpdated) onRosterUpdated();
+
+        // Reset form & fingerprints for next continuous registration
+        const nextId = formData.dept.toLowerCase().includes('staff')
+          ? `STF-${1000 + employees.length + 2}`
+          : `EMP-${1000 + employees.length + 2}`;
+
+        setFormData({
+          id: nextId,
+          name: '',
+          dept: formData.dept,
+          photo: '',
+          face_descriptor: null,
+        });
+
+        setFinger1({
+          fingerName: 'Right Thumb',
+          isoTemplate: '',
+          bitmapData: '',
+          quality: 0,
+        });
+
+        setFinger2({
+          fingerName: 'Right Index',
+          isoTemplate: '',
+          bitmapData: '',
+          quality: 0,
+        });
+      } catch (err: unknown) {
+        soundEngine.playWarningBuzzer();
+        const msg = err instanceof Error ? err.message : 'Fingerprint registration failed';
+        setErrorMessage(`Registration Error: ${msg}`);
+      }
+      return;
+    }
+
+    // BACKUP FACE REGISTRATION MODE
+    if (!formData.photo) {
+      setErrorMessage('Please capture or upload a photo for backup biometric face recognition.');
+      return;
+    }
+
+    // Require valid biometric descriptor & prevent duplicate face
     if (!formData.face_descriptor || formData.face_descriptor.length !== 128) {
       soundEngine.playWarningBuzzer();
       setErrorMessage('Biometric Requirement: A valid human face must be detected before registration. Please capture or upload a clear photo.');
@@ -470,11 +678,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     }
 
     try {
-      const role: 'Staff' | 'Employee' = formData.dept.toLowerCase().includes('staff') ? 'Staff' : 'Employee';
-
       const newEmployee: Employee = {
-        id: formData.id.trim().toUpperCase(),
-        name: formData.name.trim(),
+        id: cleanId,
+        name: cleanName,
         dept: formData.dept,
         photo: formData.photo,
         confidence: 0.985,
@@ -506,9 +712,8 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       setIsCapturing(false);
       setIsExtractingBiometric(false);
 
-      // Re-start camera immediately so capture button works right away for next registration!
       setTimeout(() => {
-        startCamera(facingMode);
+        if (regMode === 'face') startCamera(facingMode);
       }, 250);
     } catch (err: unknown) {
       soundEngine.playWarningBuzzer();
@@ -1119,9 +1324,11 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                             <span className="font-semibold text-slate-700">{emp.id}</span> •{' '}
                             <span className="font-sans">{emp.dept}</span>
                           </p>
-                          <p className="text-[10px] text-emerald-700 font-semibold mt-0.5">
-                            Face Match Confidence: {(emp.confidence * 100).toFixed(1)}%
-                          </p>
+                          {typeof emp.confidence === 'number' && (
+                            <p className="text-[10px] text-emerald-700 font-semibold mt-0.5">
+                              Face Match Confidence: {(emp.confidence * 100).toFixed(1)}%
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -1190,211 +1397,316 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 </div>
               )}
 
+              {/* Top Selector: Mantra Fingerprint (Default) vs Backup Camera Face Scan */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50 p-2 sm:p-2.5 rounded-2xl border border-slate-200">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRegMode('fingerprint');
+                      stopCamera();
+                      setErrorMessage(null);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      regMode === 'fingerprint'
+                        ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                    }`}
+                  >
+                    <FingerprintIcon className="w-4 h-4" />
+                    <span>Mantra Fingerprint (Two-Finger Enrollment)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRegMode('face');
+                      setErrorMessage(null);
+                      setTimeout(() => startCamera(facingMode), 200);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      regMode === 'face'
+                        ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                    }`}
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>Backup Face Scan</span>
+                  </button>
+                </div>
+
+                {/* Live Device Connection Badge */}
+                {regMode === 'fingerprint' && (
+                  <div className="flex items-center gap-2 text-xs font-medium">
+                    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 font-mono text-[11px]">
+                      <Usb className={`w-3.5 h-3.5 ${mantraInfo.isConnected ? 'text-emerald-600 animate-pulse' : 'text-amber-500'}`} />
+                      <span>{mantraInfo.isConnected ? 'Mantra MFS100 Connected' : 'MFS100 Ready / USB'}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !mantraService.getMockMode();
+                        mantraService.setMockMode(next);
+                        checkMantraInAdmin();
+                      }}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${
+                        mantraService.getMockMode()
+                          ? 'bg-amber-100 text-amber-900 border-amber-300'
+                          : 'bg-white text-slate-500 hover:text-slate-800 border-slate-200'
+                      }`}
+                      title="Toggle simulated test mode"
+                    >
+                      {mantraService.getMockMode() ? 'Simulator ON' : 'Test Mode'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
                 
-                {/* LEFT: Camera Face Image Capture (5 cols) */}
-                <div className="md:col-span-5 bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col items-center gap-3 text-center">
-                  <div className="w-full flex items-center justify-between pb-2 border-b border-slate-200">
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                      <Camera className="w-4 h-4 text-emerald-600" />
-                      <span>Biometric Face Capture</span>
-                    </span>
-                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
-                      isCameraActive ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold' : 'bg-white text-slate-600 border-slate-200'
-                    }`}>
-                      {isCameraActive ? 'Live Stream Active' : 'Camera Standby'}
-                    </span>
-                  </div>
-
-                  {/* Video Viewport or Captured Snapshot Preview */}
-                  <div className="relative w-56 h-56 rounded-3xl overflow-hidden shadow-inner flex items-center justify-center border-2 border-slate-700 bg-slate-900">
-                    {/* Always keep video element mounted in DOM to guarantee ref attachment */}
-                    <video
-                      ref={videoRef}
-                      playsInline
-                      muted
-                      autoPlay
-                      onLoadedMetadata={() => videoRef.current?.play().catch(() => {})}
-                      onCanPlay={() => videoRef.current?.play().catch(() => {})}
-                      className={`w-full h-full object-cover absolute inset-0 transition-opacity duration-300 ${
-                        facingMode === 'user' ? 'mirror' : ''
-                      } ${isCameraActive && !formData.photo ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none'}`}
-                    />
-
-                    {formData.photo ? (
-                      <img
-                        src={formData.photo}
-                        alt="Captured face"
-                        className="w-full h-full object-cover z-10"
-                      />
-                    ) : !isCameraActive ? (
-                      /* Camera Closed Placeholder with Open Camera button */
-                      <div className="flex flex-col items-center justify-center p-3 text-center z-10">
-                        <div className="w-11 h-11 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 mb-1.5 shadow-inner">
-                          <CameraOff className="w-5 h-5" />
-                        </div>
-                        <p className="text-xs font-bold text-slate-200">Camera is Closed</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5 mb-2.5 font-sans">
-                          Current mode: <span className="font-semibold text-emerald-400">{facingMode === 'user' ? 'Front Camera' : 'Back Camera'}</span>
-                        </p>
-                        <div className="flex items-center space-x-2">
-                          <button
-                            type="button"
-                            onClick={() => startCamera(facingMode)}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[11px] font-bold shadow-md shadow-emerald-600/30 flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer"
-                          >
-                            <Camera className="w-3.5 h-3.5" />
-                            <span>Open Camera</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = facingMode === 'user' ? 'environment' : 'user';
-                              setFacingMode(next);
-                            }}
-                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-[11px] font-medium border border-slate-700 flex items-center space-x-1 transition-all cursor-pointer"
-                            title="Switch camera mode before opening"
-                          >
-                            <SwitchCamera className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>{facingMode === 'user' ? 'Use Back Cam' : 'Use Front Cam'}</span>
-                          </button>
-                        </div>
+                {/* ========================================================= */}
+                {/* 1. MANTRA FINGERPRINT ENROLLMENT (TWO FINGERS)            */}
+                {/* ========================================================= */}
+                {regMode === 'fingerprint' && (
+                  <div className="md:col-span-5 flex flex-col gap-3.5">
+                    
+                    {/* Finger 1 Card (Primary) */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-2xs">
+                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                        <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                          <FingerprintIcon className="w-4 h-4 text-emerald-600" />
+                          <span>Finger 1 (Primary) *</span>
+                        </span>
+                        {finger1.isoTemplate && (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300 flex items-center gap-1">
+                            <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                            <span>Quality: {finger1.quality}%</span>
+                          </span>
+                        )}
                       </div>
-                    ) : (
-                      <>
-                        {/* Top-Left Corner: Button to Switch between Front and Rear Camera */}
+
+                      {/* Finger Name Selector */}
+                      <select
+                        value={finger1.fingerName}
+                        onChange={(e) => setFinger1({ ...finger1, fingerName: e.target.value })}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"
+                      >
+                        {FINGER_OPTIONS.map((f) => (
+                          <option key={f} value={f}>
+                            {f}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Finger 1 Preview or Scan Dock */}
+                      <div className="h-32 bg-slate-900 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center relative">
+                        {finger1.bitmapData ? (
+                          <img
+                            src={finger1.bitmapData}
+                            alt="Finger 1 scan"
+                            className="h-full object-contain filter contrast-125"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center justify-center text-slate-400 gap-1">
+                            <FingerprintIcon className="w-10 h-10 text-slate-600" />
+                            <span className="text-[10px] font-mono">Not Enrolled Yet</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleScanFinger1}
+                        disabled={isScanningFp1}
+                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 cursor-pointer"
+                      >
+                        <FingerprintIcon className="w-4 h-4" />
+                        <span>{isScanningFp1 ? 'Scanning on Mantra...' : finger1.isoTemplate ? 'Rescan Finger 1' : 'Scan Finger 1 on Device'}</span>
+                      </button>
+                    </div>
+
+                    {/* Finger 2 Card (Backup) */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-2xs">
+                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                        <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                          <FingerprintIcon className="w-4 h-4 text-blue-600" />
+                          <span>Finger 2 (Secondary / Backup) *</span>
+                        </span>
+                        {finger2.isoTemplate && (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-bold border border-blue-300 flex items-center gap-1">
+                            <ShieldCheck className="w-3 h-3 text-blue-600" />
+                            <span>Quality: {finger2.quality}%</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Finger Name Selector */}
+                      <select
+                        value={finger2.fingerName}
+                        onChange={(e) => setFinger2({ ...finger2, fingerName: e.target.value })}
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"
+                      >
+                        {FINGER_OPTIONS.map((f) => (
+                          <option key={f} value={f}>
+                            {f}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Finger 2 Preview or Scan Dock */}
+                      <div className="h-32 bg-slate-900 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center relative">
+                        {finger2.bitmapData ? (
+                          <img
+                            src={finger2.bitmapData}
+                            alt="Finger 2 scan"
+                            className="h-full object-contain filter contrast-125"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center justify-center text-slate-400 gap-1">
+                            <FingerprintIcon className="w-10 h-10 text-slate-600" />
+                            <span className="text-[10px] font-mono">Not Enrolled Yet</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleScanFinger2}
+                        disabled={isScanningFp2}
+                        className="w-full py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 cursor-pointer"
+                      >
+                        <FingerprintIcon className="w-4 h-4" />
+                        <span>{isScanningFp2 ? 'Scanning on Mantra...' : finger2.isoTemplate ? 'Rescan Finger 2' : 'Scan Finger 2 on Device'}</span>
+                      </button>
+                    </div>
+
+                  </div>
+                )}
+
+                {/* ========================================================= */}
+                {/* 2. BACKUP: Camera Face Image Capture (5 cols)             */}
+                {/* ========================================================= */}
+                {regMode === 'face' && (
+                  <div className="md:col-span-5 bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col items-center gap-3 text-center">
+                    <div className="w-full flex items-center justify-between pb-2 border-b border-slate-200">
+                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Camera className="w-4 h-4 text-emerald-600" />
+                        <span>Biometric Face Capture (Backup)</span>
+                      </span>
+                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                        isCameraActive ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold' : 'bg-white text-slate-600 border-slate-200'
+                      }`}>
+                        {isCameraActive ? 'Live Stream Active' : 'Camera Standby'}
+                      </span>
+                    </div>
+
+                    {/* Video Viewport or Captured Snapshot Preview */}
+                    <div className="relative w-56 h-56 rounded-3xl overflow-hidden shadow-inner flex items-center justify-center border-2 border-slate-700 bg-slate-900">
+                      <video
+                        ref={videoRef}
+                        playsInline
+                        muted
+                        autoPlay
+                        onLoadedMetadata={() => videoRef.current?.play().catch(() => {})}
+                        onCanPlay={() => videoRef.current?.play().catch(() => {})}
+                        className={`w-full h-full object-cover absolute inset-0 transition-opacity duration-300 ${
+                          facingMode === 'user' ? 'mirror' : ''
+                        } ${isCameraActive && !formData.photo ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none'}`}
+                      />
+
+                      {formData.photo ? (
+                        <img
+                          src={formData.photo}
+                          alt="Captured face"
+                          className="w-full h-full object-cover z-10"
+                        />
+                      ) : !isCameraActive ? (
+                        <div className="flex flex-col items-center justify-center p-3 text-center z-10">
+                          <div className="w-11 h-11 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 mb-1.5 shadow-inner">
+                            <CameraOff className="w-5 h-5" />
+                          </div>
+                          <p className="text-xs font-bold text-slate-200">Camera is Closed</p>
+                          <div className="mt-2 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => startCamera(facingMode)}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[11px] font-bold shadow-md shadow-emerald-600/30 flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer"
+                            >
+                              <Camera className="w-3.5 h-3.5" />
+                              <span>Open Camera</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
                         <div className="absolute top-2 left-2 z-30 flex items-center space-x-1.5">
                           <button
                             type="button"
                             disabled={isSwitchingCamera}
                             onClick={toggleFacingMode}
-                            title={facingMode === 'user' ? 'Switch to Rear/Back Camera' : 'Switch to Front Camera'}
                             className="px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 text-white rounded-lg text-[10px] font-bold shadow-md flex items-center space-x-1 border border-slate-600 backdrop-blur-xs transition-all active:scale-95 cursor-pointer disabled:opacity-60"
                           >
                             <SwitchCamera className={`w-3 h-3 text-emerald-400 ${isSwitchingCamera ? 'animate-spin' : ''}`} />
-                            <span>{isSwitchingCamera ? 'Switching...' : facingMode === 'user' ? 'Back Cam' : 'Front Cam'}</span>
+                            <span>{facingMode === 'user' ? 'Back Cam' : 'Front Cam'}</span>
                           </button>
                         </div>
+                      )}
+                    </div>
 
-                        {/* Static framing guideline circle (no auto-scanning) */}
-                        <div className="absolute inset-4 rounded-full border-2 border-dashed border-white/45 pointer-events-none z-20 flex items-end justify-center pb-2.5">
-                          <span className="px-2.5 py-0.5 rounded-full bg-black/60 backdrop-blur-xs text-[10px] font-medium text-white/90">
-                            Position face in circle
-                          </span>
-                        </div>
-                      </>
-                    )}
-
-                    {/* Shutter flash animation */}
-                    {isCapturing && (
-                      <div className="absolute inset-0 bg-white animate-out fade-out duration-300"></div>
-                    )}
-                  </div>
-
-                  {/* Camera Actions */}
-                  <div className="w-full flex flex-col gap-2">
-                    {formData.photo ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
-                          startCamera(facingMode);
-                        }}
-                        className="w-full py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 rounded-xl text-xs font-bold shadow-2xs flex items-center justify-center space-x-1.5 cursor-pointer"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
-                        <span>Retake / Clear Photo</span>
-                      </button>
-                    ) : isCameraActive ? (
-                      <>
-                        {/* Capture Photo Button */}
+                    {/* Camera Actions */}
+                    <div className="w-full flex flex-col gap-2">
+                      {formData.photo ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
+                            startCamera(facingMode);
+                          }}
+                          className="w-full py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 rounded-xl text-xs font-bold shadow-2xs flex items-center justify-center space-x-1.5 cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
+                          <span>Retake / Clear Photo</span>
+                        </button>
+                      ) : isCameraActive ? (
                         <button
                           type="button"
                           onClick={capturePhoto}
                           disabled={isCapturing || isExtractingBiometric}
                           className="w-full py-2.5 rounded-xl text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-transform active:scale-95 bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 cursor-pointer disabled:opacity-60"
-                          title="Capture face photo"
                         >
                           <Camera className="w-4 h-4" />
-                          <span>
-                            {isCapturing || isExtractingBiometric ? 'Capturing Biometrics...' : 'Capture Photo'}
-                          </span>
+                          <span>{isCapturing || isExtractingBiometric ? 'Capturing...' : 'Capture Photo'}</span>
                         </button>
+                      ) : null}
 
-                        {/* Down of Capture button: Turn Off Camera Button */}
-                        <button
-                          type="button"
-                          onClick={stopCamera}
-                          className="w-full py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold shadow-2xs flex items-center justify-center space-x-1.5 transition-all active:scale-95 cursor-pointer"
-                          title="Turn off camera"
-                        >
-                          <CameraOff className="w-3.5 h-3.5" />
-                          <span>Turn Off Camera</span>
-                        </button>
-                      </>
-                    ) : (
-                      /* Open Camera Button when camera is off */
-                      <button
-                        type="button"
-                        onClick={() => startCamera(facingMode)}
-                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center justify-center space-x-2 transition-transform active:scale-95 cursor-pointer"
-                      >
-                        <Camera className="w-4 h-4" />
-                        <span>Open Camera</span>
-                      </button>
-                    )}
+                      <label className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold shadow-2xs flex items-center justify-center space-x-2 cursor-pointer transition-all active:scale-95">
+                        <Upload className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Upload Photo File</span>
+                        <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+                      </label>
 
-                    {/* Prominent Upload & Detect Face Button */}
-                    <label
-                      className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold shadow-2xs flex items-center justify-center space-x-2 cursor-pointer transition-all active:scale-95"
-                      title="Upload photo from device to detect face and enroll 128D biometrics"
-                    >
-                      <Upload className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Upload & Detect Face</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                      />
-                    </label>
-
-                    <div className="flex items-center justify-center space-x-2 text-[11px] text-slate-500 pt-0.5">
                       <button
                         type="button"
                         onClick={handleUseSamplePhoto}
-                        className="hover:text-emerald-700 underline cursor-pointer"
+                        className="w-full py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-[11px] font-semibold flex items-center justify-center space-x-1.5 transition-all cursor-pointer"
                       >
-                        Sample Face
+                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Use Sample Face Photo</span>
                       </button>
+
+                      {biometricStatus && (
+                        <div className="w-full p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] font-medium text-emerald-800 text-center">
+                          {biometricStatus}
+                        </div>
+                      )}
+
+                      {cameraError && (
+                        <div className="w-full p-2 bg-amber-50 border border-amber-200 rounded-xl text-[11px] font-medium text-amber-800 text-center">
+                          {cameraError}
+                        </div>
+                      )}
                     </div>
-
-                    {isExtractingBiometric && (
-                      <div className="w-full py-1.5 px-3 bg-blue-50 border border-blue-200 rounded-xl text-[10px] font-semibold text-blue-700 flex items-center justify-center gap-1.5 animate-pulse">
-                        <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
-                        <span>Extracting 128D facial embeddings...</span>
-                      </div>
-                    )}
-
-                    {biometricStatus && !isExtractingBiometric && (
-                      <div
-                        className={`w-full py-1 px-2.5 rounded-xl text-[10px] font-semibold text-center border ${
-                          biometricStatus.startsWith('✓')
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                            : 'bg-amber-50 border-amber-300 text-amber-800'
-                        }`}
-                      >
-                        {biometricStatus}
-                      </div>
-                    )}
-
-                    {cameraError && (
-                      <p className="text-[10px] text-amber-600 leading-tight">
-                        {cameraError}
-                      </p>
-                    )}
                   </div>
-                </div>
+                )}
 
                 {/* RIGHT: User Information Form (7 cols) - Strictly: Name, ID, Dept */}
                 <div className="md:col-span-7 space-y-4">
