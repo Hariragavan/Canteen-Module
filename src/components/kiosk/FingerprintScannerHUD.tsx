@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { Employee, FingerprintRecord } from '../../types';
 import { mantraService, type MantraDeviceInfo } from '../../services/mantraService';
 import { soundEngine } from '../../services/soundEngine';
@@ -10,6 +10,9 @@ import {
   Sparkles,
   Usb,
   ShieldCheck,
+  User,
+  X,
+  Search,
 } from 'lucide-react';
 
 interface FingerprintScannerHUDProps {
@@ -39,8 +42,38 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
   const [qualityScore, setQualityScore] = useState<number | null>(null);
   const [scannedImage, setScannedImage] = useState<string | null>(null);
   const [isAutoScanning] = useState<boolean>(true);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+  const [filterQuery, setFilterQuery] = useState<string>('');
   const isBusyRef = useRef<boolean>(false);
   const autoScanTimerRef = useRef<any>(null);
+
+  // Enrolled employees list with active biometrics
+  const enrolledEmployees = useMemo(() => {
+    return employees.filter((emp) =>
+      fingerprints.some(
+        (fp) =>
+          String(fp.employeeId).trim().toUpperCase() === String(emp.id).trim().toUpperCase() &&
+          fp.isActive !== false
+      )
+    );
+  }, [employees, fingerprints]);
+
+  const filteredEmployees = useMemo(() => {
+    if (!filterQuery.trim()) return enrolledEmployees;
+    const q = filterQuery.toLowerCase().trim();
+    return enrolledEmployees.filter(
+      (emp) => emp.name.toLowerCase().includes(q) || emp.id.toLowerCase().includes(q)
+    );
+  }, [enrolledEmployees, filterQuery]);
+
+  const selectedEmployee = useMemo(() => {
+    if (!selectedEmployeeId) return null;
+    return (
+      employees.find(
+        (e) => String(e.id).trim().toUpperCase() === String(selectedEmployeeId).trim().toUpperCase()
+      ) || null
+    );
+  }, [employees, selectedEmployeeId]);
 
   // 1. Check device status periodically
   const checkDeviceStatus = useCallback(async () => {
@@ -96,8 +129,12 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
       setScanState('MATCHING');
       setStatusMessage(`Analyzing fingerprint (Quality: ${captureResult.quality}%)...`);
 
-      // 1:N Biometric Matching across enrolled employees
-      const matchResult = await mantraService.identifyEmployee(captureResult.isoTemplate, fingerprints);
+      // Biometric Matching across enrolled employees (with optional 1:1 selected employee confirmation)
+      const matchResult = await mantraService.identifyEmployee(
+        captureResult.isoTemplate,
+        fingerprints,
+        selectedEmployeeId
+      );
 
       if (matchResult.matchedRecord) {
         // Find matching employee by ID
@@ -116,6 +153,7 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
             setScanState('IDLE');
             setScannedImage(null);
             setQualityScore(null);
+            setSelectedEmployeeId(null);
             isBusyRef.current = false;
           }, 600);
           return;
@@ -125,13 +163,19 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
       // No match found in database
       setScanState('ERROR');
       soundEngine.playWarningBuzzer();
-      const failMsg = 'Biometric Verification Failed: Fingerprint not enrolled in Canteen roster.';
+      const failMsg = selectedEmployee
+        ? `Biometric Verification Failed: Finger did not match selected profile ${selectedEmployee.name} (${selectedEmployee.id}).`
+        : 'Biometric Verification Failed: Fingerprint not recognized. Tap your name below to verify.';
       setStatusMessage(failMsg);
       if (onError) onError(failMsg);
 
       setTimeout(() => {
         setScanState('IDLE');
-        setStatusMessage('Place your registered finger on the Mantra sensor');
+        setStatusMessage(
+          selectedEmployee
+            ? `Place finger on sensor to confirm ${selectedEmployee.name} (${selectedEmployee.id})`
+            : 'Place your registered finger on the Mantra sensor'
+        );
         setScannedImage(null);
         setQualityScore(null);
         isBusyRef.current = false;
@@ -149,7 +193,7 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
         isBusyRef.current = false;
       }, 2500);
     }
-  }, [employees, fingerprints, onUserIdentified, onError]);
+  }, [employees, fingerprints, onUserIdentified, onError, selectedEmployeeId, selectedEmployee]);
 
   // 3. Auto-polling loop when device is connected
   useEffect(() => {
@@ -283,8 +327,42 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
         </p>
       </div>
 
+      {/* Selected Personnel Banner (1:1 Targeted Verification) */}
+      {selectedEmployee && (
+        <div className="w-full max-w-md my-2 bg-emerald-50 border-2 border-emerald-500 rounded-2xl p-3 flex items-center justify-between shadow-sm animate-in fade-in zoom-in-95">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+              {selectedEmployee.name.slice(0, 2).toUpperCase()}
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-slate-900 text-sm">{selectedEmployee.name}</span>
+                <span className="text-[10px] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-emerald-300 text-emerald-800">
+                  {selectedEmployee.id}
+                </span>
+                <span className="text-[10px] text-slate-500 font-medium">({selectedEmployee.dept})</span>
+              </div>
+              <p className="text-[11px] text-emerald-700 font-medium">
+                Targeted: Place registered finger on Mantra sensor to confirm
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedEmployeeId(null);
+              setStatusMessage('Place your registered finger on the Mantra sensor');
+            }}
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-white rounded-lg transition-colors cursor-pointer"
+            title="Deselect person"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Manual Trigger / Simulation Action Button */}
-      <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
         <button
           type="button"
           onClick={triggerScan}
@@ -292,14 +370,20 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
           className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-50 text-white font-bold text-sm shadow-md shadow-emerald-600/25 flex items-center gap-2 transition-all cursor-pointer"
         >
           <FingerprintIcon className="w-4 h-4" />
-          <span>{scanState === 'SCANNING' ? 'Scanning...' : 'Press Sensor / Tap to Scan'}</span>
+          <span>
+            {scanState === 'SCANNING'
+              ? 'Scanning on Mantra...'
+              : selectedEmployee
+              ? `Confirm & Verify ${selectedEmployee.name}`
+              : 'Press Sensor / Tap to Scan'}
+          </span>
         </button>
 
         {/* Demo Simulator Mode Toggle */}
         <button
           type="button"
           onClick={toggleSimulator}
-          className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+          className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${
             mantraService.getMockMode()
               ? 'bg-amber-100 text-amber-900 border-amber-300'
               : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-300'
@@ -310,6 +394,69 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
           <span>{mantraService.getMockMode() ? 'Simulator ON' : 'Test Mode'}</span>
         </button>
       </div>
+
+      {/* Quick Personnel Selection Chips (Direct 1:1 or 1:N) */}
+      {enrolledEmployees.length > 0 && (
+        <div className="w-full max-w-lg mt-5 pt-3 border-t border-slate-200/80 flex flex-col items-center gap-2">
+          <div className="flex items-center justify-between w-full text-xs font-semibold text-slate-600 px-1">
+            <span className="flex items-center gap-1 text-[11px] uppercase tracking-wider text-slate-500 font-mono">
+              <User className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Tap your name (or scan finger directly):</span>
+            </span>
+            {enrolledEmployees.length > 3 && (
+              <div className="relative flex items-center">
+                <Search className="w-3 h-3 text-slate-400 absolute left-2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={filterQuery}
+                  onChange={(e) => setFilterQuery(e.target.value)}
+                  placeholder="Filter name or ID..."
+                  className="pl-6 pr-2.5 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 w-36"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-2 w-full max-h-32 overflow-y-auto p-1">
+            {filteredEmployees.map((emp) => {
+              const isSelected = selectedEmployeeId === emp.id;
+              return (
+                <button
+                  key={emp.id}
+                  type="button"
+                  onClick={() => {
+                    const nextId = isSelected ? null : emp.id;
+                    setSelectedEmployeeId(nextId);
+                    soundEngine.playSelectSound();
+                    setStatusMessage(
+                      nextId
+                        ? `Place finger on sensor to confirm ${emp.name} (${emp.id})`
+                        : 'Place your registered finger on the Mantra sensor'
+                    );
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                    isSelected
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm scale-105 ring-2 ring-emerald-400'
+                      : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-500'}`}
+                  />
+                  <span>{emp.name}</span>
+                  <span
+                    className={`text-[10px] font-mono ${
+                      isSelected ? 'text-emerald-100' : 'text-slate-400'
+                    }`}
+                  >
+                    ({emp.id})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
     </div>
   );

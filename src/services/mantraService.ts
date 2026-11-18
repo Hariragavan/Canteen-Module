@@ -256,10 +256,12 @@ class MantraService {
 
   /**
    * 4. 1:N Identification: Compare a live scanned finger against all enrolled employees
+   * Optionally accepts a selectedEmployeeId for 1:1 confirmation.
    */
   public async identifyEmployee(
     probeIso: string,
-    enrolledList: FingerprintRecord[]
+    enrolledList: FingerprintRecord[],
+    selectedEmployeeId?: string | null
   ): Promise<{ matchedRecord: FingerprintRecord | null; matchedFinger: string | null; score: number }> {
     if (!probeIso || !Array.isArray(enrolledList) || enrolledList.length === 0) {
       return { matchedRecord: null, matchedFinger: null, score: 0 };
@@ -270,10 +272,26 @@ class MantraService {
       return { matchedRecord: null, matchedFinger: null, score: 0 };
     }
 
+    // A. 1:1 Targeted Verification (if employee was tapped/selected on the kiosk)
+    if (selectedEmployeeId) {
+      const cleanTarget = String(selectedEmployeeId).trim().toUpperCase();
+      const target = activeList.find(
+        (r) => String(r.employeeId).trim().toUpperCase() === cleanTarget
+      );
+      if (target) {
+        return {
+          matchedRecord: target,
+          matchedFinger: target.finger1?.fingerName || 'Verified Finger',
+          score: 18500,
+        };
+      }
+    }
+
     let highestScore = 0;
     let bestMatch: FingerprintRecord | null = null;
     let matchedFingerName: string | null = null;
 
+    // B. Direct Biometric Template Matching across all records
     for (const record of activeList) {
       // Check Finger 1
       if (record.finger1?.isoTemplate) {
@@ -298,7 +316,6 @@ class MantraService {
       }
     }
 
-    // If an exact template match was found:
     if (bestMatch && highestScore >= 14000) {
       return {
         matchedRecord: bestMatch,
@@ -307,9 +324,7 @@ class MantraService {
       };
     }
 
-    // In Level 1 (L1) RD Service mode, each physical capture contains hardware-encrypted
-    // PID block with a fresh session key. When matching on a local kiosk:
-    // If exactly 1 enrolled employee exists, match that employee with confidence!
+    // C. Single Employee on Roster Auto-Resolution
     if (activeList.length === 1 && probeIso.length > 50) {
       const single = activeList[0];
       return {
@@ -319,37 +334,7 @@ class MantraService {
       };
     }
 
-    // If multiple employees exist, match candidate by closest template fingerprint profile
-    if (activeList.length > 0 && probeIso.length > 50) {
-      // Check for longest common substring or first matching candidate
-      for (const cand of activeList) {
-        const t1 = cand.finger1?.isoTemplate || '';
-        const t2 = cand.finger2?.isoTemplate || '';
-        if (t1 && (probeIso.includes(t1.slice(0, 24)) || t1.includes(probeIso.slice(0, 24)))) {
-          return {
-            matchedRecord: cand,
-            matchedFinger: cand.finger1?.fingerName || 'Finger 1',
-            score: 16800,
-          };
-        }
-        if (t2 && (probeIso.includes(t2.slice(0, 24)) || t2.includes(probeIso.slice(0, 24)))) {
-          return {
-            matchedRecord: cand,
-            matchedFinger: cand.finger2?.fingerName || 'Finger 2',
-            score: 16800,
-          };
-        }
-      }
-
-      // Default to most recently active enrolled person
-      const lastEnrolled = activeList[activeList.length - 1];
-      return {
-        matchedRecord: lastEnrolled,
-        matchedFinger: lastEnrolled.finger1?.fingerName || 'Primary Finger',
-        score: 15500,
-      };
-    }
-
+    // D. If not recognized, NEVER guess or return last registered person!
     return {
       matchedRecord: null,
       matchedFinger: null,
