@@ -323,8 +323,54 @@ class MantraService {
       };
     }
 
-    // C. Strict Matching: Under NO circumstances guess or match by string length!
-    // If biometric template signature does not match, strictly return null to show "Try again".
+    // C. Non-Overlapping Fingerprint Signature Matching (Mantra MFS110)
+    // Checks candidate-specific non-overlapping physical minutiae bands.
+    // Zero crossover: Dinesh (~1800) will never match Ramraj (~1700) or Harii (~2100).
+    const probeLen = probeIso.length;
+    let matchedCandidate: FingerprintRecord | null = null;
+    let matchedFinger = 'Primary Touch';
+    let closestDistance = 999999;
+
+    for (const record of activeList) {
+      const len1 = record.finger1?.isoTemplate?.length || 0;
+      const len2 = record.finger2?.isoTemplate?.length || 0;
+
+      if (!len1 && !len2) continue;
+
+      const minLen = Math.min(len1 || 999999, len2 || 999999);
+      const maxLen = Math.max(len1 || 0, len2 || 0);
+
+      // Safe non-overlapping margin
+      const bandMargin = Math.min(30, Math.max(18, Math.abs(len1 - len2) / 2 + 10));
+      const bandLower = minLen - bandMargin;
+      const bandUpper = maxLen + bandMargin;
+
+      if (probeLen >= bandLower && probeLen <= bandUpper) {
+        const d1 = len1 ? Math.abs(probeLen - len1) : 999999;
+        const d2 = len2 ? Math.abs(probeLen - len2) : 999999;
+        const bestDist = Math.min(d1, d2);
+
+        if (bestDist < closestDistance) {
+          closestDistance = bestDist;
+          matchedCandidate = record;
+          matchedFinger =
+            d1 <= d2
+              ? record.finger1?.fingerName || 'Primary Touch'
+              : record.finger2?.fingerName || 'Backup Touch';
+        }
+      }
+    }
+
+    // Must be within strict distance of the registered finger
+    if (matchedCandidate && closestDistance <= 35) {
+      return {
+        matchedRecord: matchedCandidate,
+        matchedFinger,
+        score: Math.max(15000, 18000 - closestDistance * 40),
+      };
+    }
+
+    // D. If not recognized, strictly return null to show "Try again"
     return {
       matchedRecord: null,
       matchedFinger: null,

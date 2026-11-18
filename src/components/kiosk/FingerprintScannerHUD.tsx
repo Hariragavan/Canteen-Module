@@ -228,7 +228,7 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
           </div>
         </div>
 
-        {/* Final Quality Percent Badge - Only shown when a scan finishes */}
+        {/* Quality Percent Badge - Only show when a scan finishes */}
         {qualityScore !== null && (scanState === 'SUCCESS' || scanState === 'TRY_AGAIN') && (
           <div
             className={`absolute -bottom-3 px-3 py-1 rounded-full border shadow-sm flex items-center gap-1.5 text-xs font-mono font-bold transition-all ${
@@ -248,13 +248,7 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
                   : 'text-amber-600'
               }`}
             />
-            <span>
-              {scanState === 'SUCCESS'
-                ? `Quality: ${qualityScore}% • Verified`
-                : qualityScore < 30
-                ? `Quality: ${qualityScore}% • Low Quality`
-                : `Quality: ${qualityScore}% • Unmatched`}
-            </span>
+            <span>Quality: {qualityScore}%</span>
           </div>
         )}
       </div>
