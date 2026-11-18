@@ -523,7 +523,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
             <div className="w-full flex items-center justify-between pb-1.5 border-b border-slate-100">
               <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                 <Scan className="w-4 h-4 text-emerald-600" />
-                <span>Mantra USB Biometric Fingerprint Authentication</span>
+                <span>Touch ID Authentication</span>
               </span>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-mono text-slate-500 hidden sm:inline">
@@ -603,7 +603,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                 <div className="flex items-center space-x-2">
                   <BadgeCheck className="w-5 h-5 text-emerald-600 shrink-0" />
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold">
-                    BIOMETRIC VERIFIED
+                    TOUCH ID VERIFIED
                   </span>
                 </div>
                 <span className="text-[10px] font-mono text-emerald-700 font-bold">

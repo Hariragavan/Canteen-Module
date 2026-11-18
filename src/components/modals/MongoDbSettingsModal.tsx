@@ -178,7 +178,7 @@ export const MongoDbSettingsModal: React.FC<MongoDbSettingsModalProps> = ({
           <div className="p-3 bg-slate-100 rounded-2xl text-[11px] text-slate-700 space-y-1">
             <span className="font-bold flex items-center gap-1">
               <HardDrive className="w-3 h-3 text-emerald-600" />
-              <span>How to Import Biometric Faces into MongoDB:</span>
+              <span>How to Import Personnel into MongoDB:</span>
             </span>
             <p className="font-mono text-[10px] text-emerald-800 bg-white p-2 rounded-lg border border-slate-200 select-all">
               npm run db:import

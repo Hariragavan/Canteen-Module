@@ -71,7 +71,7 @@ class MantraService {
   /**
    * Helper to generate a stylized biometric fingerprint graphic with quality indicator
    */
-  public generateFingerprintGraphic(quality = 65, label = 'MANTRA SCANNED'): string {
+  public generateFingerprintGraphic(quality = 65, label = 'TOUCH ID'): string {
     const color = quality >= 60 ? '#10b981' : quality >= 40 ? '#f59e0b' : '#ef4444';
     const svg = `
       <svg xmlns="http://www.w3.org/2000/svg" width="300" height="400" viewBox="0 0 300 400" fill="#0f172a">
@@ -141,12 +141,12 @@ class MantraService {
 
     const offlineInfo: MantraDeviceInfo = {
       isConnected: false,
-      make: 'Mantra',
+      make: 'Scanner',
       model: 'MFS110',
       serialNo: 'Disconnected',
       width: 300,
       height: 400,
-      error: 'Mantra RD Service not responding. Ensure USB device is plugged in.',
+      error: 'Scanner service not responding. Ensure USB device is plugged in.',
     };
     this.cachedDeviceInfo = offlineInfo;
     this.lastCheckTime = now;
@@ -154,7 +154,7 @@ class MantraService {
   }
 
   /**
-   * 2. Capture a live fingerprint from the Mantra scanner
+   * 2. Capture a live touch from the scanner
    * @param quality Minimum acceptable quality (default 50%)
    * @param timeout Capture timeout in seconds (default 10s)
    */
@@ -170,9 +170,8 @@ class MantraService {
         let bmp = res.bitmapData || '';
         const q = Number(res.quality || 60);
 
-        // If scanner didn't provide raw bitmap, render biometric vector preview
         if (!bmp) {
-          bmp = this.generateFingerprintGraphic(q, 'MANTRA VERIFIED');
+          bmp = this.generateFingerprintGraphic(q, 'TOUCH VERIFIED');
         } else if (!bmp.startsWith('data:image')) {
           bmp = `data:image/bmp;base64,${bmp}`;
         }
@@ -190,7 +189,7 @@ class MantraService {
         return {
           success: false,
           errorCode: res?.errorCode ?? -1,
-          errorDescription: res?.errorDescription || 'Fingerprint capture cancelled or timed out.',
+          errorDescription: res?.errorDescription || 'Scan cancelled or timed out.',
           bitmapData: '',
           isoTemplate: '',
           quality: 0,
@@ -202,8 +201,8 @@ class MantraService {
         errorCode: -999,
         errorDescription:
           err?.name === 'AbortError'
-            ? 'Fingerprint capture timed out. Please place finger firmly on sensor.'
-            : 'Mantra Client Service is not responding. Please check USB cable.',
+            ? 'Scan timed out. Please place finger firmly on sensor.'
+            : 'Scanner service is not responding. Please check USB cable.',
         bitmapData: '',
         isoTemplate: '',
         quality: 0,
@@ -386,7 +385,7 @@ class MantraService {
     const mockQuality = Math.floor(Math.random() * 20) + Math.max(70, targetQuality);
     const mockHash = Math.random().toString(36).substring(2, 15);
     const mockIso = btoa(`MFS110_ISO_${mockHash}_${Date.now()}`);
-    const dataUri = this.generateFingerprintGraphic(mockQuality, 'MANTRA SIMULATED');
+    const dataUri = this.generateFingerprintGraphic(mockQuality, 'TOUCH ID');
 
     return {
       success: true,

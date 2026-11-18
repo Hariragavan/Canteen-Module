@@ -382,6 +382,40 @@ router.post('/fingerprints', async (req, res) => {
 
     const cleanId = String(employeeId).trim().toUpperCase();
 
+    // 1. Prevent duplicate touch between Primary and Backup
+    const f1Iso = finger1.isoTemplate || '';
+    const f2Iso = finger2.isoTemplate || '';
+    if (f1Iso === f2Iso || Math.abs(f1Iso.length - f2Iso.length) <= 25) {
+      return res.status(400).json({
+        error: 'Primary and Backup Touch cannot be the same. Please scan two different touches.'
+      });
+    }
+
+    // 2. Prevent duplicate touch across all other registered personnel
+    const existingRecords = await Fingerprint.find({
+      employeeId: { $ne: cleanId },
+      isActive: { $ne: false }
+    });
+
+    for (const rec of existingRecords) {
+      const t1 = rec.finger1?.isoTemplate || '';
+      const t2 = rec.finger2?.isoTemplate || '';
+
+      const isF1Duplicate =
+        (t1 && (f1Iso === t1 || Math.abs(f1Iso.length - t1.length) <= 30)) ||
+        (t2 && (f1Iso === t2 || Math.abs(f1Iso.length - t2.length) <= 30));
+
+      const isF2Duplicate =
+        (t1 && (f2Iso === t1 || Math.abs(f2Iso.length - t1.length) <= 30)) ||
+        (t2 && (f2Iso === t2 || Math.abs(f2Iso.length - t2.length) <= 30));
+
+      if (isF1Duplicate || isF2Duplicate) {
+        return res.status(409).json({
+          error: `This touch ID is already registered to ${rec.employeeName || rec.employeeId} (${rec.employeeId})! Duplicate registration is not allowed.`
+        });
+      }
+    }
+
     // Upsert fingerprint record for this employee
     const record = await Fingerprint.findOneAndUpdate(
       { employeeId: cleanId },

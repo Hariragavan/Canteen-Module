@@ -155,7 +155,7 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
         if (matchedEmp) {
           setScanState('SUCCESS');
           soundEngine.playVerificationChime();
-          const fingerLabel = matchResult.matchedFinger || 'Fingerprint';
+          const fingerLabel = matchResult.matchedFinger || 'Touch ID';
           setStatusMessage(`Verified: ${matchedEmp.name}`);
 
           setTimeout(() => {
@@ -172,7 +172,7 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
       setScanState('TRY_AGAIN');
       setStatusMessage('Try again');
       soundEngine.playWarningBuzzer();
-      if (onError) onError('Fingerprint not matched. Try again.');
+      if (onError) onError('Try again');
 
       setTimeout(() => {
         if (!isMountedRef.current) return;

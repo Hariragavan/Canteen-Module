@@ -90,16 +90,10 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   });
 
   const FINGER_OPTIONS = [
-    'Right Thumb',
-    'Right Index',
-    'Right Middle',
-    'Right Ring',
-    'Right Little',
-    'Left Thumb',
-    'Left Index',
-    'Left Middle',
-    'Left Ring',
-    'Left Little',
+    'Primary Touch',
+    'Backup Touch',
+    'Right Hand Touch',
+    'Left Hand Touch',
   ];
 
   const [finger1, setFinger1] = useState<{
@@ -108,7 +102,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     bitmapData: string;
     quality: number;
   }>({
-    fingerName: 'Right Thumb',
+    fingerName: 'Primary Touch',
     isoTemplate: '',
     bitmapData: '',
     quality: 0,
@@ -120,7 +114,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     bitmapData: string;
     quality: number;
   }>({
-    fingerName: 'Right Index',
+    fingerName: 'Backup Touch',
     isoTemplate: '',
     bitmapData: '',
     quality: 0,
@@ -130,7 +124,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   const [isScanningFp2, setIsScanningFp2] = useState<boolean>(false);
   const [mantraInfo, setMantraInfo] = useState<{ isConnected: boolean; model: string }>({
     isConnected: false,
-    model: 'MFS100',
+    model: 'Scanner',
   });
 
   const checkMantraInAdmin = async () => {
@@ -140,9 +134,36 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
   useEffect(() => {
     if (isOpen && isRegisteringNew) {
+      mantraService.setMockMode(false);
       checkMantraInAdmin();
     }
   }, [isOpen, isRegisteringNew]);
+
+  // Check if a touch ID is already registered to any other personnel
+  const checkDuplicateFinger = (probeIso: string, currentEmpId?: string) => {
+    const existingList = canteenService.getFingerprints();
+    const cleanCurrent = (currentEmpId || '').trim().toUpperCase();
+
+    for (const rec of existingList) {
+      if (cleanCurrent && String(rec.employeeId).trim().toUpperCase() === cleanCurrent) {
+        continue;
+      }
+      const t1 = rec.finger1?.isoTemplate || '';
+      const t2 = rec.finger2?.isoTemplate || '';
+
+      const isMatch1 = t1 && (probeIso === t1 || Math.abs(probeIso.length - t1.length) <= 30);
+      const isMatch2 = t2 && (probeIso === t2 || Math.abs(probeIso.length - t2.length) <= 30);
+
+      if (isMatch1 || isMatch2) {
+        return {
+          isDuplicate: true,
+          matchedName: rec.employeeName || rec.employeeId,
+          matchedId: rec.employeeId,
+        };
+      }
+    }
+    return { isDuplicate: false };
+  };
 
   const handleScanFinger1 = async () => {
     setIsScanningFp1(true);
@@ -151,6 +172,25 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     try {
       const res = await mantraService.captureFingerprint(60, 8);
       if (res.success && res.isoTemplate) {
+        // 1. Check duplicate with already registered personnel
+        const dup = checkDuplicateFinger(res.isoTemplate, formData.id);
+        if (dup.isDuplicate) {
+          soundEngine.playWarningBuzzer();
+          setErrorMessage(`This touch is already registered to ${dup.matchedName} (${dup.matchedId})! Duplicate registration is not allowed.`);
+          return;
+        }
+
+        // 2. Check duplicate with Finger 2
+        if (
+          finger2.isoTemplate &&
+          (res.isoTemplate === finger2.isoTemplate ||
+            Math.abs(res.isoTemplate.length - finger2.isoTemplate.length) <= 25)
+        ) {
+          soundEngine.playWarningBuzzer();
+          setErrorMessage('Primary and Backup Touch cannot be the same. Please scan two different touches.');
+          return;
+        }
+
         soundEngine.playVerificationChime();
         setFinger1((prev) => ({
           ...prev,
@@ -160,11 +200,11 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         }));
       } else {
         soundEngine.playWarningBuzzer();
-        setErrorMessage(res.errorDescription || 'Fingerprint capture timed out or failed.');
+        setErrorMessage(res.errorDescription || 'Scan timed out or failed. Please try again.');
       }
     } catch (e: any) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage(e.message || 'Mantra communication error.');
+      setErrorMessage(e.message || 'Sensor communication error.');
     } finally {
       setIsScanningFp1(false);
     }
@@ -177,6 +217,25 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     try {
       const res = await mantraService.captureFingerprint(60, 8);
       if (res.success && res.isoTemplate) {
+        // 1. Check duplicate with Finger 1
+        if (
+          finger1.isoTemplate &&
+          (res.isoTemplate === finger1.isoTemplate ||
+            Math.abs(res.isoTemplate.length - finger1.isoTemplate.length) <= 25)
+        ) {
+          soundEngine.playWarningBuzzer();
+          setErrorMessage('Backup Touch cannot be the same as Primary Touch. Please scan a different touch.');
+          return;
+        }
+
+        // 2. Check duplicate with already registered personnel
+        const dup = checkDuplicateFinger(res.isoTemplate, formData.id);
+        if (dup.isDuplicate) {
+          soundEngine.playWarningBuzzer();
+          setErrorMessage(`This touch is already registered to ${dup.matchedName} (${dup.matchedId})! Duplicate registration is not allowed.`);
+          return;
+        }
+
         soundEngine.playVerificationChime();
         setFinger2((prev) => ({
           ...prev,
@@ -186,11 +245,11 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         }));
       } else {
         soundEngine.playWarningBuzzer();
-        setErrorMessage(res.errorDescription || 'Fingerprint capture timed out or failed.');
+        setErrorMessage(res.errorDescription || 'Scan timed out or failed. Please try again.');
       }
     } catch (e: any) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage(e.message || 'Mantra communication error.');
+      setErrorMessage(e.message || 'Sensor communication error.');
     } finally {
       setIsScanningFp2(false);
     }
@@ -263,15 +322,40 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
     const role: 'Staff' | 'Employee' = formData.dept.toLowerCase().includes('staff') ? 'Staff' : 'Employee';
 
-    // TWO-FINGER BIOMETRIC FINGERPRINT ENROLLMENT (Mantra MFS110 / MFS100)
+    // TWO-TOUCH ENROLLMENT
     if (!finger1.isoTemplate) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage('Biometric Requirement: Please scan Finger 1 (Primary finger on Mantra sensor).');
+      setErrorMessage('Please scan Primary Touch on sensor.');
       return;
     }
     if (!finger2.isoTemplate) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage('Biometric Requirement: Please scan Finger 2 (Secondary backup finger on Mantra sensor).');
+      setErrorMessage('Please scan Backup Touch on sensor.');
+      return;
+    }
+
+    // Check duplicate between Primary and Backup
+    if (
+      finger1.isoTemplate === finger2.isoTemplate ||
+      Math.abs(finger1.isoTemplate.length - finger2.isoTemplate.length) <= 25
+    ) {
+      soundEngine.playWarningBuzzer();
+      setErrorMessage('Primary and Backup Touch cannot be the same. Please scan two different touches.');
+      return;
+    }
+
+    // Check duplicate with all already registered personnel
+    const dup1 = checkDuplicateFinger(finger1.isoTemplate, cleanId);
+    if (dup1.isDuplicate) {
+      soundEngine.playWarningBuzzer();
+      setErrorMessage(`Primary Touch is already registered to ${dup1.matchedName} (${dup1.matchedId})! Duplicate registration is not allowed.`);
+      return;
+    }
+
+    const dup2 = checkDuplicateFinger(finger2.isoTemplate, cleanId);
+    if (dup2.isDuplicate) {
+      soundEngine.playWarningBuzzer();
+      setErrorMessage(`Backup Touch is already registered to ${dup2.matchedName} (${dup2.matchedId})! Duplicate registration is not allowed.`);
       return;
     }
 
@@ -290,7 +374,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       // 1. Save to Employee store
       await canteenService.addEmployee(newEmployee);
 
-      // 2. Save Two-Finger biometrics to dedicated Fingerprints store
+      // 2. Save Two-Touch data to dedicated store
       await canteenService.saveFingerprint({
         employeeId: cleanId,
         employeeName: cleanName,
@@ -310,7 +394,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       });
 
       soundEngine.playVerificationChime();
-      setSuccessMessage(`✓ Successfully registered ${cleanName} (${cleanId}) with 2 fingerprints enrolled! Ready for next personnel.`);
+      setSuccessMessage(`✓ Successfully registered ${cleanName} (${cleanId})! Ready for next personnel.`);
       loadEmployees();
       if (onRosterUpdated) onRosterUpdated();
 
@@ -334,15 +418,22 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         quality: 0,
       });
 
+      setFinger1({
+        fingerName: 'Primary Touch',
+        isoTemplate: '',
+        bitmapData: '',
+        quality: 0,
+      });
+
       setFinger2({
-        fingerName: 'Right Index',
+        fingerName: 'Backup Touch',
         isoTemplate: '',
         bitmapData: '',
         quality: 0,
       });
     } catch (err: unknown) {
       soundEngine.playWarningBuzzer();
-      const msg = err instanceof Error ? err.message : 'Fingerprint registration failed';
+      const msg = err instanceof Error ? err.message : 'Registration failed';
       setErrorMessage(`Registration Error: ${msg}`);
     }
   };
@@ -784,7 +875,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
             <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
               {activeTab === 'registered'
                 ? isRegisteringNew
-                  ? 'New User Registration (128D AI Biometrics)'
+                  ? 'New Personnel Registration'
                   : 'Registered Cafeteria Personnel'
                 : activeTab === 'analytics'
                 ? 'Kitchen Analysis & Operations Telemetry'
@@ -908,7 +999,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                     </div>
                     <h4 className="font-bold text-slate-800 text-sm">No Users Registered Yet</h4>
                     <p className="text-xs text-slate-500 max-w-sm">
-                      Your MongoDB database and canteen roster are clean with zero dummy data. Click below to register your first user with 128D AI facial biometrics!
+                      Your database and canteen roster are ready. Click below to register personnel.
                     </p>
                     <button
                       type="button"
@@ -1022,15 +1113,15 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 </div>
               )}
 
-              {/* Header: Mantra Biometric Fingerprint Registration */}
+              {/* Header: Touch ID Registration */}
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-emerald-50/80 p-3 rounded-2xl border border-emerald-200">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
                     <FingerprintIcon className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="text-xs sm:text-sm font-bold text-emerald-950">Mantra Biometric Fingerprint Registration</h4>
-                    <p className="text-[11px] text-emerald-700 font-medium">Two-Finger Biometric Enrollment (Primary + Backup)</p>
+                    <h4 className="text-xs sm:text-sm font-bold text-emerald-950">Touch ID Registration</h4>
+                    <p className="text-[11px] text-emerald-700 font-medium">Dual Touch Enrollment (Primary + Backup)</p>
                   </div>
                 </div>
 
@@ -1038,40 +1129,24 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 <div className="flex items-center gap-2 text-xs font-medium">
                   <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-slate-800 font-mono text-[11px] shadow-2xs">
                     <Usb className={`w-3.5 h-3.5 ${mantraInfo.isConnected ? 'text-emerald-600 animate-pulse' : 'text-amber-500'}`} />
-                    <span className="font-bold">{mantraInfo.isConnected ? `Mantra ${mantraInfo.model || 'MFS110'} Connected` : 'Waiting for USB...'}</span>
+                    <span className="font-bold">{mantraInfo.isConnected ? 'Sensor Connected' : 'Sensor Disconnected'}</span>
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = !mantraService.getMockMode();
-                      mantraService.setMockMode(next);
-                      checkMantraInAdmin();
-                    }}
-                    className={`px-2.5 py-1.5 rounded-xl text-[10px] font-bold border transition-all ${
-                      mantraService.getMockMode()
-                        ? 'bg-amber-100 text-amber-900 border-amber-300'
-                        : 'bg-white text-slate-600 hover:text-slate-900 border-slate-200'
-                    }`}
-                    title="Toggle simulated test mode"
-                  >
-                    {mantraService.getMockMode() ? 'Simulator ON' : 'Test Mode'}
-                  </button>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
                 
                 {/* ========================================================= */}
-                {/* 1. MANTRA FINGERPRINT ENROLLMENT (TWO FINGERS) (5 cols)   */}
+                {/* 1. DUAL TOUCH ENROLLMENT (5 cols)                         */}
                 {/* ========================================================= */}
                 <div className="md:col-span-5 flex flex-col gap-3.5">
                   
-                  {/* Finger 1 Card (Primary) */}
+                  {/* Primary Touch Card */}
                   <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-2xs">
                     <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
                       <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <FingerprintIcon className="w-4 h-4 text-emerald-600" />
-                        <span>Finger 1 (Primary) *</span>
+                        <span>Primary Touch *</span>
                       </span>
                       {finger1.isoTemplate && (
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300 flex items-center gap-1">
@@ -1081,7 +1156,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       )}
                     </div>
 
-                    {/* Finger Name Selector */}
+                    {/* Name Selector */}
                     <select
                       value={finger1.fingerName}
                       onChange={(e) => setFinger1({ ...finger1, fingerName: e.target.value })}
@@ -1094,12 +1169,12 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       ))}
                     </select>
 
-                    {/* Finger 1 Preview or Scan Dock */}
+                    {/* Primary Touch Preview */}
                     <div className="h-32 bg-slate-900 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center relative">
                       {finger1.bitmapData ? (
                         <img
                           src={finger1.bitmapData}
-                          alt="Finger 1 scan"
+                          alt="Primary touch scan"
                           className="h-full object-contain filter contrast-125"
                         />
                       ) : (
@@ -1117,16 +1192,16 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 cursor-pointer"
                     >
                       <FingerprintIcon className="w-4 h-4" />
-                      <span>{isScanningFp1 ? 'Scanning on Mantra...' : finger1.isoTemplate ? 'Rescan Finger 1' : 'Scan Finger 1 on Device'}</span>
+                      <span>{isScanningFp1 ? 'Scanning on sensor...' : finger1.isoTemplate ? 'Rescan Primary Touch' : 'Scan Primary Touch'}</span>
                     </button>
                   </div>
 
-                  {/* Finger 2 Card (Backup) */}
+                  {/* Backup Touch Card */}
                   <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-2xs">
                     <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
                       <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         <FingerprintIcon className="w-4 h-4 text-blue-600" />
-                        <span>Finger 2 (Secondary / Backup) *</span>
+                        <span>Backup Touch *</span>
                       </span>
                       {finger2.isoTemplate && (
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-bold border border-blue-300 flex items-center gap-1">
@@ -1136,7 +1211,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       )}
                     </div>
 
-                    {/* Finger Name Selector */}
+                    {/* Name Selector */}
                     <select
                       value={finger2.fingerName}
                       onChange={(e) => setFinger2({ ...finger2, fingerName: e.target.value })}
@@ -1149,12 +1224,12 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       ))}
                     </select>
 
-                    {/* Finger 2 Preview or Scan Dock */}
+                    {/* Backup Touch Preview */}
                     <div className="h-32 bg-slate-900 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center relative">
                       {finger2.bitmapData ? (
                         <img
                           src={finger2.bitmapData}
-                          alt="Finger 2 scan"
+                          alt="Backup touch scan"
                           className="h-full object-contain filter contrast-125"
                         />
                       ) : (
@@ -1172,7 +1247,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       className="w-full py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 cursor-pointer"
                     >
                       <FingerprintIcon className="w-4 h-4" />
-                      <span>{isScanningFp2 ? 'Scanning on Mantra...' : finger2.isoTemplate ? 'Rescan Finger 2' : 'Scan Finger 2 on Device'}</span>
+                      <span>{isScanningFp2 ? 'Scanning on sensor...' : finger2.isoTemplate ? 'Rescan Backup Touch' : 'Scan Backup Touch'}</span>
                     </button>
                   </div>
 
@@ -1236,7 +1311,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-md shadow-emerald-600/25 flex items-center justify-center space-x-2 transition-all transform active:scale-95"
                     >
                       <UserPlus className="w-4 h-4" />
-                      <span>Register & Enroll Biometrics</span>
+                      <span>Register Personnel</span>
                     </button>
                   </div>
 
@@ -1523,7 +1598,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 <div className="w-full flex items-center justify-between pb-1.5 border-b border-slate-200 text-slate-700">
                   <span className="font-bold text-xs flex items-center gap-1.5">
                     <Camera className="w-4 h-4 text-emerald-600" />
-                    <span>Biometric Face Photo</span>
+                    <span>Personnel Photo</span>
                   </span>
                   <span className="text-[10px] font-mono text-slate-500">
                     {isEditCameraActive ? 'Camera Active' : 'Enrolled Photo'}
@@ -1605,7 +1680,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
                   {editingEmployee.face_descriptor || editingEmployee.embedding ? (
                     <div className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-0.5 text-center font-medium">
-                      ✓ 128D Biometrics Enrolled
+                      ✓ Personnel Enrolled
                     </div>
                   ) : (
                     <div className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-0.5 text-center font-medium">

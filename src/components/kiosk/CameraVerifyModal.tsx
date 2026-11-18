@@ -177,7 +177,7 @@ export const CameraVerifyModal: React.FC<CameraVerifyModalProps> = ({
             <div>
               <div className="flex items-center space-x-2">
                 <h2 className="text-lg font-black text-slate-900 tracking-tight">
-                  Camera Biometric Verification
+                  Camera Verification
                 </h2>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold tracking-wide">
                   MATCH VERIFIED (99.4%)

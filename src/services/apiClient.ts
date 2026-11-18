@@ -505,7 +505,7 @@ class ApiClient {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `Failed to save fingerprint (HTTP ${res.status})`);
+        throw new Error(err.error || `Failed to save touch ID (HTTP ${res.status})`);
       }
       const data = await res.json();
       this.notifySubscribers();
@@ -528,7 +528,7 @@ class ApiClient {
   }
 
   // ==========================================================================
-  // MANTRA HARDWARE PROXY (MFS110 Port 11100 / MFS100 Port 8032)
+  // HARDWARE PROXY
   // ==========================================================================
   public async getMantraInfo(): Promise<{
     isConnected: boolean;
@@ -546,10 +546,10 @@ class ApiClient {
     } catch (err: any) {
       return {
         isConnected: false,
-        make: 'Mantra',
-        model: 'MFS110',
+        make: 'Scanner',
+        model: 'Scanner',
         serialNo: '',
-        error: err.message || 'Mantra backend proxy offline',
+        error: err.message || 'Scanner backend proxy offline',
       };
     }
   }
@@ -576,7 +576,7 @@ class ApiClient {
       return {
         success: false,
         errorCode: -1,
-        errorDescription: err.message || 'Mantra communication error',
+        errorDescription: err.message || 'Scanner communication error',
       };
     }
   }
