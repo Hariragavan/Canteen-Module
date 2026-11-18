@@ -252,6 +252,17 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     }, 500);
   }, [kioskStep, isScanVerified]);
 
+  // Stable callbacks for FingerprintScannerHUD to prevent any re-render flickering
+  const handleHUDIdentified = useCallback((emp: Employee) => {
+    setVerificationError(null);
+    handleUserIdentified(emp);
+  }, [handleUserIdentified]);
+
+  const handleHUDError = useCallback((err: string) => {
+    setVerificationError(err);
+    setTimeout(() => setVerificationError(null), 3500);
+  }, []);
+
   // Reset back to Fingerprint Scan view (Step 1)
   const handleResetToScan = useCallback(() => {
     setKioskStep('SCANNING');
@@ -536,14 +547,8 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
             <FingerprintScannerHUD
               employees={employees}
               fingerprints={fingerprints}
-              onUserIdentified={(emp) => {
-                setVerificationError(null);
-                handleUserIdentified(emp);
-              }}
-              onError={(err) => {
-                setVerificationError(err);
-                setTimeout(() => setVerificationError(null), 3500);
-              }}
+              onUserIdentified={handleHUDIdentified}
+              onError={handleHUDError}
             />
           </div>
 
