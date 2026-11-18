@@ -526,6 +526,60 @@ class ApiClient {
       console.warn('API deleteFingerprint error:', err);
     }
   }
+
+  // ==========================================================================
+  // MANTRA HARDWARE PROXY (MFS110 Port 11100 / MFS100 Port 8032)
+  // ==========================================================================
+  public async getMantraInfo(): Promise<{
+    isConnected: boolean;
+    make?: string;
+    model?: string;
+    serialNo?: string;
+    deviceType?: string;
+    port?: number;
+    error?: string;
+  }> {
+    try {
+      const res = await this.request('/mantra/info');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err: any) {
+      return {
+        isConnected: false,
+        make: 'Mantra',
+        model: 'MFS110',
+        serialNo: '',
+        error: err.message || 'Mantra backend proxy offline',
+      };
+    }
+  }
+
+  public async captureMantraFingerprint(timeout = 10000): Promise<{
+    success: boolean;
+    errorCode: number;
+    errorDescription: string;
+    quality?: number;
+    nmPoints?: number;
+    isoTemplate?: string;
+    bitmapData?: string;
+    model?: string;
+  }> {
+    try {
+      const res = await this.request('/mantra/capture', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeout }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err: any) {
+      return {
+        success: false,
+        errorCode: -1,
+        errorDescription: err.message || 'Mantra communication error',
+      };
+    }
+  }
 }
 
 export const apiClient = new ApiClient();

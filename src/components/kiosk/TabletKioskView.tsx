@@ -3,11 +3,7 @@ import type { Employee, FingerprintRecord, MealSlotConfig, MealSlotName, Order }
 import { canteenService, DEFAULT_MEAL_SLOTS } from '../../services/canteenService';
 import { apiClient } from '../../services/apiClient';
 import { soundEngine } from '../../services/soundEngine';
-import { faceMatcherService } from '../../services/faceMatcherService';
-import { FaceScannerHUD } from './FaceScannerHUD';
-import type { FaceScannerHUDHandle } from './FaceScannerHUD';
 import { FingerprintScannerHUD } from './FingerprintScannerHUD';
-import { CameraVerifyModal } from './CameraVerifyModal';
 import { ThermalReceipt, type ThermalReceiptHandle } from '../printer/ThermalReceipt';
 import {
   Printer,
@@ -23,7 +19,6 @@ import {
   Calendar,
   UtensilsCrossed,
   Building,
-  Camera,
   Scan,
   ChevronUp,
   ChevronDown,
@@ -41,7 +36,6 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
   onOpenAdminModal,
 }) => {
   const [kioskStep, setKioskStep] = useState<'SCANNING' | 'VERIFIED'>('SCANNING');
-  const [authMode, setAuthMode] = useState<'fingerprint' | 'face'>('fingerprint'); // Default to Mantra Fingerprint, Face is backup
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [fingerprints, setFingerprints] = useState<FingerprintRecord[]>([]);
   const [mealSlots, setMealSlots] = useState<MealSlotConfig[]>(canteenService.getMealSlots());
@@ -53,21 +47,17 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
   const [lastPrintedOrder, setLastPrintedOrder] = useState<Order | null>(null);
   const [lastPrintedOrders, setLastPrintedOrders] = useState<Order[]>([]);
   const [isDispensing, setIsDispensing] = useState<boolean>(false);
-  const [isCapturing, setIsCapturing] = useState<boolean>(false);
-  const [isProcessingScan, setIsProcessingScan] = useState<boolean>(false);
   const [isScanVerified, setIsScanVerified] = useState<boolean>(false);
   const [currentTimeStr, setCurrentTimeStr] = useState<string>('');
   const [currentDateStr, setCurrentDateStr] = useState<string>('');
   const [activeSlotName, setActiveSlotName] = useState<MealSlotName>('Lunch');
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
-  // Snapshot from live video frame
+  // Snapshot or biometric identifier
   const [capturedSnapshot, setCapturedSnapshot] = useState<string | null>(null);
-  const [isVerifyModalOpen, setIsVerifyModalOpen] = useState<boolean>(false);
   const [autoResetSeconds, setAutoResetSeconds] = useState<number>(10);
   const [snacksQty, setSnacksQty] = useState<number>(1);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState<boolean>(false);
-  const [autoStartCamera, setAutoStartCamera] = useState<boolean>(false);
   const [verifiedTimeoutSeconds, setVerifiedTimeoutSeconds] = useState<number>(30);
 
   // Daily 10-token limit per person per food type (Tiffin and Tea/Snacks)
@@ -100,7 +90,6 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
       setSnacksQty(1);
     }
   }, [isQtyAvailable, remainingToday, selectedMealSlot, currentEmployee?.id]);
-  const hudRef = useRef<FaceScannerHUDHandle | null>(null);
   const receiptRef = useRef<ThermalReceiptHandle | null>(null);
   const carouselRef = useRef<HTMLDivElement | null>(null);
   const [isPrintingActive, setIsPrintingActive] = useState<boolean>(false);
@@ -247,76 +236,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     checkDuplicate();
   }, [checkDuplicate]);
 
-  // =========================================================================
-  // CAMERA VERIFY MODEL: Checks if Person is Registered or Not
-  // Matches live camera facial structure & eye geometry against registered roster
-  // =========================================================================
-  const handleCaptureAndScan = async () => {
-    if (isProcessingScan || isScanVerified || kioskStep === 'VERIFIED') return;
-
-    // If camera is closed / off, turn on camera immediately!
-    if (!hudRef.current?.isCameraRunning()) {
-      hudRef.current?.startCamera();
-      setVerificationError(null);
-      return;
-    }
-
-    setVerificationError(null);
-    setIsCapturing(true);
-    setIsProcessingScan(true);
-    soundEngine.playScannerBeep();
-
-    try {
-      // 1. Capture snapshot frame from live camera viewfinder
-      const snapshot = hudRef.current?.captureSnapshot() || '';
-      setCapturedSnapshot(snapshot);
-
-      if (!snapshot) {
-        setIsCapturing(false);
-        setIsProcessingScan(false);
-        soundEngine.playWarningBuzzer();
-        setVerificationError('Face not detected. Please position your face in the camera.');
-        return;
-      }
-
-      // 2. Biometrically match live facial structure & eye geometry against registered roster
-      const matchResult = await faceMatcherService.matchLiveFace(snapshot, employees);
-
-      setIsCapturing(false);
-      setIsProcessingScan(false);
-
-      if (matchResult.hasFace && matchResult.isMatch && matchResult.matchedEmployee) {
-        // Biometric Match Confirmed!
-        soundEngine.playVerificationChime();
-        setCurrentEmployee(matchResult.matchedEmployee);
-        setIsScanVerified(true);
-        setLastPrintedOrder(null);
-        // Show glowing green camera outline briefly then transition to Verified view
-        setTimeout(() => {
-          setIsScanVerified(false);
-          setKioskStep('VERIFIED');
-        }, 550);
-      } else if (!matchResult.hasFace) {
-        soundEngine.playWarningBuzzer();
-        setVerificationError('Face not detected in scan area. Please align face inside the outline.');
-      } else {
-        // Verification Denied (Person is not in roster)
-        soundEngine.playWarningBuzzer();
-        setVerificationError(
-          matchResult.reason ||
-            'Biometric Verification Failed: Person is NOT registered in the canteen roster. Access Denied.'
-        );
-      }
-    } catch (err) {
-      console.error('Face verification error:', err);
-      setIsCapturing(false);
-      setIsProcessingScan(false);
-      soundEngine.playWarningBuzzer();
-      setVerificationError('Biometric verification error. Please try again.');
-    }
-  };
-
-  // Direct automatic callback from FaceScannerHUD real-time AI punching machine loop
+  // Callback when employee is verified by Mantra fingerprint scanner
   const handleUserIdentified = useCallback((matchedEmployee: Employee) => {
     if (kioskStep === 'VERIFIED' || isScanVerified) return;
     soundEngine.playVerificationChime();
@@ -325,19 +245,15 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     setVerificationError(null);
     setLastPrintedOrder(null);
     setSnacksQty(1);
-    const snap = hudRef.current?.captureSnapshot() || '';
-    if (snap) {
-      setCapturedSnapshot(snap);
-    }
 
     setTimeout(() => {
       setIsScanVerified(false);
       setKioskStep('VERIFIED');
-    }, 600);
+    }, 500);
   }, [kioskStep, isScanVerified]);
 
-  // Reset back to Camera Scan view (Step 1)
-  const handleResetToScan = useCallback((turnOnCamera = true) => {
+  // Reset back to Fingerprint Scan view (Step 1)
+  const handleResetToScan = useCallback(() => {
     setKioskStep('SCANNING');
     setIsScanVerified(false);
     setCurrentEmployee(null);
@@ -348,15 +264,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     setSnacksQty(1);
     setAutoResetSeconds(10);
     setVerifiedTimeoutSeconds(30);
-
-    if (turnOnCamera && authMode === 'face') {
-      setAutoStartCamera(true);
-      setTimeout(() => {
-        hudRef.current?.startCamera();
-        setAutoStartCamera(false);
-      }, 150);
-    }
-  }, [authMode]);
+  }, []);
 
   // Auto-close food type selection in 30 seconds after verified user, returning to scanning page
   useEffect(() => {
@@ -370,7 +278,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
       setVerifiedTimeoutSeconds((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
-          handleResetToScan(true); // Auto-close & turn camera on
+          handleResetToScan();
           return 30;
         }
         return prev - 1;
@@ -380,7 +288,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
     return () => clearInterval(interval);
   }, [kioskStep, lastPrintedOrder, handleResetToScan]);
 
-  // Auto-reset timer when thermal slip is displayed (pauses while printing is active, turns camera on)
+  // Auto-reset timer when thermal slip is displayed (pauses while printing is active)
   useEffect(() => {
     if (!lastPrintedOrder || isPrintingActive) {
       return;
@@ -389,7 +297,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
       setAutoResetSeconds((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
-          handleResetToScan(true);
+          handleResetToScan();
           return 10;
         }
         return prev - 1;
@@ -610,72 +518,27 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
             );
           })()}
 
-          {/* Centered Biometric Authentication Box (Fingerprint Default / Camera Face Backup) */}
+          {/* Centered Biometric Authentication Box (Mantra USB Fingerprint Scanner) */}
           <div className="w-full bg-white border border-slate-200 rounded-3xl p-3 sm:p-4 shadow-sm flex flex-col items-center gap-2.5">
-            
             <div className="w-full flex items-center justify-between pb-1.5 border-b border-slate-100">
               <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                 <Scan className="w-4 h-4 text-emerald-600" />
-                <span>
-                  {authMode === 'fingerprint'
-                    ? 'Mantra USB Fingerprint Authentication'
-                    : 'Biometric Camera Face Verification (Backup)'}
-                </span>
+                <span>Mantra USB Biometric Fingerprint Authentication</span>
               </span>
-              
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-mono text-slate-500 hidden sm:inline">
                   {currentTimeStr} • Live Roster Matching
                 </span>
-                
-                {/* Discrete Backup Mode Switcher */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextMode = authMode === 'fingerprint' ? 'face' : 'fingerprint';
-                    setAuthMode(nextMode);
-                    setVerificationError(null);
-                    if (nextMode === 'face') {
-                      setTimeout(() => hudRef.current?.startCamera(), 200);
-                    }
-                  }}
-                  className="px-2 py-0.5 rounded-lg text-[10px] font-bold border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 transition-colors"
-                  title="Switch between Mantra Fingerprint and Backup Face Scanner"
-                >
-                  {authMode === 'fingerprint' ? 'Backup Face Scan' : 'Switch to Fingerprint'}
-                </button>
               </div>
             </div>
 
-            {/* Primary Mode: Mantra USB Fingerprint Scanner */}
-            {authMode === 'fingerprint' && (
-              <FingerprintScannerHUD
-                employees={employees}
-                fingerprints={fingerprints}
-                onUserIdentified={(emp) => handleUserIdentified(emp)}
-                onError={(err) => setVerificationError(err)}
-              />
-            )}
-
-            {/* Backup Mode: Camera Viewfinder with Head & Shoulder Silhouette Overlay */}
-            {authMode === 'face' && (
-              <FaceScannerHUD
-                ref={hudRef}
-                currentEmployee={currentEmployee}
-                knownEmployees={employees}
-                isScanning={isProcessingScan}
-                isCapturing={isCapturing}
-                isVerified={isScanVerified}
-                autoStartCamera={autoStartCamera}
-                onUserIdentified={handleUserIdentified}
-                onFaceNotRegistered={(reason) => {
-                  soundEngine.playWarningBuzzer();
-                  setVerificationError(reason);
-                }}
-                onAutoScan={handleCaptureAndScan}
-              />
-            )}
-
+            {/* Mantra USB Fingerprint Scanner HUD */}
+            <FingerprintScannerHUD
+              employees={employees}
+              fingerprints={fingerprints}
+              onUserIdentified={(emp) => handleUserIdentified(emp)}
+              onError={(err) => setVerificationError(err)}
+            />
           </div>
 
           {/* Verification Error Alert if person is NOT registered */}
@@ -715,23 +578,6 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
               </div>
             </div>
           )}
-
-          {/* ============================================================= */}
-          {/* THE "Capture & scan." BUTTON (Secondary manual trigger)        */}
-          {/* ============================================================= */}
-          <button
-            id="btnCaptureAndScan"
-            onClick={handleCaptureAndScan}
-            disabled={isProcessingScan}
-            className="w-full sm:w-auto px-12 py-3 sm:py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-base sm:text-lg font-bold shadow-lg shadow-emerald-600/30 transition-all transform active:scale-95 flex items-center justify-center space-x-2.5 border-2 border-emerald-500 hover:border-emerald-600 shrink-0"
-          >
-            <Camera className="w-5 h-5 sm:w-6 sm:h-6" />
-            <span>{isProcessingScan ? 'Verifying Face...' : 'Capture & scan.'}</span>
-          </button>
-
-          <p className="text-[11px] text-slate-400 font-medium text-center shrink-0">
-            Auto-scans when face is in front of camera, or tap <strong>"Capture & scan."</strong>
-          </p>
 
         </div>
       )}
@@ -850,7 +696,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
 
             {/* Return / Scan Next Button */}
             <button
-              onClick={() => handleResetToScan(true)}
+              onClick={() => handleResetToScan()}
               className="mt-2.5 w-full py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-2 shadow-2xs active:scale-95 shrink-0"
             >
               <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
@@ -909,7 +755,7 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
                         : 'Print Physical Slip'}
                     </button>
                     <button
-                      onClick={() => handleResetToScan(true)}
+                      onClick={() => handleResetToScan()}
                       className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
                     >
                       <span>Done (Next Person)</span>
@@ -1212,17 +1058,6 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
         </div>
       )}
 
-      {/* Camera Biometric Verification Modal */}
-      <CameraVerifyModal
-        isOpen={isVerifyModalOpen}
-        onClose={() => {
-          setIsVerifyModalOpen(false);
-          setKioskStep('SCANNING');
-        }}
-        employee={currentEmployee}
-        capturedSnapshot={capturedSnapshot}
-        onNavigateToStaffScanner={onNavigateToStaffScanner}
-      />
 
       {/* Floating Feedback Button in Right Down Corner: ONLY in first scanning page, disappears when verified */}
       {kioskStep === 'SCANNING' && !isScanVerified && !currentEmployee && !lastPrintedOrder && (

@@ -28,7 +28,7 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
   const [deviceInfo, setDeviceInfo] = useState<MantraDeviceInfo>({
     isConnected: false,
     make: 'Mantra',
-    model: 'MFS100',
+    model: 'MFS110',
     serialNo: '',
     width: 300,
     height: 400,
@@ -48,7 +48,7 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
       const info = await mantraService.checkDevice();
       setDeviceInfo(info);
       if (!info.isConnected && !mantraService.getMockMode()) {
-        setStatusMessage('Mantra MFS100 disconnected. Connect USB device or enable Simulator.');
+        setStatusMessage('Mantra scanner disconnected. Connect USB device or enable Simulator.');
       }
     } catch {
       // ignore
@@ -189,7 +189,7 @@ export const FingerprintScannerHUD: React.FC<FingerprintScannerHUDProps> = ({
               <span className="text-[11px] font-mono text-slate-500">{deviceInfo.serialNo || 'Ready'}</span>
             </>
           ) : (
-            <span className="text-amber-700 font-medium">Mantra MFS100: Waiting for USB connection...</span>
+            <span className="text-amber-700 font-medium">Mantra Scanner: Waiting for USB connection...</span>
           )}
         </span>
         <button

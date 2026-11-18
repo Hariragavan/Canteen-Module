@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import http from 'http';
 import { Employee } from '../models/Employee.js';
 import { Fingerprint } from '../models/Fingerprint.js';
 import { Order } from '../models/Order.js';
@@ -423,6 +424,202 @@ router.delete('/fingerprints/:employeeId', async (req, res) => {
     res.json({ success: true, message: `Fingerprint for ${cleanId} deleted.` });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================================
+// 7. MANTRA HARDWARE PROXY (MFS110 L1 RD Service on port 11100 & MFS100 on 8032)
+// ============================================================================
+router.get('/mantra/info', async (req, res) => {
+  // 1. Try Port 11100 (MFS110 RD Service)
+  try {
+    const rawXml = await new Promise((resolve, reject) => {
+      const r = http.request({
+        hostname: '127.0.0.1',
+        port: 11100,
+        path: '/rd/info',
+        method: 'DEVICEINFO',
+        headers: { Connection: 'close' },
+        timeout: 1500,
+      }, (response) => {
+        let data = '';
+        response.on('data', chunk => data += chunk);
+        response.on('end', () => resolve(data));
+      });
+      r.on('error', reject);
+      r.on('timeout', () => { r.destroy(); reject(new Error('timeout')); });
+      r.end();
+    });
+
+    if (rawXml && rawXml.includes('DeviceInfo')) {
+      const miMatch = rawXml.match(/mi="([^"]+)"/);
+      const srnoMatch = rawXml.match(/name="srno"\s+value="([^"]+)"/);
+      const devTypeMatch = rawXml.match(/name="device_type"\s+value="([^"]+)"/);
+      return res.json({
+        isConnected: true,
+        make: 'Mantra',
+        model: miMatch ? miMatch[1] : 'MFS110',
+        serialNo: srnoMatch ? srnoMatch[1] : '',
+        deviceType: devTypeMatch ? devTypeMatch[1] : 'L1',
+        port: 11100,
+        serviceType: 'RDService'
+      });
+    }
+  } catch (e) {
+    // Port 11100 not responding, fall back
+  }
+
+  // 2. Try Port 8032 (MFS100 Client Service)
+  try {
+    const jsonRes = await new Promise((resolve, reject) => {
+      const r = http.request({
+        hostname: '127.0.0.1',
+        port: 8032,
+        path: '/mfs100/info',
+        method: 'GET',
+        headers: { Connection: 'close' },
+        timeout: 1500,
+      }, (response) => {
+        let data = '';
+        response.on('data', chunk => data += chunk);
+        response.on('end', () => resolve(data));
+      });
+      r.on('error', reject);
+      r.on('timeout', () => { r.destroy(); reject(new Error('timeout')); });
+      r.end();
+    });
+
+    if (jsonRes) {
+      const parsed = JSON.parse(jsonRes);
+      return res.json({
+        isConnected: true,
+        make: parsed.DeviceInfo?.Make || 'Mantra',
+        model: parsed.DeviceInfo?.Model || 'MFS100',
+        serialNo: parsed.DeviceInfo?.SerialNo || '',
+        port: 8032,
+        serviceType: 'ClientService'
+      });
+    }
+  } catch (e) {
+    // Both failed
+  }
+
+  return res.json({
+    isConnected: false,
+    make: 'Mantra',
+    model: 'MFS110',
+    serialNo: '',
+    error: 'Mantra RD Service not responding on port 11100 or 8032. Please ensure device is plugged in.'
+  });
+});
+
+router.post('/mantra/capture', async (req, res) => {
+  const timeoutMs = parseInt(req.body.timeout || '10000', 10);
+  const pidXml = `<PidOptions ver="1.0">
+  <Opts fCount="1" fType="0" iCount="0" pCount="0" format="0" pidVer="2.0" timeout="${timeoutMs}" env="P" posh="UNKNOWN" />
+  <Demo></Demo>
+  <CustOpts>
+    <Param name="mantrakey" value="" />
+  </CustOpts>
+</PidOptions>`;
+
+  // 1. Try Port 11100 (MFS110 RD Service)
+  try {
+    const rawXml = await new Promise((resolve, reject) => {
+      const r = http.request({
+        hostname: '127.0.0.1',
+        port: 11100,
+        path: '/rd/capture',
+        method: 'CAPTURE',
+        headers: {
+          'Content-Type': 'text/xml',
+          'Content-Length': Buffer.byteLength(pidXml, 'utf8'),
+          'Connection': 'close'
+        },
+        timeout: timeoutMs + 3000,
+      }, (response) => {
+        let data = '';
+        response.on('data', chunk => data += chunk);
+        response.on('end', () => resolve(data));
+      });
+      r.on('error', reject);
+      r.on('timeout', () => { r.destroy(); reject(new Error('Capture timed out')); });
+      r.write(pidXml);
+      r.end();
+    });
+
+    if (rawXml) {
+      const errCodeMatch = rawXml.match(/errCode="([^"]+)"/);
+      const errInfoMatch = rawXml.match(/errInfo="([^"]+)"/);
+      const qScoreMatch = rawXml.match(/qScore="([^"]+)"/);
+      const nmPointsMatch = rawXml.match(/nmPoints="([^"]+)"/);
+      const dataMatch = rawXml.match(/<Data[^>]*>([\s\S]*?)<\/Data>/);
+      const hmacMatch = rawXml.match(/<Hmac>([\s\S]*?)<\/Hmac>/);
+
+      const errCode = errCodeMatch ? parseInt(errCodeMatch[1], 10) : -1;
+      const success = errCode === 0;
+
+      return res.json({
+        success,
+        errorCode: errCode,
+        errorDescription: errInfoMatch ? errInfoMatch[1] : (success ? 'Success' : 'Capture failed'),
+        quality: qScoreMatch ? parseInt(qScoreMatch[1], 10) : 0,
+        nmPoints: nmPointsMatch ? parseInt(nmPointsMatch[1], 10) : 0,
+        isoTemplate: dataMatch ? dataMatch[1].trim() : '',
+        hmac: hmacMatch ? hmacMatch[1].trim() : '',
+        bitmapData: '', // RD Service sends template data
+        model: 'MFS110'
+      });
+    }
+  } catch (e) {
+    // Port 11100 failed or not running, try Port 8032 (MFS100)
+  }
+
+  // 2. Try Port 8032 (MFS100 Client Service)
+  try {
+    const payload = JSON.stringify({ Quality: 60, TimeOut: Math.round(timeoutMs / 1000) });
+    const jsonRes = await new Promise((resolve, reject) => {
+      const r = http.request({
+        hostname: '127.0.0.1',
+        port: 8032,
+        path: '/mfs100/capture',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload, 'utf8'),
+          'Connection': 'close'
+        },
+        timeout: timeoutMs + 3000,
+      }, (response) => {
+        let data = '';
+        response.on('data', chunk => data += chunk);
+        response.on('end', () => resolve(data));
+      });
+      r.on('error', reject);
+      r.on('timeout', () => { r.destroy(); reject(new Error('Capture timed out')); });
+      r.write(payload);
+      r.end();
+    });
+
+    if (jsonRes) {
+      const parsed = JSON.parse(jsonRes);
+      const success = parsed.ErrorCode === 0 || parsed.ErrorCode === '0';
+      return res.json({
+        success,
+        errorCode: parsed.ErrorCode,
+        errorDescription: parsed.ErrorDescription || (success ? 'Success' : 'Failed'),
+        quality: parsed.Quality || 0,
+        isoTemplate: parsed.IsoTemplate || '',
+        bitmapData: parsed.BitmapData ? `data:image/bmp;base64,${parsed.BitmapData}` : '',
+        model: 'MFS100'
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      errorCode: -1,
+      errorDescription: err.message || 'Mantra communication error'
+    });
   }
 });
 

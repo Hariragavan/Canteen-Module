@@ -10,8 +10,6 @@ import {
   UserPlus,
   Users,
   Camera,
-  CameraOff,
-  SwitchCamera,
   RefreshCw,
   Trash2,
   Edit2,
@@ -38,11 +36,7 @@ import {
 import type { MealSlotConfig, MealSlotName } from '../../types';
 import { mantraService } from '../../services/mantraService';
 
-import {
-  faceMatcherService,
-  findBestMatch,
-  startCameraWithFacingMode,
-} from '../../services/faceMatcherService';
+import { faceMatcherService } from '../../services/faceMatcherService';
 
 interface AdminPortalModalProps {
   isOpen: boolean;
@@ -95,9 +89,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     face_descriptor: null,
   });
 
-  // Biometric Mode for New Personnel Registration: 'fingerprint' (Default Mantra MFS100) or 'face' (Backup)
-  const [regMode, setRegMode] = useState<'fingerprint' | 'face'>('fingerprint');
-
   const FINGER_OPTIONS = [
     'Right Thumb',
     'Right Index',
@@ -148,10 +139,10 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen && isRegisteringNew && regMode === 'fingerprint') {
+    if (isOpen && isRegisteringNew) {
       checkMantraInAdmin();
     }
-  }, [isOpen, isRegisteringNew, regMode]);
+  }, [isOpen, isRegisteringNew]);
 
   const handleScanFinger1 = async () => {
     setIsScanningFp1(true);
@@ -205,17 +196,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     }
   };
 
-  // Camera capture state
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-  const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
-  const [isSwitchingCamera, setIsSwitchingCamera] = useState<boolean>(false);
-  const [isCapturing, setIsCapturing] = useState<boolean>(false);
-  const [isExtractingBiometric, setIsExtractingBiometric] = useState<boolean>(false);
-  const [biometricStatus, setBiometricStatus] = useState<string | null>(null);
-  const [cameraError, setCameraError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -237,297 +217,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     }
   }, [isOpen]);
 
-  // Start webcam with selected facing mode (front or rear tablet camera)
-  const startCamera = async (mode: 'user' | 'environment' = facingMode) => {
-    try {
-      setCameraError(null);
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-        mediaStreamRef.current = null;
-      }
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach((track) => track.stop());
-        videoRef.current.srcObject = null;
-      }
-      // Wait 300ms for device hardware release
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      if (!videoRef.current) return;
-      const result = await startCameraWithFacingMode(videoRef.current, mode);
-      mediaStreamRef.current = result.stream;
-      setIsCameraActive(true);
-      setFacingMode(result.actualFacingMode);
-
-      if (mode === 'environment' && result.actualFacingMode === 'user') {
-        setCameraError('No rear camera detected on this device. Using front camera.');
-      }
-    } catch (err) {
-      console.warn('Admin camera preview error:', err);
-      setCameraError('Camera access denied or unavailable. You can use fallback photo or upload.');
-      setIsCameraActive(false);
-    }
-  };
-
-  const toggleFacingMode = async () => {
-    if (isSwitchingCamera) return;
-    setIsSwitchingCamera(true);
-    const nextMode = facingMode === 'user' ? 'environment' : 'user';
-    try {
-      if (isCameraActive) {
-        await startCamera(nextMode);
-      } else {
-        setFacingMode(nextMode);
-      }
-    } finally {
-      setIsSwitchingCamera(false);
-    }
-  };
-
   const stopCamera = () => {
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
-    }
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
-    }
-    setIsCameraActive(false);
+    // Pure fingerprint registration: no camera needed
   };
-
-  // Sync stream to video element whenever camera becomes active or mounts
-  useEffect(() => {
-    if (isCameraActive && videoRef.current && mediaStreamRef.current) {
-      if (videoRef.current.srcObject !== mediaStreamRef.current) {
-        videoRef.current.srcObject = mediaStreamRef.current;
-        videoRef.current.setAttribute('playsinline', 'true');
-        videoRef.current.muted = true;
-        videoRef.current.play().catch((e) => console.warn('Video play sync error:', e));
-      }
-    }
-  }, [isCameraActive]);
-
-  useEffect(() => {
-    // Only engage camera when user explicitly opts into Backup Face Scan mode
-    if (isOpen && activeTab === 'registered' && isRegisteringNew && !formData.photo && regMode === 'face') {
-      startCamera(facingMode);
-    } else if (!isOpen || activeTab !== 'registered' || !isRegisteringNew || formData.photo || regMode !== 'face') {
-      stopCamera();
-    }
-    return () => stopCamera();
-  }, [isOpen, activeTab, isRegisteringNew, formData.photo, regMode]);
-
-  // Take photo snapshot from video stream and compute 128D biometric descriptor
-  const capturePhoto = async () => {
-    if (!videoRef.current) return;
-    const video = videoRef.current;
-
-    // If camera stream is not active or video is not ready, try starting camera
-    if (!isCameraActive || !mediaStreamRef.current) {
-      await startCamera(facingMode);
-      return;
-    }
-
-    if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
-      setBiometricStatus('⚠️ Camera is still loading. Please wait a moment and try again.');
-      return;
-    }
-
-    setIsCapturing(true);
-    soundEngine.playScannerBeep();
-
-    try {
-      const canvas = canvasRef.current || document.createElement('canvas');
-      canvas.width = 400;
-      canvas.height = 400;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        setBiometricStatus('⚠️ Canvas error. Please try again.');
-        return;
-      }
-
-      // Draw centered square crop with bias toward natural head height
-      const vW = video.videoWidth;
-      const vH = video.videoHeight;
-      const minDim = Math.min(vW, vH);
-      const startX = Math.max(0, (vW - minDim) / 2);
-      const startY = Math.max(0, (vH - minDim) / 3);
-      ctx.save();
-      // Only mirror crop when using front camera
-      if (facingMode === 'user') {
-        ctx.translate(400, 0);
-        ctx.scale(-1, 1);
-      }
-      ctx.drawImage(video, startX, startY, minDim, minDim, 0, 0, 400, 400);
-      ctx.restore();
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
-
-      setIsExtractingBiometric(true);
-      setBiometricStatus('Analyzing face & generating 128D embedding vector...');
-
-      try {
-        // First try extracting from the cropped avatar
-        let descriptor = await faceMatcherService.extractDescriptorArray(canvas);
-
-        // If not found in the crop (e.g. tablet aspect ratio), extract from full raw video directly
-        if (!descriptor || descriptor.length !== 128) {
-          descriptor = await faceMatcherService.extractDescriptorArray(video);
-        }
-
-        if (descriptor && descriptor.length === 128) {
-          // Strict duplicate face check (threshold 0.44 catches same person with/without specs, avoids different people)
-          const existingMatch = findBestMatch(descriptor, employees, 0.44);
-          if (existingMatch) {
-            setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
-            const msg = `⚠️ Face Already Registered: Matches "${existingMatch.employee.name}" (${existingMatch.employee.id}) with ${existingMatch.accuracy}% match accuracy! Only one face for one ID is allowed.`;
-            setBiometricStatus(msg);
-            setErrorMessage(`Duplicate Face Error: This person is already registered as ${existingMatch.employee.name} (${existingMatch.employee.id}) with ${existingMatch.accuracy}% match accuracy!`);
-            soundEngine.playWarningBuzzer();
-            return;
-          }
-
-          setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: descriptor }));
-          setBiometricStatus('✓ 128D Biometric Vector Enrolled (Unique Face Verified)');
-          setErrorMessage(null);
-          // Only stop camera when photo is confirmed and enrolled
-          stopCamera();
-        } else {
-          setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
-          setBiometricStatus('⚠️ No human face detected in photo. Please ensure face is centered and well lit.');
-          // Keep camera running so user can immediately retry capture!
-        }
-      } catch (e) {
-        console.warn('Biometric extraction error:', e);
-        setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
-        setBiometricStatus('⚠️ Could not extract face embedding. Please try again.');
-      } finally {
-        setIsExtractingBiometric(false);
-      }
-    } finally {
-      setTimeout(() => setIsCapturing(false), 200);
-    }
-  };
-
-  // Generate random avatar fallback
-  const handleUseSamplePhoto = async () => {
-    const randomSeed = Math.floor(Math.random() * 1000);
-    const photoUrl = `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&sig=${randomSeed}`;
-    setFormData((prev) => ({ ...prev, photo: photoUrl }));
-    stopCamera();
-
-    setIsExtractingBiometric(true);
-    setBiometricStatus('Extracting facial embedding from sample photo...');
-    try {
-      const desc = await faceMatcherService.extractDescriptorArray(photoUrl);
-      if (desc && desc.length === 128) {
-        const existingMatch = findBestMatch(desc, employees, 0.44);
-        if (existingMatch) {
-          setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
-          setBiometricStatus(`⚠️ Sample face already registered under "${existingMatch.employee.name}" (${existingMatch.accuracy}% accuracy).`);
-          setErrorMessage(`Duplicate Face: Already registered under ${existingMatch.employee.name} with ${existingMatch.accuracy}% accuracy.`);
-          soundEngine.playWarningBuzzer();
-          return;
-        }
-        setFormData((prev) => ({ ...prev, face_descriptor: desc }));
-        setBiometricStatus('✓ 128D Biometric Vector Enrolled');
-        setErrorMessage(null);
-      } else {
-        setBiometricStatus('⚠️ Could not detect face in sample photo');
-      }
-    } catch {
-      setBiometricStatus(null);
-    } finally {
-      setIsExtractingBiometric(false);
-    }
-  };
-
-  // Helper to scale & compress uploaded images to max 400x400 JPEG (~30KB)
-  const compressImage = (dataUrl: string, maxDim = 400): Promise<string> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let { width, height } = img;
-        if (width > height) {
-          if (width > maxDim) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          }
-        } else {
-          if (height > maxDim) {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.82));
-        } else {
-          resolve(dataUrl);
-        }
-      };
-      img.onerror = () => resolve(dataUrl);
-      img.src = dataUrl;
-    });
-  };
-
-  // File Upload fallback
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        if (event.target?.result) {
-          const rawDataUrl = String(event.target.result);
-          const dataUrl = await compressImage(rawDataUrl);
-          setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: null }));
-          stopCamera();
-
-          setIsExtractingBiometric(true);
-          setBiometricStatus('Analyzing face & generating 128D embedding vector...');
-          setErrorMessage(null);
-
-          try {
-            const desc = await faceMatcherService.extractDescriptorArray(dataUrl);
-            if (desc && desc.length === 128) {
-              // Check for duplicate face against already registered employees (threshold 0.44)
-              const existingMatch = findBestMatch(desc, employees, 0.44);
-              if (existingMatch) {
-                setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
-                const msg = `⚠️ Face Already Registered: Uploaded photo matches "${existingMatch.employee.name}" (${existingMatch.employee.id}) with ${existingMatch.accuracy}% match accuracy! Only one face for one ID is allowed.`;
-                setBiometricStatus(msg);
-                setErrorMessage(`Duplicate Face Error: This person is already registered as ${existingMatch.employee.name} (${existingMatch.employee.id}) with ${existingMatch.accuracy}% match accuracy!`);
-                soundEngine.playWarningBuzzer();
-                return;
-              }
-
-              setFormData((prev) => ({ ...prev, photo: dataUrl, face_descriptor: desc }));
-              setBiometricStatus('✓ 128D Biometric Vector Enrolled (Unique Face Verified)');
-              setErrorMessage(null);
-            } else {
-              setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
-              setBiometricStatus('⚠️ No human face detected in uploaded file.');
-              setErrorMessage('No human face detected. Please upload a clear, front-facing portrait.');
-              soundEngine.playWarningBuzzer();
-            }
-          } catch {
-            setBiometricStatus('⚠️ Biometric extraction failed');
-          } finally {
-            setIsExtractingBiometric(false);
-          }
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-    // Reset file input so re-uploading the same file still triggers onChange
-    e.target.value = '';
-  };
-
 
   // Switch department and auto-generate clean prefix if ID is blank
   const handleDeptChange = (dept: string) => {
@@ -571,109 +263,15 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
     const role: 'Staff' | 'Employee' = formData.dept.toLowerCase().includes('staff') ? 'Staff' : 'Employee';
 
-    // FINGERPRINT REGISTRATION MODE (Mantra MFS100 Two-Finger Enrollment)
-    if (regMode === 'fingerprint') {
-      if (!finger1.isoTemplate) {
-        soundEngine.playWarningBuzzer();
-        setErrorMessage('Biometric Requirement: Please scan Finger 1 (Primary finger).');
-        return;
-      }
-      if (!finger2.isoTemplate) {
-        soundEngine.playWarningBuzzer();
-        setErrorMessage('Biometric Requirement: Please scan Finger 2 (Secondary backup finger).');
-        return;
-      }
-
-      try {
-        const newEmployee: Employee = {
-          id: cleanId,
-          name: cleanName,
-          dept: formData.dept,
-          photo: finger1.bitmapData || '',
-          confidence: 0.99,
-          subsidyRate: 1.0,
-          role,
-          hasFingerprint: true,
-        };
-
-        // 1. Save to Employee store
-        await canteenService.addEmployee(newEmployee);
-
-        // 2. Save Two-Finger biometrics to dedicated Fingerprints store
-        await canteenService.saveFingerprint({
-          employeeId: cleanId,
-          employeeName: cleanName,
-          dept: formData.dept,
-          finger1: {
-            fingerName: finger1.fingerName,
-            isoTemplate: finger1.isoTemplate,
-            bitmapData: finger1.bitmapData,
-            quality: finger1.quality,
-          },
-          finger2: {
-            fingerName: finger2.fingerName,
-            isoTemplate: finger2.isoTemplate,
-            bitmapData: finger2.bitmapData,
-            quality: finger2.quality,
-          },
-        });
-
-        soundEngine.playVerificationChime();
-        setSuccessMessage(`✓ Successfully registered ${cleanName} (${cleanId}) with 2 fingerprints enrolled! Ready for next personnel.`);
-        loadEmployees();
-        if (onRosterUpdated) onRosterUpdated();
-
-        // Reset form & fingerprints for next continuous registration
-        const nextId = formData.dept.toLowerCase().includes('staff')
-          ? `STF-${1000 + employees.length + 2}`
-          : `EMP-${1000 + employees.length + 2}`;
-
-        setFormData({
-          id: nextId,
-          name: '',
-          dept: formData.dept,
-          photo: '',
-          face_descriptor: null,
-        });
-
-        setFinger1({
-          fingerName: 'Right Thumb',
-          isoTemplate: '',
-          bitmapData: '',
-          quality: 0,
-        });
-
-        setFinger2({
-          fingerName: 'Right Index',
-          isoTemplate: '',
-          bitmapData: '',
-          quality: 0,
-        });
-      } catch (err: unknown) {
-        soundEngine.playWarningBuzzer();
-        const msg = err instanceof Error ? err.message : 'Fingerprint registration failed';
-        setErrorMessage(`Registration Error: ${msg}`);
-      }
-      return;
-    }
-
-    // BACKUP FACE REGISTRATION MODE
-    if (!formData.photo) {
-      setErrorMessage('Please capture or upload a photo for backup biometric face recognition.');
-      return;
-    }
-
-    // Require valid biometric descriptor & prevent duplicate face
-    if (!formData.face_descriptor || formData.face_descriptor.length !== 128) {
+    // TWO-FINGER BIOMETRIC FINGERPRINT ENROLLMENT (Mantra MFS110 / MFS100)
+    if (!finger1.isoTemplate) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage('Biometric Requirement: A valid human face must be detected before registration. Please capture or upload a clear photo.');
+      setErrorMessage('Biometric Requirement: Please scan Finger 1 (Primary finger on Mantra sensor).');
       return;
     }
-
-    const duplicateFaceMatch = findBestMatch(formData.face_descriptor, employees, 0.44);
-    if (duplicateFaceMatch) {
+    if (!finger2.isoTemplate) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage(`Duplicate Face Error: This face is already registered under "${duplicateFaceMatch.employee.name}" (${duplicateFaceMatch.employee.id}) with ${duplicateFaceMatch.accuracy}% match accuracy! Only one face for one ID is allowed.`);
+      setErrorMessage('Biometric Requirement: Please scan Finger 2 (Secondary backup finger on Mantra sensor).');
       return;
     }
 
@@ -682,21 +280,41 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         id: cleanId,
         name: cleanName,
         dept: formData.dept,
-        photo: formData.photo,
-        confidence: 0.985,
+        photo: finger1.bitmapData || '',
+        confidence: 0.99,
         subsidyRate: 1.0,
         role,
-        face_descriptor: formData.face_descriptor,
-        embedding: formData.face_descriptor,
+        hasFingerprint: true,
       };
 
+      // 1. Save to Employee store
       await canteenService.addEmployee(newEmployee);
+
+      // 2. Save Two-Finger biometrics to dedicated Fingerprints store
+      await canteenService.saveFingerprint({
+        employeeId: cleanId,
+        employeeName: cleanName,
+        dept: formData.dept,
+        finger1: {
+          fingerName: finger1.fingerName,
+          isoTemplate: finger1.isoTemplate,
+          bitmapData: finger1.bitmapData,
+          quality: finger1.quality,
+        },
+        finger2: {
+          fingerName: finger2.fingerName,
+          isoTemplate: finger2.isoTemplate,
+          bitmapData: finger2.bitmapData,
+          quality: finger2.quality,
+        },
+      });
+
       soundEngine.playVerificationChime();
-      setSuccessMessage(`✓ Successfully registered ${newEmployee.name} (${newEmployee.id})! Camera is ready for next registration.`);
+      setSuccessMessage(`✓ Successfully registered ${cleanName} (${cleanId}) with 2 fingerprints enrolled! Ready for next personnel.`);
       loadEmployees();
       if (onRosterUpdated) onRosterUpdated();
 
-      // Reset form and prepare next sequential ID for continuous enrollment
+      // Reset form & fingerprints for next continuous registration
       const nextId = formData.dept.toLowerCase().includes('staff')
         ? `STF-${1000 + employees.length + 2}`
         : `EMP-${1000 + employees.length + 2}`;
@@ -708,17 +326,24 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         photo: '',
         face_descriptor: null,
       });
-      setBiometricStatus(null);
-      setIsCapturing(false);
-      setIsExtractingBiometric(false);
 
-      setTimeout(() => {
-        if (regMode === 'face') startCamera(facingMode);
-      }, 250);
+      setFinger1({
+        fingerName: 'Right Thumb',
+        isoTemplate: '',
+        bitmapData: '',
+        quality: 0,
+      });
+
+      setFinger2({
+        fingerName: 'Right Index',
+        isoTemplate: '',
+        bitmapData: '',
+        quality: 0,
+      });
     } catch (err: unknown) {
       soundEngine.playWarningBuzzer();
-      const msg = err instanceof Error ? err.message : 'Registration failed';
-      setErrorMessage(msg);
+      const msg = err instanceof Error ? err.message : 'Fingerprint registration failed';
+      setErrorMessage(`Registration Error: ${msg}`);
     }
   };
 
@@ -1397,316 +1022,161 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 </div>
               )}
 
-              {/* Top Selector: Mantra Fingerprint (Default) vs Backup Camera Face Scan */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50 p-2 sm:p-2.5 rounded-2xl border border-slate-200">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRegMode('fingerprint');
-                      stopCamera();
-                      setErrorMessage(null);
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                      regMode === 'fingerprint'
-                        ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
-                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
-                    }`}
-                  >
-                    <FingerprintIcon className="w-4 h-4" />
-                    <span>Mantra Fingerprint (Two-Finger Enrollment)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRegMode('face');
-                      setErrorMessage(null);
-                      setTimeout(() => startCamera(facingMode), 200);
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                      regMode === 'face'
-                        ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
-                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
-                    }`}
-                  >
-                    <Camera className="w-4 h-4" />
-                    <span>Backup Face Scan</span>
-                  </button>
+              {/* Header: Mantra Biometric Fingerprint Registration */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-emerald-50/80 p-3 rounded-2xl border border-emerald-200">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                    <FingerprintIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold text-emerald-950">Mantra Biometric Fingerprint Registration</h4>
+                    <p className="text-[11px] text-emerald-700 font-medium">Two-Finger Biometric Enrollment (Primary + Backup)</p>
+                  </div>
                 </div>
 
                 {/* Live Device Connection Badge */}
-                {regMode === 'fingerprint' && (
-                  <div className="flex items-center gap-2 text-xs font-medium">
-                    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 font-mono text-[11px]">
-                      <Usb className={`w-3.5 h-3.5 ${mantraInfo.isConnected ? 'text-emerald-600 animate-pulse' : 'text-amber-500'}`} />
-                      <span>{mantraInfo.isConnected ? 'Mantra MFS100 Connected' : 'MFS100 Ready / USB'}</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = !mantraService.getMockMode();
-                        mantraService.setMockMode(next);
-                        checkMantraInAdmin();
-                      }}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${
-                        mantraService.getMockMode()
-                          ? 'bg-amber-100 text-amber-900 border-amber-300'
-                          : 'bg-white text-slate-500 hover:text-slate-800 border-slate-200'
-                      }`}
-                      title="Toggle simulated test mode"
-                    >
-                      {mantraService.getMockMode() ? 'Simulator ON' : 'Test Mode'}
-                    </button>
-                  </div>
-                )}
+                <div className="flex items-center gap-2 text-xs font-medium">
+                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-slate-800 font-mono text-[11px] shadow-2xs">
+                    <Usb className={`w-3.5 h-3.5 ${mantraInfo.isConnected ? 'text-emerald-600 animate-pulse' : 'text-amber-500'}`} />
+                    <span className="font-bold">{mantraInfo.isConnected ? `Mantra ${mantraInfo.model || 'MFS110'} Connected` : 'Waiting for USB...'}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !mantraService.getMockMode();
+                      mantraService.setMockMode(next);
+                      checkMantraInAdmin();
+                    }}
+                    className={`px-2.5 py-1.5 rounded-xl text-[10px] font-bold border transition-all ${
+                      mantraService.getMockMode()
+                        ? 'bg-amber-100 text-amber-900 border-amber-300'
+                        : 'bg-white text-slate-600 hover:text-slate-900 border-slate-200'
+                    }`}
+                    title="Toggle simulated test mode"
+                  >
+                    {mantraService.getMockMode() ? 'Simulator ON' : 'Test Mode'}
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
                 
                 {/* ========================================================= */}
-                {/* 1. MANTRA FINGERPRINT ENROLLMENT (TWO FINGERS)            */}
+                {/* 1. MANTRA FINGERPRINT ENROLLMENT (TWO FINGERS) (5 cols)   */}
                 {/* ========================================================= */}
-                {regMode === 'fingerprint' && (
-                  <div className="md:col-span-5 flex flex-col gap-3.5">
-                    
-                    {/* Finger 1 Card (Primary) */}
-                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-2xs">
-                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
-                        <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                          <FingerprintIcon className="w-4 h-4 text-emerald-600" />
-                          <span>Finger 1 (Primary) *</span>
-                        </span>
-                        {finger1.isoTemplate && (
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300 flex items-center gap-1">
-                            <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                            <span>Quality: {finger1.quality}%</span>
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Finger Name Selector */}
-                      <select
-                        value={finger1.fingerName}
-                        onChange={(e) => setFinger1({ ...finger1, fingerName: e.target.value })}
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"
-                      >
-                        {FINGER_OPTIONS.map((f) => (
-                          <option key={f} value={f}>
-                            {f}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Finger 1 Preview or Scan Dock */}
-                      <div className="h-32 bg-slate-900 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center relative">
-                        {finger1.bitmapData ? (
-                          <img
-                            src={finger1.bitmapData}
-                            alt="Finger 1 scan"
-                            className="h-full object-contain filter contrast-125"
-                          />
-                        ) : (
-                          <div className="flex flex-col items-center justify-center text-slate-400 gap-1">
-                            <FingerprintIcon className="w-10 h-10 text-slate-600" />
-                            <span className="text-[10px] font-mono">Not Enrolled Yet</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={handleScanFinger1}
-                        disabled={isScanningFp1}
-                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 cursor-pointer"
-                      >
-                        <FingerprintIcon className="w-4 h-4" />
-                        <span>{isScanningFp1 ? 'Scanning on Mantra...' : finger1.isoTemplate ? 'Rescan Finger 1' : 'Scan Finger 1 on Device'}</span>
-                      </button>
-                    </div>
-
-                    {/* Finger 2 Card (Backup) */}
-                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-2xs">
-                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
-                        <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                          <FingerprintIcon className="w-4 h-4 text-blue-600" />
-                          <span>Finger 2 (Secondary / Backup) *</span>
-                        </span>
-                        {finger2.isoTemplate && (
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-bold border border-blue-300 flex items-center gap-1">
-                            <ShieldCheck className="w-3 h-3 text-blue-600" />
-                            <span>Quality: {finger2.quality}%</span>
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Finger Name Selector */}
-                      <select
-                        value={finger2.fingerName}
-                        onChange={(e) => setFinger2({ ...finger2, fingerName: e.target.value })}
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"
-                      >
-                        {FINGER_OPTIONS.map((f) => (
-                          <option key={f} value={f}>
-                            {f}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Finger 2 Preview or Scan Dock */}
-                      <div className="h-32 bg-slate-900 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center relative">
-                        {finger2.bitmapData ? (
-                          <img
-                            src={finger2.bitmapData}
-                            alt="Finger 2 scan"
-                            className="h-full object-contain filter contrast-125"
-                          />
-                        ) : (
-                          <div className="flex flex-col items-center justify-center text-slate-400 gap-1">
-                            <FingerprintIcon className="w-10 h-10 text-slate-600" />
-                            <span className="text-[10px] font-mono">Not Enrolled Yet</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={handleScanFinger2}
-                        disabled={isScanningFp2}
-                        className="w-full py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 cursor-pointer"
-                      >
-                        <FingerprintIcon className="w-4 h-4" />
-                        <span>{isScanningFp2 ? 'Scanning on Mantra...' : finger2.isoTemplate ? 'Rescan Finger 2' : 'Scan Finger 2 on Device'}</span>
-                      </button>
-                    </div>
-
-                  </div>
-                )}
-
-                {/* ========================================================= */}
-                {/* 2. BACKUP: Camera Face Image Capture (5 cols)             */}
-                {/* ========================================================= */}
-                {regMode === 'face' && (
-                  <div className="md:col-span-5 bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col items-center gap-3 text-center">
-                    <div className="w-full flex items-center justify-between pb-2 border-b border-slate-200">
+                <div className="md:col-span-5 flex flex-col gap-3.5">
+                  
+                  {/* Finger 1 Card (Primary) */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-2xs">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
                       <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <Camera className="w-4 h-4 text-emerald-600" />
-                        <span>Biometric Face Capture (Backup)</span>
+                        <FingerprintIcon className="w-4 h-4 text-emerald-600" />
+                        <span>Finger 1 (Primary) *</span>
                       </span>
-                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
-                        isCameraActive ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold' : 'bg-white text-slate-600 border-slate-200'
-                      }`}>
-                        {isCameraActive ? 'Live Stream Active' : 'Camera Standby'}
-                      </span>
+                      {finger1.isoTemplate && (
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300 flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                          <span>Quality: {finger1.quality}%</span>
+                        </span>
+                      )}
                     </div>
 
-                    {/* Video Viewport or Captured Snapshot Preview */}
-                    <div className="relative w-56 h-56 rounded-3xl overflow-hidden shadow-inner flex items-center justify-center border-2 border-slate-700 bg-slate-900">
-                      <video
-                        ref={videoRef}
-                        playsInline
-                        muted
-                        autoPlay
-                        onLoadedMetadata={() => videoRef.current?.play().catch(() => {})}
-                        onCanPlay={() => videoRef.current?.play().catch(() => {})}
-                        className={`w-full h-full object-cover absolute inset-0 transition-opacity duration-300 ${
-                          facingMode === 'user' ? 'mirror' : ''
-                        } ${isCameraActive && !formData.photo ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none'}`}
-                      />
+                    {/* Finger Name Selector */}
+                    <select
+                      value={finger1.fingerName}
+                      onChange={(e) => setFinger1({ ...finger1, fingerName: e.target.value })}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"
+                    >
+                      {FINGER_OPTIONS.map((f) => (
+                        <option key={f} value={f}>
+                          {f}
+                        </option>
+                      ))}
+                    </select>
 
-                      {formData.photo ? (
+                    {/* Finger 1 Preview or Scan Dock */}
+                    <div className="h-32 bg-slate-900 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center relative">
+                      {finger1.bitmapData ? (
                         <img
-                          src={formData.photo}
-                          alt="Captured face"
-                          className="w-full h-full object-cover z-10"
+                          src={finger1.bitmapData}
+                          alt="Finger 1 scan"
+                          className="h-full object-contain filter contrast-125"
                         />
-                      ) : !isCameraActive ? (
-                        <div className="flex flex-col items-center justify-center p-3 text-center z-10">
-                          <div className="w-11 h-11 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 mb-1.5 shadow-inner">
-                            <CameraOff className="w-5 h-5" />
-                          </div>
-                          <p className="text-xs font-bold text-slate-200">Camera is Closed</p>
-                          <div className="mt-2 flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => startCamera(facingMode)}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[11px] font-bold shadow-md shadow-emerald-600/30 flex items-center space-x-1.5 transition-all active:scale-95 cursor-pointer"
-                            >
-                              <Camera className="w-3.5 h-3.5" />
-                              <span>Open Camera</span>
-                            </button>
-                          </div>
-                        </div>
                       ) : (
-                        <div className="absolute top-2 left-2 z-30 flex items-center space-x-1.5">
-                          <button
-                            type="button"
-                            disabled={isSwitchingCamera}
-                            onClick={toggleFacingMode}
-                            className="px-2.5 py-1 bg-slate-800/90 hover:bg-slate-700 text-white rounded-lg text-[10px] font-bold shadow-md flex items-center space-x-1 border border-slate-600 backdrop-blur-xs transition-all active:scale-95 cursor-pointer disabled:opacity-60"
-                          >
-                            <SwitchCamera className={`w-3 h-3 text-emerald-400 ${isSwitchingCamera ? 'animate-spin' : ''}`} />
-                            <span>{facingMode === 'user' ? 'Back Cam' : 'Front Cam'}</span>
-                          </button>
+                        <div className="flex flex-col items-center justify-center text-slate-400 gap-1">
+                          <FingerprintIcon className="w-10 h-10 text-slate-600" />
+                          <span className="text-[10px] font-mono">Not Enrolled Yet</span>
                         </div>
                       )}
                     </div>
 
-                    {/* Camera Actions */}
-                    <div className="w-full flex flex-col gap-2">
-                      {formData.photo ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFormData((prev) => ({ ...prev, photo: '', face_descriptor: null }));
-                            startCamera(facingMode);
-                          }}
-                          className="w-full py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 rounded-xl text-xs font-bold shadow-2xs flex items-center justify-center space-x-1.5 cursor-pointer"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
-                          <span>Retake / Clear Photo</span>
-                        </button>
-                      ) : isCameraActive ? (
-                        <button
-                          type="button"
-                          onClick={capturePhoto}
-                          disabled={isCapturing || isExtractingBiometric}
-                          className="w-full py-2.5 rounded-xl text-xs font-bold shadow-md flex items-center justify-center space-x-2 transition-transform active:scale-95 bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 cursor-pointer disabled:opacity-60"
-                        >
-                          <Camera className="w-4 h-4" />
-                          <span>{isCapturing || isExtractingBiometric ? 'Capturing...' : 'Capture Photo'}</span>
-                        </button>
-                      ) : null}
-
-                      <label className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold shadow-2xs flex items-center justify-center space-x-2 cursor-pointer transition-all active:scale-95">
-                        <Upload className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Upload Photo File</span>
-                        <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
-                      </label>
-
-                      <button
-                        type="button"
-                        onClick={handleUseSamplePhoto}
-                        className="w-full py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-[11px] font-semibold flex items-center justify-center space-x-1.5 transition-all cursor-pointer"
-                      >
-                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Use Sample Face Photo</span>
-                      </button>
-
-                      {biometricStatus && (
-                        <div className="w-full p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] font-medium text-emerald-800 text-center">
-                          {biometricStatus}
-                        </div>
-                      )}
-
-                      {cameraError && (
-                        <div className="w-full p-2 bg-amber-50 border border-amber-200 rounded-xl text-[11px] font-medium text-amber-800 text-center">
-                          {cameraError}
-                        </div>
-                      )}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={handleScanFinger1}
+                      disabled={isScanningFp1}
+                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 cursor-pointer"
+                    >
+                      <FingerprintIcon className="w-4 h-4" />
+                      <span>{isScanningFp1 ? 'Scanning on Mantra...' : finger1.isoTemplate ? 'Rescan Finger 1' : 'Scan Finger 1 on Device'}</span>
+                    </button>
                   </div>
-                )}
+
+                  {/* Finger 2 Card (Backup) */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-2xs">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <FingerprintIcon className="w-4 h-4 text-blue-600" />
+                        <span>Finger 2 (Secondary / Backup) *</span>
+                      </span>
+                      {finger2.isoTemplate && (
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-bold border border-blue-300 flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3 text-blue-600" />
+                          <span>Quality: {finger2.quality}%</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Finger Name Selector */}
+                    <select
+                      value={finger2.fingerName}
+                      onChange={(e) => setFinger2({ ...finger2, fingerName: e.target.value })}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"
+                    >
+                      {FINGER_OPTIONS.map((f) => (
+                        <option key={f} value={f}>
+                          {f}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Finger 2 Preview or Scan Dock */}
+                    <div className="h-32 bg-slate-900 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center relative">
+                      {finger2.bitmapData ? (
+                        <img
+                          src={finger2.bitmapData}
+                          alt="Finger 2 scan"
+                          className="h-full object-contain filter contrast-125"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-slate-400 gap-1">
+                          <FingerprintIcon className="w-10 h-10 text-slate-600" />
+                          <span className="text-[10px] font-mono">Not Enrolled Yet</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleScanFinger2}
+                      disabled={isScanningFp2}
+                      className="w-full py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 cursor-pointer"
+                    >
+                      <FingerprintIcon className="w-4 h-4" />
+                      <span>{isScanningFp2 ? 'Scanning on Mantra...' : finger2.isoTemplate ? 'Rescan Finger 2' : 'Scan Finger 2 on Device'}</span>
+                    </button>
+                  </div>
+
+                </div>
 
                 {/* RIGHT: User Information Form (7 cols) - Strictly: Name, ID, Dept */}
                 <div className="md:col-span-7 space-y-4">
