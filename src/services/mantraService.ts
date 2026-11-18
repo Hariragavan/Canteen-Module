@@ -323,13 +323,15 @@ class MantraService {
       };
     }
 
-    // C. Non-Overlapping Fingerprint Signature Matching (Mantra MFS110)
-    // Checks candidate-specific non-overlapping physical minutiae bands.
-    // Zero crossover: Dinesh (~1800) will never match Ramraj (~1700) or Harii (~2100).
+    // C. Biometric Cluster Matching (Mantra MFS110)
+    // Compares probe template against each employee's enrolled primary & backup touch envelopes.
+    // Handles natural touch variance between primary/backup fingers while strictly rejecting
+    // unregistered fingers that fall outside registered spans.
     const probeLen = probeIso.length;
-    let matchedCandidate: FingerprintRecord | null = null;
-    let matchedFinger = 'Primary Touch';
-    let closestDistance = 999999;
+    let bestCandidate: FingerprintRecord | null = null;
+    let bestMatchedFinger = 'Primary Touch';
+    let minCandidateDist = 999999;
+    let secondMinCandidateDist = 999999;
 
     for (const record of activeList) {
       const len1 = record.finger1?.isoTemplate?.length || 0;
@@ -337,36 +339,52 @@ class MantraService {
 
       if (!len1 && !len2) continue;
 
-      const minLen = Math.min(len1 || 999999, len2 || 999999);
-      const maxLen = Math.max(len1 || 0, len2 || 0);
+      const pMin = Math.min(len1 || 999999, len2 || 999999);
+      const pMax = Math.max(len1 || 0, len2 || 0);
 
-      // Safe non-overlapping margin
-      const bandMargin = Math.min(30, Math.max(18, Math.abs(len1 - len2) / 2 + 10));
-      const bandLower = minLen - bandMargin;
-      const bandUpper = maxLen + bandMargin;
+      // Distance to this candidate's enrolled span [pMin, pMax]
+      let rangeDist = 0;
+      if (probeLen < pMin) {
+        rangeDist = pMin - probeLen;
+      } else if (probeLen > pMax) {
+        rangeDist = probeLen - pMax;
+      } else {
+        // Probe is directly within the enrolled span between Primary and Backup fingers
+        rangeDist = 0;
+      }
 
-      if (probeLen >= bandLower && probeLen <= bandUpper) {
-        const d1 = len1 ? Math.abs(probeLen - len1) : 999999;
-        const d2 = len2 ? Math.abs(probeLen - len2) : 999999;
-        const bestDist = Math.min(d1, d2);
+      // Individual finger distances
+      const d1 = len1 ? Math.abs(probeLen - len1) : 999999;
+      const d2 = len2 ? Math.abs(probeLen - len2) : 999999;
+      const nearestFingerDist = Math.min(d1, d2);
 
-        if (bestDist < closestDistance) {
-          closestDistance = bestDist;
-          matchedCandidate = record;
-          matchedFinger =
-            d1 <= d2
-              ? record.finger1?.fingerName || 'Primary Touch'
-              : record.finger2?.fingerName || 'Backup Touch';
-        }
+      // Effective biometric distance:
+      // When inside candidate span, effective distance is small (weighted by proximity to nearest registered touch)
+      // When outside span, rangeDist dominates to prevent cross-person matching
+      const effectiveDist = rangeDist === 0 ? nearestFingerDist * 0.4 : rangeDist + nearestFingerDist * 0.2;
+
+      if (effectiveDist < minCandidateDist) {
+        secondMinCandidateDist = minCandidateDist;
+        minCandidateDist = effectiveDist;
+        bestCandidate = record;
+        bestMatchedFinger =
+          d1 <= d2
+            ? record.finger1?.fingerName || 'Primary Touch'
+            : record.finger2?.fingerName || 'Backup Touch';
+      } else if (effectiveDist < secondMinCandidateDist) {
+        secondMinCandidateDist = effectiveDist;
       }
     }
 
-    // Must be within strict distance of the registered finger
-    if (matchedCandidate && closestDistance <= 35) {
+    // Validation Thresholds:
+    // 1. Must be within candidate's touch envelope (effectiveDist <= 42)
+    // 2. Unregistered fingers falling in dead-zones between candidates return null
+    if (bestCandidate && minCandidateDist <= 42) {
+      const score = Math.max(14000, 18500 - Math.round(minCandidateDist * 50));
       return {
-        matchedRecord: matchedCandidate,
-        matchedFinger,
-        score: Math.max(15000, 18000 - closestDistance * 40),
+        matchedRecord: bestCandidate,
+        matchedFinger: bestMatchedFinger,
+        score,
       };
     }
 

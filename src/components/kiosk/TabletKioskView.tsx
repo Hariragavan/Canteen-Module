@@ -536,8 +536,14 @@ export const TabletKioskView: React.FC<TabletKioskViewProps> = ({
             <FingerprintScannerHUD
               employees={employees}
               fingerprints={fingerprints}
-              onUserIdentified={(emp) => handleUserIdentified(emp)}
-              onError={(err) => setVerificationError(err)}
+              onUserIdentified={(emp) => {
+                setVerificationError(null);
+                handleUserIdentified(emp);
+              }}
+              onError={(err) => {
+                setVerificationError(err);
+                setTimeout(() => setVerificationError(null), 3500);
+              }}
             />
           </div>
 
