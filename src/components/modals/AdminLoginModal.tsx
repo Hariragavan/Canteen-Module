@@ -27,7 +27,10 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     const cleanId = adminId.trim();
     const cleanPass = password.trim();
 
-    if (cleanId === 'admin' && cleanPass === 'admin@123') {
+    const isPrimaryAdmin = cleanId.toLowerCase() === 'admin' && cleanPass === 'admin@123';
+    const isShreeAdmin = cleanId.toLowerCase() === 'shree' && (cleanPass === 'Shree123' || cleanPass === 'shree123');
+
+    if (isPrimaryAdmin || isShreeAdmin) {
       soundEngine.playVerificationChime();
       setError(null);
       setAdminId('');

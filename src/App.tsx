@@ -61,7 +61,7 @@ export const App: React.FC = () => {
     }
   }, [navigate]);
 
-  // Protected Admin Portal Gatekeeper (admin / admin@123)
+  // Protected Admin Portal Gatekeeper (admin / admin@123 or Shree / Shree123)
   const handleOpenAdminPortal = useCallback(() => {
     if (isAdminAuthenticated) {
       switchTab('admin');
@@ -189,7 +189,7 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* Admin Gatekeeper Login Modal (ID: admin, Password: admin@123) */}
+      {/* Admin Gatekeeper Login Modal (ID: admin / Shree, Password: admin@123 / Shree123) */}
       <AdminLoginModal
         isOpen={isAdminLoginModalOpen}
         onClose={() => setIsAdminLoginModalOpen(false)}
