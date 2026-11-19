@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Employee } from '../../types';
 import { canteenService } from '../../services/canteenService';
 import { soundEngine } from '../../services/soundEngine';
@@ -9,14 +9,11 @@ import {
   X,
   UserPlus,
   Users,
-  Camera,
-  RefreshCw,
   Trash2,
   Edit2,
   Check,
   Search,
   CheckCircle2,
-  Upload,
   BarChart3,
   Scan,
   Lock,
@@ -35,8 +32,6 @@ import {
 } from 'lucide-react';
 import type { MealSlotConfig, MealSlotName } from '../../types';
 import { mantraService } from '../../services/mantraService';
-
-import { faceMatcherService } from '../../services/faceMatcherService';
 
 interface AdminPortalModalProps {
   isOpen: boolean;
@@ -71,8 +66,31 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   // Edit Mode state
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [editingOriginalId, setEditingOriginalId] = useState<string | null>(null);
-  const [isEditCameraActive, setIsEditCameraActive] = useState<boolean>(false);
-  const editVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [editFinger1, setEditFinger1] = useState<{
+    fingerName: string;
+    isoTemplate: string;
+    bitmapData: string;
+    quality: number;
+  }>({
+    fingerName: 'Primary Touch',
+    isoTemplate: '',
+    bitmapData: '',
+    quality: 0,
+  });
+  const [editFinger2, setEditFinger2] = useState<{
+    fingerName: string;
+    isoTemplate: string;
+    bitmapData: string;
+    quality: number;
+  }>({
+    fingerName: 'Backup Touch',
+    isoTemplate: '',
+    bitmapData: '',
+    quality: 0,
+  });
+  const [editIsScanningFp1, setEditIsScanningFp1] = useState<boolean>(false);
+  const [editIsScanningFp2, setEditIsScanningFp2] = useState<boolean>(false);
+  const [editErrorMessage, setEditErrorMessage] = useState<string | null>(null);
 
   // New Registration form state (strictly: photo, name, id, dept)
   const [formData, setFormData] = useState<{
@@ -473,122 +491,150 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     }
   };
 
-  // Edit Mode Camera Controls
-  const startEditCamera = async () => {
-    try {
-      setIsEditCameraActive(true);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } },
-      });
-      if (editVideoRef.current) {
-        editVideoRef.current.srcObject = stream;
-        editVideoRef.current.play();
-      }
-    } catch (err) {
-      console.warn('Edit camera access error:', err);
-      alert('Camera access denied or unavailable. Please use file upload.');
-      setIsEditCameraActive(false);
-    }
-  };
-
-  const stopEditCamera = () => {
-    if (editVideoRef.current && editVideoRef.current.srcObject) {
-      const stream = editVideoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-      editVideoRef.current.srcObject = null;
-    }
-    setIsEditCameraActive(false);
-  };
-
-  const captureEditPhoto = async () => {
-    if (!editVideoRef.current || !editingEmployee) return;
-    soundEngine.playScannerBeep();
-    const video = editVideoRef.current;
-    const canvas = document.createElement('canvas');
-    canvas.width = 400;
-    canvas.height = 400;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      const minDim = Math.min(video.videoWidth, video.videoHeight);
-      const startX = (video.videoWidth - minDim) / 2;
-      const startY = (video.videoHeight - minDim) / 2;
-      ctx.drawImage(video, startX, startY, minDim, minDim, 0, 0, 400, 400);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
-
-      let desc: number[] | null = null;
-      try {
-        desc = await faceMatcherService.extractDescriptorArray(canvas);
-      } catch (e) {
-        console.warn('Edit biometric extraction error:', e);
-      }
-
-      setEditingEmployee({
-        ...editingEmployee,
-        photo: dataUrl,
-        face_descriptor: desc,
-        embedding: desc,
-      });
-      stopEditCamera();
-    }
-  };
-
-  const handleEditFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && editingEmployee) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        if (event.target?.result) {
-          const dataUrl = String(event.target.result);
-          let desc: number[] | null = null;
-          try {
-            desc = await faceMatcherService.extractDescriptorArray(dataUrl);
-          } catch (e) {
-            console.warn('Edit file biometric error:', e);
-          }
-
-          setEditingEmployee({
-            ...editingEmployee,
-            photo: dataUrl,
-            face_descriptor: desc,
-            embedding: desc,
-          });
-          stopEditCamera();
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleEditUseSamplePhoto = async () => {
-    if (!editingEmployee) return;
-    const randomSeed = Math.floor(Math.random() * 1000);
-    const photoUrl = `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&sig=${randomSeed}`;
-    let desc: number[] | null = null;
-    try {
-      desc = await faceMatcherService.extractDescriptorArray(photoUrl);
-    } catch {
-      // ignore
-    }
-    setEditingEmployee({
-      ...editingEmployee,
-      photo: photoUrl,
-      face_descriptor: desc,
-      embedding: desc,
-    });
-    stopEditCamera();
-  };
-
   const handleStartEdit = (emp: Employee) => {
     setEditingOriginalId(emp.id);
     setEditingEmployee({ ...emp });
-    setIsEditCameraActive(false);
+    setEditErrorMessage(null);
+
+    const existingFp = canteenService.getFingerprints().find(
+      (f) => String(f.employeeId).trim().toUpperCase() === String(emp.id).trim().toUpperCase()
+    ) || emp.fingerprints;
+
+    if (existingFp) {
+      setEditFinger1({
+        fingerName: existingFp.finger1?.fingerName || 'Primary Touch',
+        isoTemplate: existingFp.finger1?.isoTemplate || '',
+        bitmapData: existingFp.finger1?.bitmapData || '',
+        quality: existingFp.finger1?.quality || 0,
+      });
+      setEditFinger2({
+        fingerName: existingFp.finger2?.fingerName || 'Backup Touch',
+        isoTemplate: existingFp.finger2?.isoTemplate || '',
+        bitmapData: existingFp.finger2?.bitmapData || '',
+        quality: existingFp.finger2?.quality || 0,
+      });
+    } else {
+      setEditFinger1({
+        fingerName: 'Primary Touch',
+        isoTemplate: '',
+        bitmapData: '',
+        quality: 0,
+      });
+      setEditFinger2({
+        fingerName: 'Backup Touch',
+        isoTemplate: '',
+        bitmapData: '',
+        quality: 0,
+      });
+    }
   };
 
   const handleCancelEdit = () => {
-    stopEditCamera();
     setEditingEmployee(null);
     setEditingOriginalId(null);
-    setIsEditCameraActive(false);
+    setEditErrorMessage(null);
+    setEditFinger1({
+      fingerName: 'Primary Touch',
+      isoTemplate: '',
+      bitmapData: '',
+      quality: 0,
+    });
+    setEditFinger2({
+      fingerName: 'Backup Touch',
+      isoTemplate: '',
+      bitmapData: '',
+      quality: 0,
+    });
+  };
+
+  const handleEditScanFinger1 = async () => {
+    setEditIsScanningFp1(true);
+    setEditErrorMessage(null);
+    soundEngine.playScannerBeep();
+    try {
+      const res = await mantraService.captureFingerprint(60, 8);
+      if (res.success && res.isoTemplate) {
+        // 1. Check duplicate with other registered personnel
+        const dup = checkDuplicateFinger(res.isoTemplate, editingOriginalId || undefined);
+        if (dup.isDuplicate) {
+          soundEngine.playWarningBuzzer();
+          setEditErrorMessage(`This touch is already registered to ${dup.matchedName} (${dup.matchedId})! Duplicate registration is not allowed.`);
+          return;
+        }
+
+        // 2. Check collision with editFinger2
+        if (
+          editFinger2.isoTemplate &&
+          (res.isoTemplate === editFinger2.isoTemplate ||
+            Math.abs(res.isoTemplate.length - editFinger2.isoTemplate.length) <= 25)
+        ) {
+          soundEngine.playWarningBuzzer();
+          setEditErrorMessage('Primary and Backup Touch cannot be the same. Please scan two different touches.');
+          return;
+        }
+
+        soundEngine.playVerificationChime();
+        setEditFinger1((prev) => ({
+          ...prev,
+          isoTemplate: res.isoTemplate,
+          bitmapData: res.bitmapData,
+          quality: res.quality,
+        }));
+      } else {
+        soundEngine.playWarningBuzzer();
+        setEditErrorMessage(res.errorDescription || 'Scan timed out or failed. Please try again.');
+      }
+    } catch (e: any) {
+      soundEngine.playWarningBuzzer();
+      setEditErrorMessage(e.message || 'Sensor communication error.');
+    } finally {
+      setEditIsScanningFp1(false);
+    }
+  };
+
+  const handleEditScanFinger2 = async () => {
+    setEditIsScanningFp2(true);
+    setEditErrorMessage(null);
+    soundEngine.playScannerBeep();
+    try {
+      const res = await mantraService.captureFingerprint(60, 8);
+      if (res.success && res.isoTemplate) {
+        // 1. Check collision with editFinger1
+        if (
+          editFinger1.isoTemplate &&
+          (res.isoTemplate === editFinger1.isoTemplate ||
+            Math.abs(res.isoTemplate.length - editFinger1.isoTemplate.length) <= 25)
+        ) {
+          soundEngine.playWarningBuzzer();
+          setEditErrorMessage('Backup Touch cannot be the same as Primary Touch. Please scan a different touch.');
+          return;
+        }
+
+        // 2. Check duplicate with other registered personnel
+        const dup = checkDuplicateFinger(res.isoTemplate, editingOriginalId || undefined);
+        if (dup.isDuplicate) {
+          soundEngine.playWarningBuzzer();
+          setEditErrorMessage(`This touch is already registered to ${dup.matchedName} (${dup.matchedId})! Duplicate registration is not allowed.`);
+          return;
+        }
+
+        soundEngine.playVerificationChime();
+        setEditFinger2((prev) => ({
+          ...prev,
+          isoTemplate: res.isoTemplate,
+          bitmapData: res.bitmapData,
+          quality: res.quality,
+        }));
+      } else {
+        soundEngine.playWarningBuzzer();
+        setEditErrorMessage(res.errorDescription || 'Scan timed out or failed. Please try again.');
+      }
+    } catch (e: any) {
+      soundEngine.playWarningBuzzer();
+      setEditErrorMessage(e.message || 'Sensor communication error.');
+    } finally {
+      setEditIsScanningFp2(false);
+    }
   };
 
   // Save Edit Employee
@@ -597,16 +643,101 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     if (!editingEmployee || !editingOriginalId) return;
 
     try {
+      const cleanId = editingEmployee.id.trim().toUpperCase();
+      const cleanName = editingEmployee.name.trim();
       const role: 'Staff' | 'Employee' = editingEmployee.dept.toLowerCase().includes('staff') ? 'Staff' : 'Employee';
+
+      if (!cleanId) {
+        setEditErrorMessage('Personnel ID cannot be empty.');
+        return;
+      }
+      if (!cleanName) {
+        setEditErrorMessage('Personnel Name cannot be empty.');
+        return;
+      }
+
+      // Check ID conflict if changed
+      if (cleanId !== editingOriginalId.toUpperCase()) {
+        const idExists = employees.some(
+          (emp) => emp.id.toUpperCase() === cleanId && emp.id.toUpperCase() !== editingOriginalId.toUpperCase()
+        );
+        if (idExists) {
+          soundEngine.playWarningBuzzer();
+          setEditErrorMessage(`Personnel ID "${cleanId}" is already taken by another employee.`);
+          return;
+        }
+      }
+
+      // Check collision between finger1 and finger2
+      if (editFinger1.isoTemplate && editFinger2.isoTemplate) {
+        if (
+          editFinger1.isoTemplate === editFinger2.isoTemplate ||
+          Math.abs(editFinger1.isoTemplate.length - editFinger2.isoTemplate.length) <= 25
+        ) {
+          soundEngine.playWarningBuzzer();
+          setEditErrorMessage('Primary and Backup Touch cannot be the same. Please scan two different touches.');
+          return;
+        }
+      }
+
+      // Check duplicate touch across other employees
+      if (editFinger1.isoTemplate) {
+        const dup1 = checkDuplicateFinger(editFinger1.isoTemplate, editingOriginalId);
+        if (dup1.isDuplicate) {
+          soundEngine.playWarningBuzzer();
+          setEditErrorMessage(`Primary Touch is already registered to ${dup1.matchedName} (${dup1.matchedId})!`);
+          return;
+        }
+      }
+      if (editFinger2.isoTemplate) {
+        const dup2 = checkDuplicateFinger(editFinger2.isoTemplate, editingOriginalId);
+        if (dup2.isDuplicate) {
+          soundEngine.playWarningBuzzer();
+          setEditErrorMessage(`Backup Touch is already registered to ${dup2.matchedName} (${dup2.matchedId})!`);
+          return;
+        }
+      }
+
+      const hasFp = Boolean(editFinger1.isoTemplate || editFinger2.isoTemplate);
+
       await canteenService.updateEmployee(editingOriginalId, {
-        id: editingEmployee.id.trim().toUpperCase(),
-        name: editingEmployee.name.trim(),
+        id: cleanId,
+        name: cleanName,
         dept: editingEmployee.dept,
         role,
-        photo: editingEmployee.photo,
-        face_descriptor: editingEmployee.face_descriptor || editingEmployee.embedding || null,
-        embedding: editingEmployee.face_descriptor || editingEmployee.embedding || null,
+        photo: editFinger1.bitmapData || editingEmployee.photo || '',
+        hasFingerprint: hasFp,
       });
+
+      if (hasFp) {
+        // If ID changed, delete old fingerprint record
+        if (cleanId !== editingOriginalId.toUpperCase()) {
+          try {
+            await canteenService.deleteFingerprint(editingOriginalId);
+          } catch (e) {
+            console.warn('Old fingerprint cleanup warning:', e);
+          }
+        }
+
+        await canteenService.saveFingerprint({
+          employeeId: cleanId,
+          employeeName: cleanName,
+          dept: editingEmployee.dept,
+          finger1: {
+            fingerName: editFinger1.fingerName,
+            isoTemplate: editFinger1.isoTemplate,
+            bitmapData: editFinger1.bitmapData,
+            quality: editFinger1.quality,
+          },
+          finger2: {
+            fingerName: editFinger2.fingerName,
+            isoTemplate: editFinger2.isoTemplate,
+            bitmapData: editFinger2.bitmapData,
+            quality: editFinger2.quality,
+          },
+        });
+      }
+
       soundEngine.playVerificationChime();
       handleCancelEdit();
       loadEmployees();
@@ -614,7 +745,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     } catch (err: unknown) {
       console.error('Update employee error:', err);
       soundEngine.playWarningBuzzer();
-      alert(err instanceof Error ? err.message : 'Update failed');
+      setEditErrorMessage(err instanceof Error ? err.message : 'Update failed');
     }
   };
 
@@ -634,7 +765,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
   const handleReturnToKiosk = () => {
     stopCamera();
-    stopEditCamera();
     if (onNavigateToKiosk) {
       onNavigateToKiosk();
     } else {
@@ -644,7 +774,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
   const handleLockLogout = () => {
     stopCamera();
-    stopEditCamera();
     if (onLogout) {
       onLogout();
     } else {
@@ -654,7 +783,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
   const handleGoToCounter = () => {
     stopCamera();
-    stopEditCamera();
     if (onNavigateToStaffScanner) {
       onNavigateToStaffScanner();
     }
@@ -1593,100 +1721,145 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
             <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
               
-              {/* Photo Retake & Preview Section */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col items-center gap-3">
-                <div className="w-full flex items-center justify-between pb-1.5 border-b border-slate-200 text-slate-700">
-                  <span className="font-bold text-xs flex items-center gap-1.5">
-                    <Camera className="w-4 h-4 text-emerald-600" />
-                    <span>Personnel Photo</span>
-                  </span>
+              {/* Fingerprint / Touch Rescanning Section */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                  <div className="flex items-center space-x-2">
+                    <FingerprintIcon className="w-4 h-4 text-emerald-600" />
+                    <span className="font-bold text-xs text-slate-800">
+                      Touch Enrolment (Rescan & Update)
+                    </span>
+                  </div>
                   <span className="text-[10px] font-mono text-slate-500">
-                    {isEditCameraActive ? 'Camera Active' : 'Enrolled Photo'}
+                    Mantra RD Service
                   </span>
                 </div>
 
-                <div className="relative w-40 h-40 bg-slate-900 rounded-2xl overflow-hidden shadow-inner flex items-center justify-center border-2 border-slate-700">
-                  {isEditCameraActive ? (
-                    <>
-                      <video
-                        ref={editVideoRef}
-                        playsInline
-                        muted
-                        autoPlay
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute inset-4 border-2 border-dashed border-emerald-400 rounded-full pointer-events-none opacity-80 animate-pulse"></div>
-                    </>
-                  ) : (
-                    <img
-                      src={editingEmployee.photo}
-                      alt={editingEmployee.name}
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-                </div>
+                {editErrorMessage && (
+                  <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs flex items-center space-x-2 animate-shake">
+                    <span className="text-rose-500 font-bold shrink-0">⚠️</span>
+                    <span>{editErrorMessage}</span>
+                  </div>
+                )}
 
-                {/* Retake Camera Controls */}
-                <div className="w-full flex flex-col gap-2">
-                  {isEditCameraActive ? (
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={captureEditPhoto}
-                        className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-xs flex items-center justify-center space-x-1.5"
-                      >
-                        <Camera className="w-3.5 h-3.5" />
-                        <span>Capture Photo</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={stopEditCamera}
-                        className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold"
-                      >
-                        Cancel
-                      </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Touch 1 (Primary) */}
+                  <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-slate-700">Primary Touch</label>
+                      {editFinger1.isoTemplate && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          Quality: {editFinger1.quality}%
+                        </span>
+                      )}
                     </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={startEditCamera}
-                      className="w-full py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 rounded-xl font-bold shadow-2xs flex items-center justify-center space-x-1.5"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
-                      <span>Retake Photo</span>
-                    </button>
-                  )}
 
-                  <div className="flex items-center justify-center space-x-3 text-[11px] text-slate-500 pt-0.5">
-                    <label className="cursor-pointer hover:text-emerald-700 underline flex items-center gap-1">
-                      <Upload className="w-3 h-3" />
-                      <span>Upload</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleEditFileUpload}
-                        className="hidden"
-                      />
-                    </label>
-                    <span>•</span>
+                    <select
+                      value={editFinger1.fingerName}
+                      onChange={(e) => setEditFinger1({ ...editFinger1, fingerName: e.target.value })}
+                      className="w-full text-[11px] px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    >
+                      {FINGER_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+
+                    <div className="h-24 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-center overflow-hidden">
+                      {editFinger1.bitmapData ? (
+                        <img
+                          src={editFinger1.bitmapData}
+                          alt="Primary Touch"
+                          className="h-full object-contain filter invert contrast-125"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-slate-400 text-[10px]">
+                          <FingerprintIcon className="w-8 h-8 mb-1 stroke-1" />
+                          <span>No touch scanned</span>
+                        </div>
+                      )}
+                    </div>
+
                     <button
                       type="button"
-                      onClick={handleEditUseSamplePhoto}
-                      className="hover:text-emerald-700 underline"
+                      disabled={editIsScanningFp1}
+                      onClick={handleEditScanFinger1}
+                      className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
+                        editIsScanningFp1
+                          ? 'bg-amber-500 text-white animate-pulse'
+                          : editFinger1.isoTemplate
+                          ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      }`}
                     >
-                      Sample Face
+                      <FingerprintIcon className="w-3.5 h-3.5" />
+                      <span>
+                        {editIsScanningFp1
+                          ? 'Scanning on sensor...'
+                          : editFinger1.isoTemplate
+                          ? 'Rescan Primary Touch'
+                          : 'Scan Primary Touch'}
+                      </span>
                     </button>
                   </div>
 
-                  {editingEmployee.face_descriptor || editingEmployee.embedding ? (
-                    <div className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-0.5 text-center font-medium">
-                      ✓ Personnel Enrolled
+                  {/* Touch 2 (Backup) */}
+                  <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-slate-700">Backup Touch</label>
+                      {editFinger2.isoTemplate && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          Quality: {editFinger2.quality}%
+                        </span>
+                      )}
                     </div>
-                  ) : (
-                    <div className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-0.5 text-center font-medium">
-                      Retake photo to generate 128D facial embeddings
+
+                    <select
+                      value={editFinger2.fingerName}
+                      onChange={(e) => setEditFinger2({ ...editFinger2, fingerName: e.target.value })}
+                      className="w-full text-[11px] px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    >
+                      {FINGER_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+
+                    <div className="h-24 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-center overflow-hidden">
+                      {editFinger2.bitmapData ? (
+                        <img
+                          src={editFinger2.bitmapData}
+                          alt="Backup Touch"
+                          className="h-full object-contain filter invert contrast-125"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-slate-400 text-[10px]">
+                          <FingerprintIcon className="w-8 h-8 mb-1 stroke-1" />
+                          <span>No touch scanned</span>
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                    <button
+                      type="button"
+                      disabled={editIsScanningFp2}
+                      onClick={handleEditScanFinger2}
+                      className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
+                        editIsScanningFp2
+                          ? 'bg-amber-500 text-white animate-pulse'
+                          : editFinger2.isoTemplate
+                          ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      }`}
+                    >
+                      <FingerprintIcon className="w-3.5 h-3.5" />
+                      <span>
+                        {editIsScanningFp2
+                          ? 'Scanning on sensor...'
+                          : editFinger2.isoTemplate
+                          ? 'Rescan Backup Touch'
+                          : 'Scan Backup Touch'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
