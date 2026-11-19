@@ -3,6 +3,8 @@
   "rewrites": [
     { "source": "/canteen-module/api/(.*)", "destination": "/api" },
     { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/canteen-module/assets/(.*)", "destination": "/assets/$1" },
+    { "source": "/canteen-module/(.*)", "destination": "/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

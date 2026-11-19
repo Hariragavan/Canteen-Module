@@ -31,7 +31,7 @@ function ensureBackendRunning() {
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/canteen-module/',
+  base: '/',
   plugins: [
     react(),
     {
@@ -47,33 +47,6 @@ export default defineConfig({
           res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
           res.setHeader('Pragma', 'no-cache')
           res.setHeader('Expires', '0')
-
-          const url = req.url || ''
-          if (url === '/' || url === '') {
-            res.writeHead(302, { Location: '/canteen-module/' })
-            res.end()
-            return
-          }
-          if (url.startsWith('/admin')) {
-            res.writeHead(302, { Location: '/canteen-module/admin' })
-            res.end()
-            return
-          }
-          if (url.startsWith('/kitchen-analysis')) {
-            res.writeHead(302, { Location: '/canteen-module/kitchen-analysis' })
-            res.end()
-            return
-          }
-          if (url.startsWith('/staff-counter')) {
-            res.writeHead(302, { Location: '/canteen-module/staff-counter' })
-            res.end()
-            return
-          }
-          if (url.startsWith('/kiosk')) {
-            res.writeHead(302, { Location: '/canteen-module/kiosk' })
-            res.end()
-            return
-          }
           next()
         })
 

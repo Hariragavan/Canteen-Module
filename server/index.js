@@ -34,9 +34,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// REST API routes (supports both /api and /canteen-module/api)
+// REST API routes (supports both /api, /canteen-module/api, and serverless root)
 app.use('/api', apiRoutes);
 app.use('/canteen-module/api', apiRoutes);
+app.use('/', apiRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
