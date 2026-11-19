@@ -14,13 +14,13 @@ import { exportOrdersToCSV, exportOrdersToExcel, exportOrdersToPDF } from './rep
 
 const STORAGE_ORDERS_KEY = 'canteen_local_orders_v3';
 const STORAGE_TOKEN_KEY = 'canteen_token_seq_v3';
-const STORAGE_EMPLOYEES_KEY = 'canteen_local_employees_v3';
+const STORAGE_EMPLOYEES_KEY = 'canteen_local_employees_v4';
 const STORAGE_MEAL_SLOTS_KEY = 'canteen_custom_menu_slots_permanent';
 const STORAGE_FEEDBACK_KEY = 'canteen_customer_feedbacks_v1';
 const STORAGE_DELETED_EMPLOYEES_KEY = 'canteen_deleted_employees_tombstone_v1';
 const STORAGE_TRANSPORT_UNITS_KEY = 'canteen_transport_units_v1';
 const STORAGE_FOOD_TRANSPORT_KEY = 'canteen_food_transport_records_v1';
-export const HARD_PURGED_USER_IDS = new Set<string>(['1212', '1234']);
+export const HARD_PURGED_USER_IDS = new Set<string>();
 
 export const DEFAULT_TRANSPORT_UNITS: TransportUnit[] = [
   { id: 'UNIT-1', name: 'Unit 1 - Spinning Division', location: 'Block A, North Wing', contactPerson: 'Suresh Kumar' },
@@ -134,7 +134,7 @@ class CanteenService {
   }
 
   public getDeletedEmployeeIds(): Set<string> {
-    const s = new Set<string>(['1212', '1234']);
+    const s = new Set<string>();
     try {
       const raw = localStorage.getItem(STORAGE_DELETED_EMPLOYEES_KEY);
       if (raw) {
@@ -742,13 +742,8 @@ class CanteenService {
   }
 
   public simulatePeakRush(): void {
-    const rushEmployees = [
-      { id: 'EMP-1006', name: 'Sneha Patil', dept: 'Electronics & Comm' },
-      { id: 'EMP-1007', name: 'Varun Nair', dept: 'Mechanical Engineering' },
-      { id: 'EMP-1008', name: 'Megha Iyer', dept: 'Administration & HR' },
-      { id: 'EMP-1009', name: 'Ashwin Kumar', dept: 'Computer Science & Engg' },
-      { id: 'EMP-1010', name: 'Ananya Roy', dept: 'Electronics & Comm' },
-    ];
+    const rushEmployees = this.getEmployees().slice(0, 5);
+    if (rushEmployees.length === 0) return;
 
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
