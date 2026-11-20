@@ -431,6 +431,7 @@ router.post('/fingerprints', async (req, res) => {
             ansiTemplate: finger1.ansiTemplate || '',
             bitmapData: finger1.bitmapData || '',
             quality: finger1.quality || 0,
+            samples: Array.isArray(finger1.samples) ? finger1.samples : [],
           },
           finger2: {
             fingerName: finger2.fingerName || 'Right Index',
@@ -438,6 +439,7 @@ router.post('/fingerprints', async (req, res) => {
             ansiTemplate: finger2.ansiTemplate || '',
             bitmapData: finger2.bitmapData || '',
             quality: finger2.quality || 0,
+            samples: Array.isArray(finger2.samples) ? finger2.samples : [],
           },
           deviceModel: deviceModel || 'Mantra MFS100',
           isActive: true,

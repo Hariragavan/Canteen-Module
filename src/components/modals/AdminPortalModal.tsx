@@ -44,6 +44,183 @@ interface AdminPortalModalProps {
 
 const DEPARTMENTS = ['Staff', 'Employee'];
 
+export interface FingerSampleState {
+  sampleIndex: number;
+  isoTemplate: string;
+  quality: number;
+  bitmapData?: string;
+  label?: string;
+}
+
+export interface EnrolledFingerState {
+  fingerName: string;
+  isoTemplate: string;
+  bitmapData: string;
+  quality: number;
+  samples: FingerSampleState[];
+}
+
+const SAMPLE_LABELS = ['Flat Touch (Center)', 'Angle Touch (Tilt)', 'Firm Press (Tip)'];
+
+interface MultiSampleFingerCardProps {
+  cardTitle: string;
+  finger: EnrolledFingerState;
+  onNameChange: (name: string) => void;
+  onScan: () => void;
+  onReset: () => void;
+  isScanning: boolean;
+  themeColor?: 'emerald' | 'blue';
+  fingerOptions: string[];
+}
+
+const MultiSampleFingerCard: React.FC<MultiSampleFingerCardProps> = ({
+  cardTitle,
+  finger,
+  onNameChange,
+  onScan,
+  onReset,
+  isScanning,
+  themeColor = 'emerald',
+  fingerOptions,
+}) => {
+  const isEmerald = themeColor === 'emerald';
+  const iconColor = isEmerald ? 'text-emerald-600' : 'text-blue-600';
+  const badgeClass = isEmerald
+    ? 'border-emerald-300 bg-emerald-100 text-emerald-800'
+    : 'border-blue-300 bg-blue-100 text-blue-800';
+  const btnBg = isEmerald
+    ? 'bg-emerald-600 hover:bg-emerald-700'
+    : 'bg-blue-600 hover:bg-blue-700';
+
+  const samplesCount = finger.samples?.length || 0;
+
+  return (
+    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-2xs">
+      {/* Header */}
+      <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+        <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+          <FingerprintIcon className={`w-4 h-4 ${iconColor}`} />
+          <span>{cardTitle} *</span>
+        </span>
+        {samplesCount > 0 && (
+          <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold border flex items-center gap-1 ${badgeClass}`}>
+            <ShieldCheck className={`w-3 h-3 ${iconColor}`} />
+            <span>Best: {finger.quality}%</span>
+          </span>
+        )}
+      </div>
+
+      {/* Name Selector */}
+      <select
+        value={finger.fingerName}
+        onChange={(e) => onNameChange(e.target.value)}
+        className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+      >
+        {fingerOptions.map((f) => (
+          <option key={f} value={f}>{f}</option>
+        ))}
+      </select>
+
+      {/* 3-Tap Progress Tracker (Aadhaar / Smartphone Style) */}
+      <div className="grid grid-cols-3 gap-1.5">
+        {[
+          { idx: 1, label: '1. Flat' },
+          { idx: 2, label: '2. Tilt' },
+          { idx: 3, label: '3. Firm' },
+        ].map(({ idx, label }) => {
+          const sample = (finger.samples || []).find((s) => s.sampleIndex === idx);
+          const isDone = Boolean(sample);
+          const isCurrent = samplesCount + 1 === idx;
+          return (
+            <div
+              key={idx}
+              className={`p-1.5 rounded-xl border text-center transition-all ${
+                isDone
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                  : isCurrent
+                  ? 'bg-amber-50 border-amber-300 text-amber-800 font-bold animate-pulse'
+                  : 'bg-white border-slate-200 text-slate-400'
+              }`}
+            >
+              <div className="text-[10px] font-bold">{label}</div>
+              <div className="text-[9px] font-mono">
+                {isDone ? `✓ ${sample?.quality}%` : isCurrent ? 'Next Tap' : 'Pending'}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Live Step Guidance */}
+      <div className="px-2.5 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-[11px] text-slate-700 flex items-center justify-between">
+        <span className="font-medium truncate">
+          {samplesCount === 0 && 'Step 1: Place finger flat on the sensor.'}
+          {samplesCount === 1 && 'Step 2: Lift & place at a slight angle.'}
+          {samplesCount === 2 && 'Step 3: Lift & press firmly on sensor.'}
+          {samplesCount >= 3 && '✓ All 3 scans captured (Enrolled)!'}
+        </span>
+        {samplesCount > 0 && (
+          <button
+            type="button"
+            onClick={onReset}
+            className="text-[10px] font-bold text-rose-600 hover:text-rose-700 underline cursor-pointer ml-1.5 shrink-0"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+
+      {/* Touch Preview Box */}
+      <div className="h-28 bg-slate-900 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center relative">
+        {finger.bitmapData ? (
+          <img
+            src={finger.bitmapData}
+            alt="Fingerprint preview"
+            className="h-full object-contain filter invert contrast-125"
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center text-slate-400 gap-1">
+            <FingerprintIcon className="w-8 h-8 text-slate-600 stroke-1" />
+            <span className="text-[10px] font-mono">No touch scanned yet</span>
+          </div>
+        )}
+        {samplesCount > 0 && (
+          <span className="absolute bottom-1 right-2 text-[10px] bg-slate-950/80 text-emerald-400 font-mono px-1.5 py-0.5 rounded">
+            {samplesCount}/3 Scans Saved
+          </span>
+        )}
+      </div>
+
+      {/* Action Button */}
+      <button
+        type="button"
+        onClick={onScan}
+        disabled={isScanning || samplesCount >= 3}
+        className={`w-full py-2 rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+          isScanning
+            ? 'bg-amber-500 text-white animate-pulse'
+            : samplesCount >= 3
+            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 opacity-90 cursor-default'
+            : `${btnBg} text-white active:scale-95`
+        }`}
+      >
+        <FingerprintIcon className="w-4 h-4" />
+        <span>
+          {isScanning
+            ? 'Scanning on sensor...'
+            : samplesCount === 0
+            ? 'Start Scan (1 of 3: Flat Touch)'
+            : samplesCount === 1
+            ? 'Next Scan (2 of 3: Angle Touch)'
+            : samplesCount === 2
+            ? 'Final Scan (3 of 3: Firm Press)'
+            : '✓ Touch Enrolled (3 of 3 Completed)'}
+        </span>
+      </button>
+    </div>
+  );
+};
+
 export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   isOpen,
   onClose,
@@ -66,27 +243,19 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   // Edit Mode state
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [editingOriginalId, setEditingOriginalId] = useState<string | null>(null);
-  const [editFinger1, setEditFinger1] = useState<{
-    fingerName: string;
-    isoTemplate: string;
-    bitmapData: string;
-    quality: number;
-  }>({
+  const [editFinger1, setEditFinger1] = useState<EnrolledFingerState>({
     fingerName: 'Primary Touch',
     isoTemplate: '',
     bitmapData: '',
     quality: 0,
+    samples: [],
   });
-  const [editFinger2, setEditFinger2] = useState<{
-    fingerName: string;
-    isoTemplate: string;
-    bitmapData: string;
-    quality: number;
-  }>({
+  const [editFinger2, setEditFinger2] = useState<EnrolledFingerState>({
     fingerName: 'Backup Touch',
     isoTemplate: '',
     bitmapData: '',
     quality: 0,
+    samples: [],
   });
   const [editIsScanningFp1, setEditIsScanningFp1] = useState<boolean>(false);
   const [editIsScanningFp2, setEditIsScanningFp2] = useState<boolean>(false);
@@ -114,28 +283,20 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     'Left Hand Touch',
   ];
 
-  const [finger1, setFinger1] = useState<{
-    fingerName: string;
-    isoTemplate: string;
-    bitmapData: string;
-    quality: number;
-  }>({
+  const [finger1, setFinger1] = useState<EnrolledFingerState>({
     fingerName: 'Primary Touch',
     isoTemplate: '',
     bitmapData: '',
     quality: 0,
+    samples: [],
   });
 
-  const [finger2, setFinger2] = useState<{
-    fingerName: string;
-    isoTemplate: string;
-    bitmapData: string;
-    quality: number;
-  }>({
+  const [finger2, setFinger2] = useState<EnrolledFingerState>({
     fingerName: 'Backup Touch',
     isoTemplate: '',
     bitmapData: '',
     quality: 0,
+    samples: [],
   });
 
   const [isScanningFp1, setIsScanningFp1] = useState<boolean>(false);
@@ -166,18 +327,24 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       if (cleanCurrent && String(rec.employeeId).trim().toUpperCase() === cleanCurrent) {
         continue;
       }
-      const t1 = rec.finger1?.isoTemplate || '';
-      const t2 = rec.finger2?.isoTemplate || '';
+      const allCandidateTemplates: string[] = [];
+      if (rec.finger1?.isoTemplate) allCandidateTemplates.push(rec.finger1.isoTemplate);
+      if (Array.isArray(rec.finger1?.samples)) {
+        rec.finger1.samples.forEach((s) => s.isoTemplate && allCandidateTemplates.push(s.isoTemplate));
+      }
+      if (rec.finger2?.isoTemplate) allCandidateTemplates.push(rec.finger2.isoTemplate);
+      if (Array.isArray(rec.finger2?.samples)) {
+        rec.finger2.samples.forEach((s) => s.isoTemplate && allCandidateTemplates.push(s.isoTemplate));
+      }
 
-      const isMatch1 = t1 && (probeIso === t1 || Math.abs(probeIso.length - t1.length) <= 30);
-      const isMatch2 = t2 && (probeIso === t2 || Math.abs(probeIso.length - t2.length) <= 30);
-
-      if (isMatch1 || isMatch2) {
-        return {
-          isDuplicate: true,
-          matchedName: rec.employeeName || rec.employeeId,
-          matchedId: rec.employeeId,
-        };
+      for (const t of allCandidateTemplates) {
+        if (t && (probeIso === t || Math.abs(probeIso.length - t.length) <= 30)) {
+          return {
+            isDuplicate: true,
+            matchedName: rec.employeeName || rec.employeeId,
+            matchedId: rec.employeeId,
+          };
+        }
       }
     }
     return { isDuplicate: false };
@@ -188,9 +355,22 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     setErrorMessage(null);
     soundEngine.playScannerBeep();
     try {
+      const currentSamples = finger1.samples || [];
+      if (currentSamples.length >= 3) {
+        setErrorMessage('All 3 scans are already captured. Click "Reset" if you wish to re-enroll.');
+        return;
+      }
+
       const res = await mantraService.captureFingerprint(60, 8);
       if (res.success && res.isoTemplate) {
-        // 1. Check duplicate with already registered personnel
+        // 1. Minimum 60% quality threshold
+        if (res.quality < 60) {
+          soundEngine.playWarningBuzzer();
+          setErrorMessage(`Touch quality was ${res.quality}%. Minimum 60% quality is required. Please press firmly and scan again.`);
+          return;
+        }
+
+        // 2. Check duplicate with already registered personnel
         const dup = checkDuplicateFinger(res.isoTemplate, formData.id);
         if (dup.isDuplicate) {
           soundEngine.playWarningBuzzer();
@@ -198,24 +378,54 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           return;
         }
 
-        // 2. Check duplicate with Finger 2
-        if (
-          finger2.isoTemplate &&
-          (res.isoTemplate === finger2.isoTemplate ||
-            Math.abs(res.isoTemplate.length - finger2.isoTemplate.length) <= 25)
-        ) {
-          soundEngine.playWarningBuzzer();
-          setErrorMessage('Primary and Backup Touch cannot be the same. Please scan two different touches.');
-          return;
+        // 3. Check duplicate with Finger 2
+        const f2AllTemplates = [
+          finger2.isoTemplate,
+          ...(finger2.samples || []).map((s) => s.isoTemplate),
+        ].filter(Boolean);
+
+        for (const f2t of f2AllTemplates) {
+          if (res.isoTemplate === f2t || Math.abs(res.isoTemplate.length - f2t.length) <= 25) {
+            soundEngine.playWarningBuzzer();
+            setErrorMessage('Primary and Backup Touch cannot be the same finger. Please scan two different fingers.');
+            return;
+          }
         }
 
-        soundEngine.playVerificationChime();
-        setFinger1((prev) => ({
-          ...prev,
+        // 4. Verify consistency with Tap 1
+        if (currentSamples.length > 0) {
+          const tap1Iso = currentSamples[0].isoTemplate;
+          if (Math.abs(res.isoTemplate.length - tap1Iso.length) > 55) {
+            soundEngine.playWarningBuzzer();
+            setErrorMessage('Different finger detected! Please use the same finger for all 3 scans of this touch.');
+            return;
+          }
+        }
+
+        const nextIndex = currentSamples.length + 1;
+        const newSample = {
+          sampleIndex: nextIndex,
           isoTemplate: res.isoTemplate,
-          bitmapData: res.bitmapData,
           quality: res.quality,
-        }));
+          bitmapData: res.bitmapData,
+          label: SAMPLE_LABELS[currentSamples.length] || `Scan ${nextIndex}`,
+        };
+
+        const updatedSamples = [...currentSamples, newSample];
+        const bestSample = [...updatedSamples].sort((a, b) => b.quality - a.quality)[0];
+
+        soundEngine.playVerificationChime();
+        setFinger1({
+          fingerName: finger1.fingerName,
+          isoTemplate: bestSample.isoTemplate,
+          bitmapData: bestSample.bitmapData || '',
+          quality: bestSample.quality,
+          samples: updatedSamples,
+        });
+
+        if (updatedSamples.length >= 3) {
+          setSuccessMessage(`✓ Primary Touch: All 3 scans captured (Best Quality: ${bestSample.quality}%)!`);
+        }
       } else {
         soundEngine.playWarningBuzzer();
         setErrorMessage(res.errorDescription || 'Scan timed out or failed. Please try again.');
@@ -228,25 +438,51 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     }
   };
 
+  const handleResetFinger1 = () => {
+    setFinger1({
+      fingerName: finger1.fingerName,
+      isoTemplate: '',
+      bitmapData: '',
+      quality: 0,
+      samples: [],
+    });
+  };
+
   const handleScanFinger2 = async () => {
     setIsScanningFp2(true);
     setErrorMessage(null);
     soundEngine.playScannerBeep();
     try {
+      const currentSamples = finger2.samples || [];
+      if (currentSamples.length >= 3) {
+        setErrorMessage('All 3 scans are already captured. Click "Reset" if you wish to re-enroll.');
+        return;
+      }
+
       const res = await mantraService.captureFingerprint(60, 8);
       if (res.success && res.isoTemplate) {
-        // 1. Check duplicate with Finger 1
-        if (
-          finger1.isoTemplate &&
-          (res.isoTemplate === finger1.isoTemplate ||
-            Math.abs(res.isoTemplate.length - finger1.isoTemplate.length) <= 25)
-        ) {
+        // 1. Minimum 60% quality threshold
+        if (res.quality < 60) {
           soundEngine.playWarningBuzzer();
-          setErrorMessage('Backup Touch cannot be the same as Primary Touch. Please scan a different touch.');
+          setErrorMessage(`Touch quality was ${res.quality}%. Minimum 60% quality is required. Please press firmly and scan again.`);
           return;
         }
 
-        // 2. Check duplicate with already registered personnel
+        // 2. Check collision with Finger 1
+        const f1AllTemplates = [
+          finger1.isoTemplate,
+          ...(finger1.samples || []).map((s) => s.isoTemplate),
+        ].filter(Boolean);
+
+        for (const f1t of f1AllTemplates) {
+          if (res.isoTemplate === f1t || Math.abs(res.isoTemplate.length - f1t.length) <= 25) {
+            soundEngine.playWarningBuzzer();
+            setErrorMessage('Backup Touch cannot be the same as Primary Touch. Please scan a different finger.');
+            return;
+          }
+        }
+
+        // 3. Check duplicate with already registered personnel
         const dup = checkDuplicateFinger(res.isoTemplate, formData.id);
         if (dup.isDuplicate) {
           soundEngine.playWarningBuzzer();
@@ -254,13 +490,40 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           return;
         }
 
-        soundEngine.playVerificationChime();
-        setFinger2((prev) => ({
-          ...prev,
+        // 4. Verify consistency with Tap 1
+        if (currentSamples.length > 0) {
+          const tap1Iso = currentSamples[0].isoTemplate;
+          if (Math.abs(res.isoTemplate.length - tap1Iso.length) > 55) {
+            soundEngine.playWarningBuzzer();
+            setErrorMessage('Different finger detected! Please use the same finger for all 3 scans of this touch.');
+            return;
+          }
+        }
+
+        const nextIndex = currentSamples.length + 1;
+        const newSample = {
+          sampleIndex: nextIndex,
           isoTemplate: res.isoTemplate,
-          bitmapData: res.bitmapData,
           quality: res.quality,
-        }));
+          bitmapData: res.bitmapData,
+          label: SAMPLE_LABELS[currentSamples.length] || `Scan ${nextIndex}`,
+        };
+
+        const updatedSamples = [...currentSamples, newSample];
+        const bestSample = [...updatedSamples].sort((a, b) => b.quality - a.quality)[0];
+
+        soundEngine.playVerificationChime();
+        setFinger2({
+          fingerName: finger2.fingerName,
+          isoTemplate: bestSample.isoTemplate,
+          bitmapData: bestSample.bitmapData || '',
+          quality: bestSample.quality,
+          samples: updatedSamples,
+        });
+
+        if (updatedSamples.length >= 3) {
+          setSuccessMessage(`✓ Backup Touch: All 3 scans captured (Best Quality: ${bestSample.quality}%)!`);
+        }
       } else {
         soundEngine.playWarningBuzzer();
         setErrorMessage(res.errorDescription || 'Scan timed out or failed. Please try again.');
@@ -271,6 +534,16 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     } finally {
       setIsScanningFp2(false);
     }
+  };
+
+  const handleResetFinger2 = () => {
+    setFinger2({
+      fingerName: finger2.fingerName,
+      isoTemplate: '',
+      bitmapData: '',
+      quality: 0,
+      samples: [],
+    });
   };
 
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -340,15 +613,15 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
     const role: 'Staff' | 'Employee' = formData.dept.toLowerCase().includes('staff') ? 'Staff' : 'Employee';
 
-    // TWO-TOUCH ENROLLMENT
-    if (!finger1.isoTemplate) {
+    // TWO-TOUCH ENROLLMENT (3 Samples per touch required)
+    if (!finger1.isoTemplate || (finger1.samples && finger1.samples.length < 3)) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage('Please scan Primary Touch on sensor.');
+      setErrorMessage(`Please complete all 3 scans for Primary Touch (${finger1.samples?.length || 0}/3 completed).`);
       return;
     }
-    if (!finger2.isoTemplate) {
+    if (!finger2.isoTemplate || (finger2.samples && finger2.samples.length < 3)) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage('Please scan Backup Touch on sensor.');
+      setErrorMessage(`Please complete all 3 scans for Backup Touch (${finger2.samples?.length || 0}/3 completed).`);
       return;
     }
 
@@ -392,7 +665,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       // 1. Save to Employee store
       await canteenService.addEmployee(newEmployee);
 
-      // 2. Save Two-Touch data to dedicated store
+      // 2. Save Two-Touch data to dedicated store (with multi-samples)
       await canteenService.saveFingerprint({
         employeeId: cleanId,
         employeeName: cleanName,
@@ -402,17 +675,19 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           isoTemplate: finger1.isoTemplate,
           bitmapData: finger1.bitmapData,
           quality: finger1.quality,
+          samples: finger1.samples || [],
         },
         finger2: {
           fingerName: finger2.fingerName,
           isoTemplate: finger2.isoTemplate,
           bitmapData: finger2.bitmapData,
           quality: finger2.quality,
+          samples: finger2.samples || [],
         },
       });
 
       soundEngine.playVerificationChime();
-      setSuccessMessage(`✓ Successfully registered ${cleanName} (${cleanId})! Ready for next personnel.`);
+      setSuccessMessage(`✓ Successfully registered ${cleanName} (${cleanId}) with 3-sample multi-touch enrollment! Ready for next personnel.`);
       loadEmployees();
       if (onRosterUpdated) onRosterUpdated();
 
@@ -430,17 +705,11 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       });
 
       setFinger1({
-        fingerName: 'Right Thumb',
-        isoTemplate: '',
-        bitmapData: '',
-        quality: 0,
-      });
-
-      setFinger1({
         fingerName: 'Primary Touch',
         isoTemplate: '',
         bitmapData: '',
         quality: 0,
+        samples: [],
       });
 
       setFinger2({
@@ -448,6 +717,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         isoTemplate: '',
         bitmapData: '',
         quality: 0,
+        samples: [],
       });
     } catch (err: unknown) {
       soundEngine.playWarningBuzzer();
@@ -501,17 +771,55 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     ) || emp.fingerprints;
 
     if (existingFp) {
+      const f1Samples: FingerSampleState[] = Array.isArray(existingFp.finger1?.samples) && existingFp.finger1.samples.length > 0
+        ? existingFp.finger1.samples.map((s) => ({
+            sampleIndex: s.sampleIndex,
+            isoTemplate: s.isoTemplate,
+            quality: s.quality,
+            bitmapData: s.bitmapData || '',
+            label: s.label || '',
+          }))
+        : existingFp.finger1?.isoTemplate
+        ? [{
+            sampleIndex: 1,
+            isoTemplate: existingFp.finger1.isoTemplate,
+            quality: existingFp.finger1.quality || 80,
+            bitmapData: existingFp.finger1.bitmapData || '',
+            label: 'Flat Touch',
+          }]
+        : [];
+
+      const f2Samples: FingerSampleState[] = Array.isArray(existingFp.finger2?.samples) && existingFp.finger2.samples.length > 0
+        ? existingFp.finger2.samples.map((s) => ({
+            sampleIndex: s.sampleIndex,
+            isoTemplate: s.isoTemplate,
+            quality: s.quality,
+            bitmapData: s.bitmapData || '',
+            label: s.label || '',
+          }))
+        : existingFp.finger2?.isoTemplate
+        ? [{
+            sampleIndex: 1,
+            isoTemplate: existingFp.finger2.isoTemplate,
+            quality: existingFp.finger2.quality || 80,
+            bitmapData: existingFp.finger2.bitmapData || '',
+            label: 'Flat Touch',
+          }]
+        : [];
+
       setEditFinger1({
         fingerName: existingFp.finger1?.fingerName || 'Primary Touch',
         isoTemplate: existingFp.finger1?.isoTemplate || '',
         bitmapData: existingFp.finger1?.bitmapData || '',
         quality: existingFp.finger1?.quality || 0,
+        samples: f1Samples,
       });
       setEditFinger2({
         fingerName: existingFp.finger2?.fingerName || 'Backup Touch',
         isoTemplate: existingFp.finger2?.isoTemplate || '',
         bitmapData: existingFp.finger2?.bitmapData || '',
         quality: existingFp.finger2?.quality || 0,
+        samples: f2Samples,
       });
     } else {
       setEditFinger1({
@@ -519,12 +827,14 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         isoTemplate: '',
         bitmapData: '',
         quality: 0,
+        samples: [],
       });
       setEditFinger2({
         fingerName: 'Backup Touch',
         isoTemplate: '',
         bitmapData: '',
         quality: 0,
+        samples: [],
       });
     }
   };
@@ -538,12 +848,14 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       isoTemplate: '',
       bitmapData: '',
       quality: 0,
+      samples: [],
     });
     setEditFinger2({
       fingerName: 'Backup Touch',
       isoTemplate: '',
       bitmapData: '',
       quality: 0,
+      samples: [],
     });
   };
 
@@ -552,9 +864,22 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     setEditErrorMessage(null);
     soundEngine.playScannerBeep();
     try {
+      const currentSamples = editFinger1.samples || [];
+      if (currentSamples.length >= 3) {
+        setEditErrorMessage('All 3 scans are already captured. Click "Reset" if you wish to re-enroll.');
+        return;
+      }
+
       const res = await mantraService.captureFingerprint(60, 8);
       if (res.success && res.isoTemplate) {
-        // 1. Check duplicate with other registered personnel
+        // 1. Minimum 60% quality
+        if (res.quality < 60) {
+          soundEngine.playWarningBuzzer();
+          setEditErrorMessage(`Touch quality was ${res.quality}%. Minimum 60% quality is required. Please press firmly and scan again.`);
+          return;
+        }
+
+        // 2. Check duplicate with other registered personnel
         const dup = checkDuplicateFinger(res.isoTemplate, editingOriginalId || undefined);
         if (dup.isDuplicate) {
           soundEngine.playWarningBuzzer();
@@ -562,24 +887,50 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           return;
         }
 
-        // 2. Check collision with editFinger2
-        if (
-          editFinger2.isoTemplate &&
-          (res.isoTemplate === editFinger2.isoTemplate ||
-            Math.abs(res.isoTemplate.length - editFinger2.isoTemplate.length) <= 25)
-        ) {
-          soundEngine.playWarningBuzzer();
-          setEditErrorMessage('Primary and Backup Touch cannot be the same. Please scan two different touches.');
-          return;
+        // 3. Check collision with editFinger2
+        const f2AllTemplates = [
+          editFinger2.isoTemplate,
+          ...(editFinger2.samples || []).map((s) => s.isoTemplate),
+        ].filter(Boolean);
+
+        for (const f2t of f2AllTemplates) {
+          if (res.isoTemplate === f2t || Math.abs(res.isoTemplate.length - f2t.length) <= 25) {
+            soundEngine.playWarningBuzzer();
+            setEditErrorMessage('Primary and Backup Touch cannot be the same. Please scan two different touches.');
+            return;
+          }
         }
 
-        soundEngine.playVerificationChime();
-        setEditFinger1((prev) => ({
-          ...prev,
+        // 4. Verify consistency with Tap 1
+        if (currentSamples.length > 0) {
+          const tap1Iso = currentSamples[0].isoTemplate;
+          if (Math.abs(res.isoTemplate.length - tap1Iso.length) > 55) {
+            soundEngine.playWarningBuzzer();
+            setEditErrorMessage('Different finger detected! Please use the same finger for all 3 scans of this touch.');
+            return;
+          }
+        }
+
+        const nextIndex = currentSamples.length + 1;
+        const newSample = {
+          sampleIndex: nextIndex,
           isoTemplate: res.isoTemplate,
-          bitmapData: res.bitmapData,
           quality: res.quality,
-        }));
+          bitmapData: res.bitmapData,
+          label: SAMPLE_LABELS[currentSamples.length] || `Scan ${nextIndex}`,
+        };
+
+        const updatedSamples = [...currentSamples, newSample];
+        const bestSample = [...updatedSamples].sort((a, b) => b.quality - a.quality)[0];
+
+        soundEngine.playVerificationChime();
+        setEditFinger1({
+          fingerName: editFinger1.fingerName,
+          isoTemplate: bestSample.isoTemplate,
+          bitmapData: bestSample.bitmapData || '',
+          quality: bestSample.quality,
+          samples: updatedSamples,
+        });
       } else {
         soundEngine.playWarningBuzzer();
         setEditErrorMessage(res.errorDescription || 'Scan timed out or failed. Please try again.');
@@ -592,25 +943,51 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     }
   };
 
+  const handleEditResetFinger1 = () => {
+    setEditFinger1({
+      fingerName: editFinger1.fingerName,
+      isoTemplate: '',
+      bitmapData: '',
+      quality: 0,
+      samples: [],
+    });
+  };
+
   const handleEditScanFinger2 = async () => {
     setEditIsScanningFp2(true);
     setEditErrorMessage(null);
     soundEngine.playScannerBeep();
     try {
+      const currentSamples = editFinger2.samples || [];
+      if (currentSamples.length >= 3) {
+        setEditErrorMessage('All 3 scans are already captured. Click "Reset" if you wish to re-enroll.');
+        return;
+      }
+
       const res = await mantraService.captureFingerprint(60, 8);
       if (res.success && res.isoTemplate) {
-        // 1. Check collision with editFinger1
-        if (
-          editFinger1.isoTemplate &&
-          (res.isoTemplate === editFinger1.isoTemplate ||
-            Math.abs(res.isoTemplate.length - editFinger1.isoTemplate.length) <= 25)
-        ) {
+        // 1. Minimum 60% quality
+        if (res.quality < 60) {
           soundEngine.playWarningBuzzer();
-          setEditErrorMessage('Backup Touch cannot be the same as Primary Touch. Please scan a different touch.');
+          setEditErrorMessage(`Touch quality was ${res.quality}%. Minimum 60% quality is required. Please press firmly and scan again.`);
           return;
         }
 
-        // 2. Check duplicate with other registered personnel
+        // 2. Check collision with editFinger1
+        const f1AllTemplates = [
+          editFinger1.isoTemplate,
+          ...(editFinger1.samples || []).map((s) => s.isoTemplate),
+        ].filter(Boolean);
+
+        for (const f1t of f1AllTemplates) {
+          if (res.isoTemplate === f1t || Math.abs(res.isoTemplate.length - f1t.length) <= 25) {
+            soundEngine.playWarningBuzzer();
+            setEditErrorMessage('Backup Touch cannot be the same as Primary Touch. Please scan a different touch.');
+            return;
+          }
+        }
+
+        // 3. Check duplicate with other registered personnel
         const dup = checkDuplicateFinger(res.isoTemplate, editingOriginalId || undefined);
         if (dup.isDuplicate) {
           soundEngine.playWarningBuzzer();
@@ -618,13 +995,36 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           return;
         }
 
-        soundEngine.playVerificationChime();
-        setEditFinger2((prev) => ({
-          ...prev,
+        // 4. Verify consistency with Tap 1
+        if (currentSamples.length > 0) {
+          const tap1Iso = currentSamples[0].isoTemplate;
+          if (Math.abs(res.isoTemplate.length - tap1Iso.length) > 55) {
+            soundEngine.playWarningBuzzer();
+            setEditErrorMessage('Different finger detected! Please use the same finger for all 3 scans of this touch.');
+            return;
+          }
+        }
+
+        const nextIndex = currentSamples.length + 1;
+        const newSample = {
+          sampleIndex: nextIndex,
           isoTemplate: res.isoTemplate,
-          bitmapData: res.bitmapData,
           quality: res.quality,
-        }));
+          bitmapData: res.bitmapData,
+          label: SAMPLE_LABELS[currentSamples.length] || `Scan ${nextIndex}`,
+        };
+
+        const updatedSamples = [...currentSamples, newSample];
+        const bestSample = [...updatedSamples].sort((a, b) => b.quality - a.quality)[0];
+
+        soundEngine.playVerificationChime();
+        setEditFinger2({
+          fingerName: editFinger2.fingerName,
+          isoTemplate: bestSample.isoTemplate,
+          bitmapData: bestSample.bitmapData || '',
+          quality: bestSample.quality,
+          samples: updatedSamples,
+        });
       } else {
         soundEngine.playWarningBuzzer();
         setEditErrorMessage(res.errorDescription || 'Scan timed out or failed. Please try again.');
@@ -635,6 +1035,16 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     } finally {
       setEditIsScanningFp2(false);
     }
+  };
+
+  const handleEditResetFinger2 = () => {
+    setEditFinger2({
+      fingerName: editFinger2.fingerName,
+      isoTemplate: '',
+      bitmapData: '',
+      quality: 0,
+      samples: [],
+    });
   };
 
   // Save Edit Employee
@@ -728,12 +1138,14 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
             isoTemplate: editFinger1.isoTemplate,
             bitmapData: editFinger1.bitmapData,
             quality: editFinger1.quality,
+            samples: editFinger1.samples || [],
           },
           finger2: {
             fingerName: editFinger2.fingerName,
             isoTemplate: editFinger2.isoTemplate,
             bitmapData: editFinger2.bitmapData,
             quality: editFinger2.quality,
+            samples: editFinger2.samples || [],
           },
         });
       }
@@ -1268,117 +1680,29 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 {/* 1. DUAL TOUCH ENROLLMENT (5 cols)                         */}
                 {/* ========================================================= */}
                 <div className="md:col-span-5 flex flex-col gap-3.5">
-                  
-                  {/* Primary Touch Card */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-2xs">
-                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
-                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <FingerprintIcon className="w-4 h-4 text-emerald-600" />
-                        <span>Primary Touch *</span>
-                      </span>
-                      {finger1.isoTemplate && (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300 flex items-center gap-1">
-                          <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                          <span>Quality: {finger1.quality}%</span>
-                        </span>
-                      )}
-                    </div>
+                  {/* Primary Touch Card with 3-Tap Multi-Sampling */}
+                  <MultiSampleFingerCard
+                    cardTitle="Primary Touch"
+                    finger={finger1}
+                    onNameChange={(name) => setFinger1({ ...finger1, fingerName: name })}
+                    onScan={handleScanFinger1}
+                    onReset={handleResetFinger1}
+                    isScanning={isScanningFp1}
+                    themeColor="emerald"
+                    fingerOptions={FINGER_OPTIONS}
+                  />
 
-                    {/* Name Selector */}
-                    <select
-                      value={finger1.fingerName}
-                      onChange={(e) => setFinger1({ ...finger1, fingerName: e.target.value })}
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"
-                    >
-                      {FINGER_OPTIONS.map((f) => (
-                        <option key={f} value={f}>
-                          {f}
-                        </option>
-                      ))}
-                    </select>
-
-                    {/* Primary Touch Preview */}
-                    <div className="h-32 bg-slate-900 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center relative">
-                      {finger1.bitmapData ? (
-                        <img
-                          src={finger1.bitmapData}
-                          alt="Primary touch scan"
-                          className="h-full object-contain filter contrast-125"
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center justify-center text-slate-400 gap-1">
-                          <FingerprintIcon className="w-10 h-10 text-slate-600" />
-                          <span className="text-[10px] font-mono">Not Enrolled Yet</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleScanFinger1}
-                      disabled={isScanningFp1}
-                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 cursor-pointer"
-                    >
-                      <FingerprintIcon className="w-4 h-4" />
-                      <span>{isScanningFp1 ? 'Scanning on sensor...' : finger1.isoTemplate ? 'Rescan Primary Touch' : 'Scan Primary Touch'}</span>
-                    </button>
-                  </div>
-
-                  {/* Backup Touch Card */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-2xs">
-                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
-                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <FingerprintIcon className="w-4 h-4 text-blue-600" />
-                        <span>Backup Touch *</span>
-                      </span>
-                      {finger2.isoTemplate && (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-bold border border-blue-300 flex items-center gap-1">
-                          <ShieldCheck className="w-3 h-3 text-blue-600" />
-                          <span>Quality: {finger2.quality}%</span>
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Name Selector */}
-                    <select
-                      value={finger2.fingerName}
-                      onChange={(e) => setFinger2({ ...finger2, fingerName: e.target.value })}
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"
-                    >
-                      {FINGER_OPTIONS.map((f) => (
-                        <option key={f} value={f}>
-                          {f}
-                        </option>
-                      ))}
-                    </select>
-
-                    {/* Backup Touch Preview */}
-                    <div className="h-32 bg-slate-900 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center relative">
-                      {finger2.bitmapData ? (
-                        <img
-                          src={finger2.bitmapData}
-                          alt="Backup touch scan"
-                          className="h-full object-contain filter contrast-125"
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center justify-center text-slate-400 gap-1">
-                          <FingerprintIcon className="w-10 h-10 text-slate-600" />
-                          <span className="text-[10px] font-mono">Not Enrolled Yet</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleScanFinger2}
-                      disabled={isScanningFp2}
-                      className="w-full py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 cursor-pointer"
-                    >
-                      <FingerprintIcon className="w-4 h-4" />
-                      <span>{isScanningFp2 ? 'Scanning on sensor...' : finger2.isoTemplate ? 'Rescan Backup Touch' : 'Scan Backup Touch'}</span>
-                    </button>
-                  </div>
-
+                  {/* Backup Touch Card with 3-Tap Multi-Sampling */}
+                  <MultiSampleFingerCard
+                    cardTitle="Backup Touch"
+                    finger={finger2}
+                    onNameChange={(name) => setFinger2({ ...finger2, fingerName: name })}
+                    onScan={handleScanFinger2}
+                    onReset={handleResetFinger2}
+                    isScanning={isScanningFp2}
+                    themeColor="blue"
+                    fingerOptions={FINGER_OPTIONS}
+                  />
                 </div>
 
                 {/* RIGHT: User Information Form (7 cols) - Strictly: Name, ID, Dept */}
@@ -1743,123 +2067,29 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Touch 1 (Primary) */}
-                  <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-bold text-slate-700">Primary Touch</label>
-                      {editFinger1.isoTemplate && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          Quality: {editFinger1.quality}%
-                        </span>
-                      )}
-                    </div>
+                  {/* Touch 1 (Primary) with 3-Tap Multi-Sampling */}
+                  <MultiSampleFingerCard
+                    cardTitle="Primary Touch"
+                    finger={editFinger1}
+                    onNameChange={(name) => setEditFinger1({ ...editFinger1, fingerName: name })}
+                    onScan={handleEditScanFinger1}
+                    onReset={handleEditResetFinger1}
+                    isScanning={editIsScanningFp1}
+                    themeColor="emerald"
+                    fingerOptions={FINGER_OPTIONS}
+                  />
 
-                    <select
-                      value={editFinger1.fingerName}
-                      onChange={(e) => setEditFinger1({ ...editFinger1, fingerName: e.target.value })}
-                      className="w-full text-[11px] px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                    >
-                      {FINGER_OPTIONS.map((opt) => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
-
-                    <div className="h-24 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-center overflow-hidden">
-                      {editFinger1.bitmapData ? (
-                        <img
-                          src={editFinger1.bitmapData}
-                          alt="Primary Touch"
-                          className="h-full object-contain filter invert contrast-125"
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center justify-center text-slate-400 text-[10px]">
-                          <FingerprintIcon className="w-8 h-8 mb-1 stroke-1" />
-                          <span>No touch scanned</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={editIsScanningFp1}
-                      onClick={handleEditScanFinger1}
-                      className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
-                        editIsScanningFp1
-                          ? 'bg-amber-500 text-white animate-pulse'
-                          : editFinger1.isoTemplate
-                          ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                      }`}
-                    >
-                      <FingerprintIcon className="w-3.5 h-3.5" />
-                      <span>
-                        {editIsScanningFp1
-                          ? 'Scanning on sensor...'
-                          : editFinger1.isoTemplate
-                          ? 'Rescan Primary Touch'
-                          : 'Scan Primary Touch'}
-                      </span>
-                    </button>
-                  </div>
-
-                  {/* Touch 2 (Backup) */}
-                  <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-bold text-slate-700">Backup Touch</label>
-                      {editFinger2.isoTemplate && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          Quality: {editFinger2.quality}%
-                        </span>
-                      )}
-                    </div>
-
-                    <select
-                      value={editFinger2.fingerName}
-                      onChange={(e) => setEditFinger2({ ...editFinger2, fingerName: e.target.value })}
-                      className="w-full text-[11px] px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                    >
-                      {FINGER_OPTIONS.map((opt) => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
-
-                    <div className="h-24 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-center overflow-hidden">
-                      {editFinger2.bitmapData ? (
-                        <img
-                          src={editFinger2.bitmapData}
-                          alt="Backup Touch"
-                          className="h-full object-contain filter invert contrast-125"
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center justify-center text-slate-400 text-[10px]">
-                          <FingerprintIcon className="w-8 h-8 mb-1 stroke-1" />
-                          <span>No touch scanned</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={editIsScanningFp2}
-                      onClick={handleEditScanFinger2}
-                      className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
-                        editIsScanningFp2
-                          ? 'bg-amber-500 text-white animate-pulse'
-                          : editFinger2.isoTemplate
-                          ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                      }`}
-                    >
-                      <FingerprintIcon className="w-3.5 h-3.5" />
-                      <span>
-                        {editIsScanningFp2
-                          ? 'Scanning on sensor...'
-                          : editFinger2.isoTemplate
-                          ? 'Rescan Backup Touch'
-                          : 'Scan Backup Touch'}
-                      </span>
-                    </button>
-                  </div>
+                  {/* Touch 2 (Backup) with 3-Tap Multi-Sampling */}
+                  <MultiSampleFingerCard
+                    cardTitle="Backup Touch"
+                    finger={editFinger2}
+                    onNameChange={(name) => setEditFinger2({ ...editFinger2, fingerName: name })}
+                    onScan={handleEditScanFinger2}
+                    onReset={handleEditResetFinger2}
+                    isScanning={editIsScanningFp2}
+                    themeColor="blue"
+                    fingerOptions={FINGER_OPTIONS}
+                  />
                 </div>
               </div>
 

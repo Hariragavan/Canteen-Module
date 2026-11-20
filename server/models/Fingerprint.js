@@ -23,6 +23,17 @@ const SingleFingerSchema = new mongoose.Schema(
       type: Number,
       default: 0, // Quality score (0 - 100)
     },
+    // Multi-Sample Gallery (Aadhaar / Smartphone 3-tap capture)
+    samples: [
+      {
+        sampleIndex: { type: Number, default: 1 },
+        isoTemplate: { type: String, required: true },
+        quality: { type: Number, default: 0 },
+        bitmapData: { type: String, default: '' },
+        label: { type: String, default: '' },
+        _id: false,
+      },
+    ],
   },
   { _id: false }
 );

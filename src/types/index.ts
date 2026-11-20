@@ -2,12 +2,21 @@ export type MealSlotName = 'Tiffin' | 'Lunch' | 'Tea/Snacks' | 'Breakfast' | 'Te
 
 export type UserRole = 'Employee' | 'Staff';
 
+export interface FingerSample {
+  sampleIndex: number;  // 1, 2, or 3 (Aadhaar / Smartphone 3-tap capture)
+  isoTemplate: string;  // Base64 encoded ISO-19794-2 template
+  quality: number;      // Capture quality score 0-100
+  bitmapData?: string;  // Base64 preview thumbnail
+  label?: string;       // e.g. 'Flat Touch', 'Tilt Touch', 'Firm Press'
+}
+
 export interface SingleFingerData {
   fingerName: string;   // e.g. 'Right Thumb', 'Right Index', 'Left Thumb', 'Left Index'
   isoTemplate: string;  // Base64 encoded ISO-19794-2 template from Mantra MFS100
   ansiTemplate?: string;
   bitmapData?: string;  // Base64 preview image
   quality: number;      // Capture quality score 0-100
+  samples?: FingerSample[]; // Multi-tap enrollment samples (up to 3 scans)
 }
 
 export interface FingerprintRecord {

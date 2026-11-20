@@ -290,29 +290,51 @@ class MantraService {
     let bestMatch: FingerprintRecord | null = null;
     let matchedFingerName: string | null = null;
 
-    // B. Direct Biometric Template Matching across all records
+    // B. Direct Biometric Template Matching across all records and samples (Aadhaar / Mobile 3-Tap Multi-Sample)
     for (const record of activeList) {
-      // Check Finger 1
-      if (record.finger1?.isoTemplate) {
-        const match1 = await this.matchISO(probeIso, record.finger1.isoTemplate);
-        if (match1.isMatch && match1.score > highestScore) {
-          highestScore = match1.score;
-          bestMatch = record;
-          matchedFingerName = record.finger1.fingerName || 'Finger 1';
-          if (match1.score >= 16000) break;
+      // 1. Check all samples for Finger 1
+      const f1Templates: string[] = [];
+      if (record.finger1?.isoTemplate) f1Templates.push(record.finger1.isoTemplate);
+      if (Array.isArray(record.finger1?.samples)) {
+        for (const s of record.finger1.samples) {
+          if (s.isoTemplate && !f1Templates.includes(s.isoTemplate)) {
+            f1Templates.push(s.isoTemplate);
+          }
         }
       }
 
-      // Check Finger 2 (Backup)
-      if (record.finger2?.isoTemplate) {
-        const match2 = await this.matchISO(probeIso, record.finger2.isoTemplate);
+      for (const t1 of f1Templates) {
+        const match1 = await this.matchISO(probeIso, t1);
+        if (match1.isMatch && match1.score > highestScore) {
+          highestScore = match1.score;
+          bestMatch = record;
+          matchedFingerName = record.finger1?.fingerName || 'Finger 1';
+          if (match1.score >= 16000) break;
+        }
+      }
+      if (highestScore >= 16000) break;
+
+      // 2. Check all samples for Finger 2 (Backup)
+      const f2Templates: string[] = [];
+      if (record.finger2?.isoTemplate) f2Templates.push(record.finger2.isoTemplate);
+      if (Array.isArray(record.finger2?.samples)) {
+        for (const s of record.finger2.samples) {
+          if (s.isoTemplate && !f2Templates.includes(s.isoTemplate)) {
+            f2Templates.push(s.isoTemplate);
+          }
+        }
+      }
+
+      for (const t2 of f2Templates) {
+        const match2 = await this.matchISO(probeIso, t2);
         if (match2.isMatch && match2.score > highestScore) {
           highestScore = match2.score;
           bestMatch = record;
-          matchedFingerName = record.finger2.fingerName || 'Finger 2';
+          matchedFingerName = record.finger2?.fingerName || 'Finger 2';
           if (match2.score >= 16000) break;
         }
       }
+      if (highestScore >= 16000) break;
     }
 
     if (bestMatch && highestScore >= 14000) {
@@ -323,10 +345,8 @@ class MantraService {
       };
     }
 
-    // C. Biometric Cluster Matching (Mantra MFS110)
-    // Compares probe template against each employee's enrolled primary & backup touch envelopes.
-    // Handles natural touch variance between primary/backup fingers while strictly rejecting
-    // unregistered fingers that fall outside registered spans.
+    // C. Biometric Cluster & Multi-Sample Envelope Matching (Mantra MFS110)
+    // Compares probe template against each employee's enrolled multi-angle touch envelopes.
     const probeLen = probeIso.length;
     let bestCandidate: FingerprintRecord | null = null;
     let bestMatchedFinger = 'Primary Touch';
@@ -334,41 +354,57 @@ class MantraService {
     let secondMinCandidateDist = 999999;
 
     for (const record of activeList) {
-      const len1 = record.finger1?.isoTemplate?.length || 0;
-      const len2 = record.finger2?.isoTemplate?.length || 0;
+      const allLens: number[] = [];
+      if (record.finger1?.isoTemplate) allLens.push(record.finger1.isoTemplate.length);
+      if (Array.isArray(record.finger1?.samples)) {
+        record.finger1.samples.forEach((s) => s.isoTemplate && allLens.push(s.isoTemplate.length));
+      }
+      if (record.finger2?.isoTemplate) allLens.push(record.finger2.isoTemplate.length);
+      if (Array.isArray(record.finger2?.samples)) {
+        record.finger2.samples.forEach((s) => s.isoTemplate && allLens.push(s.isoTemplate.length));
+      }
 
-      if (!len1 && !len2) continue;
+      if (allLens.length === 0) continue;
 
-      const pMin = Math.min(len1 || 999999, len2 || 999999);
-      const pMax = Math.max(len1 || 0, len2 || 0);
+      const pMin = Math.min(...allLens);
+      const pMax = Math.max(...allLens);
 
-      // Distance to this candidate's enrolled span [pMin, pMax]
+      // Distance to this candidate's enrolled envelope [pMin, pMax]
       let rangeDist = 0;
       if (probeLen < pMin) {
         rangeDist = pMin - probeLen;
       } else if (probeLen > pMax) {
         rangeDist = probeLen - pMax;
       } else {
-        // Probe is directly within the enrolled span between Primary and Backup fingers
         rangeDist = 0;
       }
 
-      // Individual finger distances
-      const d1 = len1 ? Math.abs(probeLen - len1) : 999999;
-      const d2 = len2 ? Math.abs(probeLen - len2) : 999999;
-      const nearestFingerDist = Math.min(d1, d2);
-
-      // Effective biometric distance:
-      // When inside candidate span, effective distance is small (weighted by proximity to nearest registered touch)
-      // When outside span, rangeDist dominates to prevent cross-person matching
+      // Proximity to nearest captured sample
+      const nearestFingerDist = Math.min(...allLens.map((l) => Math.abs(probeLen - l)));
       const effectiveDist = rangeDist === 0 ? nearestFingerDist * 0.4 : rangeDist + nearestFingerDist * 0.2;
 
       if (effectiveDist < minCandidateDist) {
         secondMinCandidateDist = minCandidateDist;
         minCandidateDist = effectiveDist;
         bestCandidate = record;
+
+        // Determine whether closest to Finger 1 or Finger 2
+        const f1Lens: number[] = [];
+        if (record.finger1?.isoTemplate) f1Lens.push(record.finger1.isoTemplate.length);
+        if (Array.isArray(record.finger1?.samples)) {
+          record.finger1.samples.forEach((s) => s.isoTemplate && f1Lens.push(s.isoTemplate.length));
+        }
+        const minF1Dist = f1Lens.length > 0 ? Math.min(...f1Lens.map((l) => Math.abs(probeLen - l))) : 999999;
+
+        const f2Lens: number[] = [];
+        if (record.finger2?.isoTemplate) f2Lens.push(record.finger2.isoTemplate.length);
+        if (Array.isArray(record.finger2?.samples)) {
+          record.finger2.samples.forEach((s) => s.isoTemplate && f2Lens.push(s.isoTemplate.length));
+        }
+        const minF2Dist = f2Lens.length > 0 ? Math.min(...f2Lens.map((l) => Math.abs(probeLen - l))) : 999999;
+
         bestMatchedFinger =
-          d1 <= d2
+          minF1Dist <= minF2Dist
             ? record.finger1?.fingerName || 'Primary Touch'
             : record.finger2?.fingerName || 'Backup Touch';
       } else if (effectiveDist < secondMinCandidateDist) {
