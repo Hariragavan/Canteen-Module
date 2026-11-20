@@ -23,12 +23,15 @@ import {
   Sparkles,
   Save,
   Tablet,
-  ArrowLeft,
   Truck,
   MessageSquareHeart,
   Fingerprint as FingerprintIcon,
   Usb,
   ShieldCheck,
+  AlertTriangle,
+  AlertCircle,
+  Info,
+  Loader2,
 } from 'lucide-react';
 import type { MealSlotConfig, MealSlotName } from '../../types';
 import { mantraService } from '../../services/mantraService';
@@ -301,6 +304,33 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
   const [isScanningFp1, setIsScanningFp1] = useState<boolean>(false);
   const [isScanningFp2, setIsScanningFp2] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Top-Right Notification Toast State
+  const [notification, setNotification] = useState<{
+    id: string;
+    type: 'success' | 'error' | 'warning' | 'info';
+    title: string;
+    message: string;
+  } | null>(null);
+
+  const showNotification = (
+    type: 'success' | 'error' | 'warning' | 'info',
+    title: string,
+    message: string
+  ) => {
+    setNotification({ id: Date.now().toString(), type, title, message });
+  };
+
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => {
+        setNotification(null);
+      }, 4500);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
+
   const [mantraInfo, setMantraInfo] = useState<{ isConnected: boolean; model: string }>({
     isConnected: false,
     model: 'Scanner',
@@ -317,6 +347,26 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       checkMantraInAdmin();
     }
   }, [isOpen, isRegisteringNew]);
+
+  // Check if a touch matches the primary touch (or its enrolled samples)
+  const checkMatchesPrimary = (
+    probeIso: string,
+    primaryIso: string,
+    primarySamples: FingerSampleState[] = []
+  ): boolean => {
+    if (!probeIso) return false;
+    const allPrimary = [primaryIso, ...primarySamples.map((s) => s.isoTemplate)].filter(Boolean);
+    for (const t of allPrimary) {
+      if (
+        probeIso === t ||
+        (probeIso.length > 36 && t.length > 36 && probeIso.slice(0, 36) === t.slice(0, 36)) ||
+        Math.abs(probeIso.length - t.length) <= 25
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
 
   // Check if a touch ID is already registered to any other personnel
   const checkDuplicateFinger = (probeIso: string, currentEmpId?: string) => {
@@ -338,7 +388,12 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       }
 
       for (const t of allCandidateTemplates) {
-        if (t && (probeIso === t || Math.abs(probeIso.length - t.length) <= 30)) {
+        if (!t) continue;
+        const isMatch =
+          probeIso === t ||
+          (probeIso.length > 36 && t.length > 36 && probeIso.slice(0, 36) === t.slice(0, 36)) ||
+          Math.abs(probeIso.length - t.length) <= 25;
+        if (isMatch) {
           return {
             isDuplicate: true,
             matchedName: rec.employeeName || rec.employeeId,
@@ -357,7 +412,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     try {
       const currentSamples = finger1.samples || [];
       if (currentSamples.length >= 3) {
-        setErrorMessage('All 3 scans are already captured. Click "Reset" if you wish to re-enroll.');
+        showNotification('info', 'Primary Touch', 'All 3 scans are already captured. Click "Reset" if you wish to re-enroll.');
         return;
       }
 
@@ -366,42 +421,43 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         // 1. Minimum 60% quality threshold
         if (res.quality < 60) {
           soundEngine.playWarningBuzzer();
-          setErrorMessage(`Touch quality was ${res.quality}%. Minimum 60% quality is required. Please press firmly and scan again.`);
+          const qMsg = `Touch quality was ${res.quality}%. Minimum 60% quality is required. Please press firmly and scan again.`;
+          setErrorMessage(qMsg);
+          showNotification('warning', 'Low Quality Scan', qMsg);
           return;
         }
 
-        // 2. Check duplicate with already registered personnel
+        // 2. Check duplicate with already registered personnel (any other user's touch)
         const dup = checkDuplicateFinger(res.isoTemplate, formData.id);
         if (dup.isDuplicate) {
           soundEngine.playWarningBuzzer();
-          setErrorMessage(`This touch is already registered to ${dup.matchedName} (${dup.matchedId})! Duplicate registration is not allowed.`);
+          const dMsg = `This touch matches registered personnel: ${dup.matchedName} (${dup.matchedId})! Duplicate registration is not allowed.`;
+          setErrorMessage(dMsg);
+          showNotification('error', 'Duplicate Touch Detected', dMsg);
           return;
         }
 
-        // 3. Check duplicate with Finger 2
+        // 3. Check duplicate with Backup Touch (Finger 2)
         const f2AllTemplates = [
           finger2.isoTemplate,
           ...(finger2.samples || []).map((s) => s.isoTemplate),
         ].filter(Boolean);
 
         for (const f2t of f2AllTemplates) {
-          if (res.isoTemplate === f2t || Math.abs(res.isoTemplate.length - f2t.length) <= 25) {
+          if (
+            res.isoTemplate === f2t ||
+            (res.isoTemplate.length > 36 && f2t.length > 36 && res.isoTemplate.slice(0, 36) === f2t.slice(0, 36)) ||
+            Math.abs(res.isoTemplate.length - f2t.length) <= 25
+          ) {
             soundEngine.playWarningBuzzer();
-            setErrorMessage('Primary and Backup Touch cannot be the same finger. Please scan two different fingers.');
+            const cMsg = 'Primary Touch cannot match Backup Touch. Please scan two different fingers.';
+            setErrorMessage(cMsg);
+            showNotification('warning', 'Finger Conflict', cMsg);
             return;
           }
         }
 
-        // 4. Verify consistency with Tap 1
-        if (currentSamples.length > 0) {
-          const tap1Iso = currentSamples[0].isoTemplate;
-          if (Math.abs(res.isoTemplate.length - tap1Iso.length) > 55) {
-            soundEngine.playWarningBuzzer();
-            setErrorMessage('Different finger detected! Please use the same finger for all 3 scans of this touch.');
-            return;
-          }
-        }
-
+        // Add progressive sample (no restriction on same-finger variance)
         const nextIndex = currentSamples.length + 1;
         const newSample = {
           sampleIndex: nextIndex,
@@ -424,15 +480,23 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         });
 
         if (updatedSamples.length >= 3) {
-          setSuccessMessage(`✓ Primary Touch: All 3 scans captured (Best Quality: ${bestSample.quality}%)!`);
+          const sMsg = `✓ Primary Touch: All 3 scans captured (Best Quality: ${bestSample.quality}%)!`;
+          setSuccessMessage(sMsg);
+          showNotification('success', 'Primary Touch Enrolled', sMsg);
+        } else {
+          showNotification('info', `Primary Touch (Scan ${nextIndex}/3)`, `Scan ${nextIndex} captured with ${res.quality}% quality. Proceed with next tap.`);
         }
       } else {
         soundEngine.playWarningBuzzer();
-        setErrorMessage(res.errorDescription || 'Scan timed out or failed. Please try again.');
+        const eMsg = res.errorDescription || 'Scan timed out or failed. Please try again.';
+        setErrorMessage(eMsg);
+        showNotification('error', 'Sensor Alert', eMsg);
       }
     } catch (e: any) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage(e.message || 'Sensor communication error.');
+      const errM = e.message || 'Sensor communication error.';
+      setErrorMessage(errM);
+      showNotification('error', 'Sensor Error', errM);
     } finally {
       setIsScanningFp1(false);
     }
@@ -455,7 +519,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     try {
       const currentSamples = finger2.samples || [];
       if (currentSamples.length >= 3) {
-        setErrorMessage('All 3 scans are already captured. Click "Reset" if you wish to re-enroll.');
+        showNotification('info', 'Backup Touch', 'All 3 scans are already captured. Click "Reset" if you wish to re-enroll.');
         return;
       }
 
@@ -464,42 +528,32 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         // 1. Minimum 60% quality threshold
         if (res.quality < 60) {
           soundEngine.playWarningBuzzer();
-          setErrorMessage(`Touch quality was ${res.quality}%. Minimum 60% quality is required. Please press firmly and scan again.`);
+          const qMsg = `Touch quality was ${res.quality}%. Minimum 60% quality is required. Please press firmly and scan again.`;
+          setErrorMessage(qMsg);
+          showNotification('warning', 'Low Quality Scan', qMsg);
           return;
         }
 
-        // 2. Check collision with Finger 1
-        const f1AllTemplates = [
-          finger1.isoTemplate,
-          ...(finger1.samples || []).map((s) => s.isoTemplate),
-        ].filter(Boolean);
-
-        for (const f1t of f1AllTemplates) {
-          if (res.isoTemplate === f1t || Math.abs(res.isoTemplate.length - f1t.length) <= 25) {
-            soundEngine.playWarningBuzzer();
-            setErrorMessage('Backup Touch cannot be the same as Primary Touch. Please scan a different finger.');
-            return;
-          }
+        // 2. Check collision with Primary Touch (Finger 1)
+        if (checkMatchesPrimary(res.isoTemplate, finger1.isoTemplate, finger1.samples)) {
+          soundEngine.playWarningBuzzer();
+          const cMsg = 'Backup Touch cannot match Primary Touch. Please scan a different finger.';
+          setErrorMessage(cMsg);
+          showNotification('warning', 'Primary Touch Match', cMsg);
+          return;
         }
 
-        // 3. Check duplicate with already registered personnel
+        // 3. Check duplicate with already registered personnel (any other user's touch)
         const dup = checkDuplicateFinger(res.isoTemplate, formData.id);
         if (dup.isDuplicate) {
           soundEngine.playWarningBuzzer();
-          setErrorMessage(`This touch is already registered to ${dup.matchedName} (${dup.matchedId})! Duplicate registration is not allowed.`);
+          const dMsg = `This touch matches registered personnel: ${dup.matchedName} (${dup.matchedId})! Duplicate registration is not allowed.`;
+          setErrorMessage(dMsg);
+          showNotification('error', 'Duplicate Touch Detected', dMsg);
           return;
         }
 
-        // 4. Verify consistency with Tap 1
-        if (currentSamples.length > 0) {
-          const tap1Iso = currentSamples[0].isoTemplate;
-          if (Math.abs(res.isoTemplate.length - tap1Iso.length) > 55) {
-            soundEngine.playWarningBuzzer();
-            setErrorMessage('Different finger detected! Please use the same finger for all 3 scans of this touch.');
-            return;
-          }
-        }
-
+        // Add progressive sample (no restriction on same-finger variance)
         const nextIndex = currentSamples.length + 1;
         const newSample = {
           sampleIndex: nextIndex,
@@ -522,15 +576,23 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         });
 
         if (updatedSamples.length >= 3) {
-          setSuccessMessage(`✓ Backup Touch: All 3 scans captured (Best Quality: ${bestSample.quality}%)!`);
+          const sMsg = `✓ Backup Touch: All 3 scans captured (Best Quality: ${bestSample.quality}%)!`;
+          setSuccessMessage(sMsg);
+          showNotification('success', 'Backup Touch Enrolled', sMsg);
+        } else {
+          showNotification('info', `Backup Touch (Scan ${nextIndex}/3)`, `Scan ${nextIndex} captured with ${res.quality}% quality. Proceed with next tap.`);
         }
       } else {
         soundEngine.playWarningBuzzer();
-        setErrorMessage(res.errorDescription || 'Scan timed out or failed. Please try again.');
+        const eMsg = res.errorDescription || 'Scan timed out or failed. Please try again.';
+        setErrorMessage(eMsg);
+        showNotification('error', 'Sensor Alert', eMsg);
       }
     } catch (e: any) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage(e.message || 'Sensor communication error.');
+      const errM = e.message || 'Sensor communication error.';
+      setErrorMessage(errM);
+      showNotification('error', 'Sensor Error', errM);
     } finally {
       setIsScanningFp2(false);
     }
@@ -593,11 +655,15 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     const cleanId = formData.id.trim().toUpperCase();
 
     if (!cleanName) {
-      setErrorMessage('Please enter Full Name.');
+      const msg = 'Please enter Full Name.';
+      setErrorMessage(msg);
+      showNotification('warning', 'Missing Information', msg);
       return;
     }
     if (!cleanId) {
-      setErrorMessage('Please enter an Employee/Staff ID.');
+      const msg = 'Please enter an Employee/Staff ID.';
+      setErrorMessage(msg);
+      showNotification('warning', 'Missing Information', msg);
       return;
     }
 
@@ -607,7 +673,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     );
     if (existingIdMatch) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage(`ID Conflict: Personnel ID "${cleanId}" is already registered to ${existingIdMatch.name}.`);
+      const msg = `ID Conflict: Personnel ID "${cleanId}" is already registered to ${existingIdMatch.name}.`;
+      setErrorMessage(msg);
+      showNotification('error', 'ID Conflict', msg);
       return;
     }
 
@@ -616,39 +684,49 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     // TWO-TOUCH ENROLLMENT (3 Samples per touch required)
     if (!finger1.isoTemplate || (finger1.samples && finger1.samples.length < 3)) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage(`Please complete all 3 scans for Primary Touch (${finger1.samples?.length || 0}/3 completed).`);
+      const msg = `Please complete all 3 scans for Primary Touch (${finger1.samples?.length || 0}/3 completed).`;
+      setErrorMessage(msg);
+      showNotification('warning', 'Incomplete Primary Touch', msg);
       return;
     }
     if (!finger2.isoTemplate || (finger2.samples && finger2.samples.length < 3)) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage(`Please complete all 3 scans for Backup Touch (${finger2.samples?.length || 0}/3 completed).`);
+      const msg = `Please complete all 3 scans for Backup Touch (${finger2.samples?.length || 0}/3 completed).`;
+      setErrorMessage(msg);
+      showNotification('warning', 'Incomplete Backup Touch', msg);
       return;
     }
 
-    // Check duplicate between Primary and Backup
-    if (
-      finger1.isoTemplate === finger2.isoTemplate ||
-      Math.abs(finger1.isoTemplate.length - finger2.isoTemplate.length) <= 25
-    ) {
+    // Check if Backup Touch matches Primary Touch
+    if (checkMatchesPrimary(finger2.isoTemplate, finger1.isoTemplate, finger1.samples)) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage('Primary and Backup Touch cannot be the same. Please scan two different touches.');
+      const msg = 'Backup Touch cannot match Primary Touch. Please scan a different finger.';
+      setErrorMessage(msg);
+      showNotification('warning', 'Primary Touch Conflict', msg);
       return;
     }
 
-    // Check duplicate with all already registered personnel
+    // Check duplicate with all already registered personnel (any other user's touch)
     const dup1 = checkDuplicateFinger(finger1.isoTemplate, cleanId);
     if (dup1.isDuplicate) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage(`Primary Touch is already registered to ${dup1.matchedName} (${dup1.matchedId})! Duplicate registration is not allowed.`);
+      const msg = `Primary Touch matches registered personnel: ${dup1.matchedName} (${dup1.matchedId})! Duplicate registration is not allowed.`;
+      setErrorMessage(msg);
+      showNotification('error', 'Duplicate Touch Detected', msg);
       return;
     }
 
     const dup2 = checkDuplicateFinger(finger2.isoTemplate, cleanId);
     if (dup2.isDuplicate) {
       soundEngine.playWarningBuzzer();
-      setErrorMessage(`Backup Touch is already registered to ${dup2.matchedName} (${dup2.matchedId})! Duplicate registration is not allowed.`);
+      const msg = `Backup Touch matches registered personnel: ${dup2.matchedName} (${dup2.matchedId})! Duplicate registration is not allowed.`;
+      setErrorMessage(msg);
+      showNotification('error', 'Duplicate Touch Detected', msg);
       return;
     }
+
+    setIsSubmitting(true);
+    showNotification('info', 'Registering Personnel', `Enrolling biometrics for ${cleanName} (${cleanId})...`);
 
     try {
       const newEmployee: Employee = {
@@ -687,7 +765,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       });
 
       soundEngine.playVerificationChime();
-      setSuccessMessage(`✓ Successfully registered ${cleanName} (${cleanId}) with 3-sample multi-touch enrollment! Ready for next personnel.`);
+      const sMsg = `✓ Successfully registered ${cleanName} (${cleanId}) with 3-sample multi-touch enrollment! Ready for next personnel.`;
+      setSuccessMessage(sMsg);
+      showNotification('success', 'Registration Completed', sMsg);
       loadEmployees();
       if (onRosterUpdated) onRosterUpdated();
 
@@ -723,6 +803,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       soundEngine.playWarningBuzzer();
       const msg = err instanceof Error ? err.message : 'Registration failed';
       setErrorMessage(`Registration Error: ${msg}`);
+      showNotification('error', 'Registration Error', msg);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -866,7 +949,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     try {
       const currentSamples = editFinger1.samples || [];
       if (currentSamples.length >= 3) {
-        setEditErrorMessage('All 3 scans are already captured. Click "Reset" if you wish to re-enroll.');
+        showNotification('info', 'Primary Touch', 'All 3 scans are already captured. Click "Reset" if you wish to re-enroll.');
         return;
       }
 
@@ -875,7 +958,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         // 1. Minimum 60% quality
         if (res.quality < 60) {
           soundEngine.playWarningBuzzer();
-          setEditErrorMessage(`Touch quality was ${res.quality}%. Minimum 60% quality is required. Please press firmly and scan again.`);
+          const qMsg = `Touch quality was ${res.quality}%. Minimum 60% quality is required. Please press firmly and scan again.`;
+          setEditErrorMessage(qMsg);
+          showNotification('warning', 'Low Quality Scan', qMsg);
           return;
         }
 
@@ -883,7 +968,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         const dup = checkDuplicateFinger(res.isoTemplate, editingOriginalId || undefined);
         if (dup.isDuplicate) {
           soundEngine.playWarningBuzzer();
-          setEditErrorMessage(`This touch is already registered to ${dup.matchedName} (${dup.matchedId})! Duplicate registration is not allowed.`);
+          const dMsg = `This touch matches registered personnel: ${dup.matchedName} (${dup.matchedId})! Duplicate registration is not allowed.`;
+          setEditErrorMessage(dMsg);
+          showNotification('error', 'Duplicate Touch Detected', dMsg);
           return;
         }
 
@@ -894,19 +981,15 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         ].filter(Boolean);
 
         for (const f2t of f2AllTemplates) {
-          if (res.isoTemplate === f2t || Math.abs(res.isoTemplate.length - f2t.length) <= 25) {
+          if (
+            res.isoTemplate === f2t ||
+            (res.isoTemplate.length > 36 && f2t.length > 36 && res.isoTemplate.slice(0, 36) === f2t.slice(0, 36)) ||
+            Math.abs(res.isoTemplate.length - f2t.length) <= 25
+          ) {
             soundEngine.playWarningBuzzer();
-            setEditErrorMessage('Primary and Backup Touch cannot be the same. Please scan two different touches.');
-            return;
-          }
-        }
-
-        // 4. Verify consistency with Tap 1
-        if (currentSamples.length > 0) {
-          const tap1Iso = currentSamples[0].isoTemplate;
-          if (Math.abs(res.isoTemplate.length - tap1Iso.length) > 55) {
-            soundEngine.playWarningBuzzer();
-            setEditErrorMessage('Different finger detected! Please use the same finger for all 3 scans of this touch.');
+            const cMsg = 'Primary Touch cannot match Backup Touch. Please scan two different touches.';
+            setEditErrorMessage(cMsg);
+            showNotification('warning', 'Finger Conflict', cMsg);
             return;
           }
         }
@@ -931,13 +1014,23 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           quality: bestSample.quality,
           samples: updatedSamples,
         });
+
+        if (updatedSamples.length >= 3) {
+          showNotification('success', 'Primary Touch Enrolled', `✓ Primary Touch: All 3 scans captured (Best Quality: ${bestSample.quality}%)!`);
+        } else {
+          showNotification('info', `Primary Touch (Scan ${nextIndex}/3)`, `Scan ${nextIndex} captured with ${res.quality}% quality.`);
+        }
       } else {
         soundEngine.playWarningBuzzer();
-        setEditErrorMessage(res.errorDescription || 'Scan timed out or failed. Please try again.');
+        const eMsg = res.errorDescription || 'Scan timed out or failed. Please try again.';
+        setEditErrorMessage(eMsg);
+        showNotification('error', 'Sensor Alert', eMsg);
       }
     } catch (e: any) {
       soundEngine.playWarningBuzzer();
-      setEditErrorMessage(e.message || 'Sensor communication error.');
+      const errM = e.message || 'Sensor communication error.';
+      setEditErrorMessage(errM);
+      showNotification('error', 'Sensor Error', errM);
     } finally {
       setEditIsScanningFp1(false);
     }
@@ -960,7 +1053,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     try {
       const currentSamples = editFinger2.samples || [];
       if (currentSamples.length >= 3) {
-        setEditErrorMessage('All 3 scans are already captured. Click "Reset" if you wish to re-enroll.');
+        showNotification('info', 'Backup Touch', 'All 3 scans are already captured. Click "Reset" if you wish to re-enroll.');
         return;
       }
 
@@ -969,40 +1062,29 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         // 1. Minimum 60% quality
         if (res.quality < 60) {
           soundEngine.playWarningBuzzer();
-          setEditErrorMessage(`Touch quality was ${res.quality}%. Minimum 60% quality is required. Please press firmly and scan again.`);
+          const qMsg = `Touch quality was ${res.quality}%. Minimum 60% quality is required. Please press firmly and scan again.`;
+          setEditErrorMessage(qMsg);
+          showNotification('warning', 'Low Quality Scan', qMsg);
           return;
         }
 
-        // 2. Check collision with editFinger1
-        const f1AllTemplates = [
-          editFinger1.isoTemplate,
-          ...(editFinger1.samples || []).map((s) => s.isoTemplate),
-        ].filter(Boolean);
-
-        for (const f1t of f1AllTemplates) {
-          if (res.isoTemplate === f1t || Math.abs(res.isoTemplate.length - f1t.length) <= 25) {
-            soundEngine.playWarningBuzzer();
-            setEditErrorMessage('Backup Touch cannot be the same as Primary Touch. Please scan a different touch.');
-            return;
-          }
+        // 2. Check collision with editFinger1 (Primary Touch)
+        if (checkMatchesPrimary(res.isoTemplate, editFinger1.isoTemplate, editFinger1.samples)) {
+          soundEngine.playWarningBuzzer();
+          const cMsg = 'Backup Touch cannot match Primary Touch. Please scan a different touch.';
+          setEditErrorMessage(cMsg);
+          showNotification('warning', 'Primary Touch Conflict', cMsg);
+          return;
         }
 
         // 3. Check duplicate with other registered personnel
         const dup = checkDuplicateFinger(res.isoTemplate, editingOriginalId || undefined);
         if (dup.isDuplicate) {
           soundEngine.playWarningBuzzer();
-          setEditErrorMessage(`This touch is already registered to ${dup.matchedName} (${dup.matchedId})! Duplicate registration is not allowed.`);
+          const dMsg = `This touch matches registered personnel: ${dup.matchedName} (${dup.matchedId})! Duplicate registration is not allowed.`;
+          setEditErrorMessage(dMsg);
+          showNotification('error', 'Duplicate Touch Detected', dMsg);
           return;
-        }
-
-        // 4. Verify consistency with Tap 1
-        if (currentSamples.length > 0) {
-          const tap1Iso = currentSamples[0].isoTemplate;
-          if (Math.abs(res.isoTemplate.length - tap1Iso.length) > 55) {
-            soundEngine.playWarningBuzzer();
-            setEditErrorMessage('Different finger detected! Please use the same finger for all 3 scans of this touch.');
-            return;
-          }
         }
 
         const nextIndex = currentSamples.length + 1;
@@ -1025,13 +1107,23 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           quality: bestSample.quality,
           samples: updatedSamples,
         });
+
+        if (updatedSamples.length >= 3) {
+          showNotification('success', 'Backup Touch Enrolled', `✓ Backup Touch: All 3 scans captured (Best Quality: ${bestSample.quality}%)!`);
+        } else {
+          showNotification('info', `Backup Touch (Scan ${nextIndex}/3)`, `Scan ${nextIndex} captured with ${res.quality}% quality.`);
+        }
       } else {
         soundEngine.playWarningBuzzer();
-        setEditErrorMessage(res.errorDescription || 'Scan timed out or failed. Please try again.');
+        const eMsg = res.errorDescription || 'Scan timed out or failed. Please try again.';
+        setEditErrorMessage(eMsg);
+        showNotification('error', 'Sensor Alert', eMsg);
       }
     } catch (e: any) {
       soundEngine.playWarningBuzzer();
-      setEditErrorMessage(e.message || 'Sensor communication error.');
+      const errM = e.message || 'Sensor communication error.';
+      setEditErrorMessage(errM);
+      showNotification('error', 'Sensor Error', errM);
     } finally {
       setEditIsScanningFp2(false);
     }
@@ -1151,13 +1243,16 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       }
 
       soundEngine.playVerificationChime();
+      showNotification('success', 'User Updated', `✓ Successfully updated ${cleanName} (${cleanId})`);
       handleCancelEdit();
       loadEmployees();
       if (onRosterUpdated) onRosterUpdated();
     } catch (err: unknown) {
       console.error('Update employee error:', err);
       soundEngine.playWarningBuzzer();
-      setEditErrorMessage(err instanceof Error ? err.message : 'Update failed');
+      const errM = err instanceof Error ? err.message : 'Update failed';
+      setEditErrorMessage(errM);
+      showNotification('error', 'Update Failed', errM);
     }
   };
 
@@ -1414,9 +1509,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           <div>
             <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
               {activeTab === 'registered'
-                ? isRegisteringNew
-                  ? 'New Personnel Registration'
-                  : 'Registered Cafeteria Personnel'
+                ? 'Registered Cafeteria Personnel'
                 : activeTab === 'analytics'
                 ? 'Kitchen Analysis & Operations Telemetry'
                 : activeTab === 'transport'
@@ -1427,9 +1520,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
               {activeTab === 'registered'
-                ? isRegisteringNew
-                  ? 'Capture face photo, verify unique vector embedding, and enroll personnel.'
-                  : 'Search, review, edit, or remove registered cafeteria employees and staff.'
+                ? 'Search, review, edit, or enroll registered cafeteria employees and staff.'
                 : activeTab === 'analytics'
                 ? 'Real-time telemetry, consumption curve, and audit clearance ledger.'
                 : activeTab === 'transport'
@@ -1452,9 +1543,9 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
         <div className="p-4 sm:p-6 lg:p-8 flex-1">
           
           {/* ============================================================= */}
-          {/* TAB 1: REGISTERED USERS LIST (WHEN NOT REGISTERING NEW)       */}
+          {/* TAB 1: REGISTERED USERS LIST                                  */}
           {/* ============================================================= */}
-          {activeTab === 'registered' && !isRegisteringNew && (
+          {activeTab === 'registered' && (
             <div className="space-y-4">
               
               {/* Top Bar in Registered Users: Title & NEW REGISTRATION BUTTON */}
@@ -1612,168 +1703,6 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
             </div>
           )}
-
-          {/* ============================================================= */}
-          {/* TAB 1 SUBVIEW: NEW REGISTRATION (WITH LIVE IMAGE CAPTURE)     */}
-          {/* ============================================================= */}
-          {activeTab === 'registered' && isRegisteringNew && (
-            <div className="space-y-5 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsRegisteringNew(false);
-                    stopCamera();
-                    setErrorMessage(null);
-                    setSuccessMessage(null);
-                  }}
-                  className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>← Back to Registered Users</span>
-                </button>
-                <span className="text-xs font-bold text-slate-500 font-mono">
-                  Sequential Auto ID: {formData.id}
-                </span>
-              </div>
-
-              <form onSubmit={handleRegisterSubmit} className="space-y-6">
-              
-              {successMessage && (
-                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center space-x-2 text-xs font-bold text-emerald-800">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>{successMessage}</span>
-                </div>
-              )}
-
-              {errorMessage && (
-                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center space-x-2 text-xs font-bold text-rose-800">
-                  <X className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{errorMessage}</span>
-                </div>
-              )}
-
-              {/* Header: Touch ID Registration */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-emerald-50/80 p-3 rounded-2xl border border-emerald-200">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-                    <FingerprintIcon className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs sm:text-sm font-bold text-emerald-950">Touch ID Registration</h4>
-                    <p className="text-[11px] text-emerald-700 font-medium">Dual Touch Enrollment (Primary + Backup)</p>
-                  </div>
-                </div>
-
-                {/* Live Device Connection Badge */}
-                <div className="flex items-center gap-2 text-xs font-medium">
-                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-slate-800 font-mono text-[11px] shadow-2xs">
-                    <Usb className={`w-3.5 h-3.5 ${mantraInfo.isConnected ? 'text-emerald-600 animate-pulse' : 'text-amber-500'}`} />
-                    <span className="font-bold">{mantraInfo.isConnected ? 'Sensor Connected' : 'Sensor Disconnected'}</span>
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-                
-                {/* ========================================================= */}
-                {/* 1. DUAL TOUCH ENROLLMENT (5 cols)                         */}
-                {/* ========================================================= */}
-                <div className="md:col-span-5 flex flex-col gap-3.5">
-                  {/* Primary Touch Card with 3-Tap Multi-Sampling */}
-                  <MultiSampleFingerCard
-                    cardTitle="Primary Touch"
-                    finger={finger1}
-                    onNameChange={(name) => setFinger1({ ...finger1, fingerName: name })}
-                    onScan={handleScanFinger1}
-                    onReset={handleResetFinger1}
-                    isScanning={isScanningFp1}
-                    themeColor="emerald"
-                    fingerOptions={FINGER_OPTIONS}
-                  />
-
-                  {/* Backup Touch Card with 3-Tap Multi-Sampling */}
-                  <MultiSampleFingerCard
-                    cardTitle="Backup Touch"
-                    finger={finger2}
-                    onNameChange={(name) => setFinger2({ ...finger2, fingerName: name })}
-                    onScan={handleScanFinger2}
-                    onReset={handleResetFinger2}
-                    isScanning={isScanningFp2}
-                    themeColor="blue"
-                    fingerOptions={FINGER_OPTIONS}
-                  />
-                </div>
-
-                {/* RIGHT: User Information Form (7 cols) - Strictly: Name, ID, Dept */}
-                <div className="md:col-span-7 space-y-4">
-                  
-                  {/* Full Name */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Full Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="e.g. Ananya Roy"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
-                      required
-                    />
-                  </div>
-
-                  {/* Employee ID */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Personnel ID (e.g. EMP-1011 or STF-2005) *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.id}
-                      onChange={(e) => setFormData({ ...formData, id: e.target.value.toUpperCase() })}
-                      placeholder="e.g. EMP-1011"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono uppercase text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
-                      required
-                    />
-                  </div>
-
-                  {/* Department */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Department (Staff / Employee / Division) *
-                    </label>
-                    <select
-                      value={formData.dept}
-                      onChange={(e) => handleDeptChange(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white font-medium"
-                    >
-                      {DEPARTMENTS.map((dept) => (
-                        <option key={dept} value={dept}>
-                          {dept}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Submit Button */}
-                  <div className="pt-2">
-                    <button
-                      type="submit"
-                      className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-md shadow-emerald-600/25 flex items-center justify-center space-x-2 transition-all transform active:scale-95"
-                    >
-                      <UserPlus className="w-4 h-4" />
-                      <span>Register Personnel</span>
-                    </button>
-                  </div>
-
-                </div>
-
-              </div>
-
-            </form>
-          </div>
-        )}
 
           {/* ============================================================= */}
           {/* TAB 2: KITCHEN ANALYTICS & OPERATIONS                         */}
@@ -2022,6 +1951,205 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       </div>
 
       {/* ============================================================= */}
+      {/* NEW PERSONNEL REGISTRATION POPUP MODAL (POPUP PAGE)            */}
+      {/* ============================================================= */}
+      {isRegisteringNew && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-4xl shadow-modal p-5 sm:p-7 space-y-4 max-h-[94vh] overflow-y-auto relative flex flex-col">
+            
+            {/* Registering Overlay Spinner Popup */}
+            {isSubmitting && (
+              <div className="absolute inset-0 z-30 bg-white/85 backdrop-blur-xs rounded-3xl flex flex-col items-center justify-center gap-3 animate-in fade-in">
+                <Loader2 className="w-12 h-12 text-emerald-600 animate-spin" />
+                <div className="text-center">
+                  <h4 className="text-sm font-black text-slate-900">Registering Personnel...</h4>
+                  <p className="text-xs text-slate-500 mt-1">Encrypting touch biometrics & syncing central roster...</p>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+              <div className="flex items-center space-x-3">
+                <div className="w-9 h-9 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">
+                    New Personnel Registration
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Dual Touch Multi-Sample Enrollment (Primary + Backup)
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2.5">
+                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 font-mono text-xs font-bold shadow-2xs">
+                  <Usb className={`w-3.5 h-3.5 ${mantraInfo.isConnected ? 'text-emerald-600 animate-pulse' : 'text-amber-500'}`} />
+                  <span>{mantraInfo.isConnected ? 'Sensor Connected' : 'Sensor Disconnected'}</span>
+                </span>
+                <span className="text-xs font-mono font-bold px-2.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  ID: {formData.id}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRegisteringNew(false);
+                    stopCamera();
+                    setErrorMessage(null);
+                    setSuccessMessage(null);
+                  }}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* In-Modal Alerts */}
+            {successMessage && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center space-x-2 text-xs font-bold text-emerald-800 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{successMessage}</span>
+              </div>
+            )}
+            {errorMessage && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center space-x-2 text-xs font-bold text-rose-800 animate-in fade-in">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleRegisterSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
+                
+                {/* LEFT: Dual Touch Multi-Sample Enrollment (5 cols) */}
+                <div className="md:col-span-5 flex flex-col gap-3">
+                  <MultiSampleFingerCard
+                    cardTitle="Primary Touch"
+                    finger={finger1}
+                    onNameChange={(name) => setFinger1({ ...finger1, fingerName: name })}
+                    onScan={handleScanFinger1}
+                    onReset={handleResetFinger1}
+                    isScanning={isScanningFp1}
+                    themeColor="emerald"
+                    fingerOptions={FINGER_OPTIONS}
+                  />
+
+                  <MultiSampleFingerCard
+                    cardTitle="Backup Touch"
+                    finger={finger2}
+                    onNameChange={(name) => setFinger2({ ...finger2, fingerName: name })}
+                    onScan={handleScanFinger2}
+                    onReset={handleResetFinger2}
+                    isScanning={isScanningFp2}
+                    themeColor="blue"
+                    fingerOptions={FINGER_OPTIONS}
+                  />
+                </div>
+
+                {/* RIGHT: User Information Form (7 cols) */}
+                <div className="md:col-span-7 space-y-3.5">
+                  {/* Full Name */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Full Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="e.g. Ananya Roy"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
+                      required
+                    />
+                  </div>
+
+                  {/* Employee ID */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Personnel ID (e.g. EMP-1011 or STF-2005) *
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.id}
+                      onChange={(e) => setFormData({ ...formData, id: e.target.value.toUpperCase() })}
+                      placeholder="e.g. EMP-1011"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono uppercase text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
+                      required
+                    />
+                  </div>
+
+                  {/* Department */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Department (Staff / Employee / Division) *
+                    </label>
+                    <select
+                      value={formData.dept}
+                      onChange={(e) => handleDeptChange(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white font-medium"
+                    >
+                      {DEPARTMENTS.map((dept) => (
+                        <option key={dept} value={dept}>
+                          {dept}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Notice Box */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-600 flex items-start space-x-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-slate-800">Aadhaar / Smartphone Style Enrolment</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Each touch captures 3 progressive samples (Flat, Tilt, Firm) for &gt;98% identification speed with zero lag.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="pt-2 flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsRegisteringNew(false);
+                        stopCamera();
+                      }}
+                      className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="flex-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/25 flex items-center justify-center space-x-2 transition-all transform active:scale-95 disabled:opacity-60 cursor-pointer"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Registering Personnel...</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus className="w-4 h-4" />
+                          <span>Register Personnel</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================= */}
       {/* EDIT USER DRAWER / MODAL OVERLAY                              */}
       {/* ============================================================= */}
       {editingEmployee && (
@@ -2160,6 +2288,51 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================= */}
+      {/* TOP-RIGHT FLOATING NOTIFICATION POPUP (TOAST)                 */}
+      {/* ============================================================= */}
+      {notification && (
+        <div className="fixed top-5 right-5 z-[100] max-w-sm sm:max-w-md w-full pointer-events-auto transition-all animate-in slide-in-from-top-4 fade-in duration-200">
+          <div
+            className={`p-4 rounded-2xl border shadow-2xl flex items-start gap-3 backdrop-blur-md ${
+              notification.type === 'success'
+                ? 'bg-emerald-950/95 text-white border-emerald-500/50 shadow-emerald-950/40'
+                : notification.type === 'error'
+                ? 'bg-rose-950/95 text-white border-rose-500/50 shadow-rose-950/40'
+                : notification.type === 'warning'
+                ? 'bg-amber-950/95 text-white border-amber-500/50 shadow-amber-950/40'
+                : 'bg-slate-900/95 text-white border-blue-500/50 shadow-slate-950/40'
+            }`}
+          >
+            {/* Status Icon */}
+            <div className="shrink-0 mt-0.5">
+              {notification.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
+              {notification.type === 'error' && <AlertTriangle className="w-5 h-5 text-rose-400" />}
+              {notification.type === 'warning' && <AlertCircle className="w-5 h-5 text-amber-400" />}
+              {notification.type === 'info' && <Info className="w-5 h-5 text-blue-400" />}
+            </div>
+
+            {/* Notification Body */}
+            <div className="flex-1 min-w-0">
+              <h4 className="text-xs font-black tracking-wide uppercase text-slate-200 mb-0.5">
+                {notification.title}
+              </h4>
+              <p className="text-xs font-medium text-slate-100 leading-relaxed break-words">
+                {notification.message}
+              </p>
+            </div>
+
+            {/* Dismiss Button */}
+            <button
+              onClick={() => setNotification(null)}
+              className="shrink-0 text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
       )}
