@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Keyboard as KeyboardIcon,
   X,
-  Languages,
   Delete,
   CornerDownLeft,
   Space,
@@ -61,13 +60,18 @@ export const VirtualKeyboard: React.FC = () => {
   // Reference to the active input element on the page
   const activeInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const keyboardContainerRef = useRef<HTMLDivElement | null>(null);
+  const entryInputRef = useRef<HTMLInputElement | null>(null);
 
   // Track focused input anywhere on the page
   useEffect(() => {
     const handleFocusIn = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
-      // Don't track inputs inside the virtual keyboard itself
+      // Don't track inputs inside the virtual keyboard itself (except entryInputRef)
       if (keyboardContainerRef.current && keyboardContainerRef.current.contains(target)) {
+        if (target === entryInputRef.current) {
+          activeInputRef.current = entryInputRef.current;
+          setActiveTargetName('Entry Box');
+        }
         return;
       }
 
@@ -86,10 +90,16 @@ export const VirtualKeyboard: React.FC = () => {
     };
   }, []);
 
-  // Safe insertion into the active input element or buffer
+  // Safe insertion into the active input element or entry box
   const insertText = useCallback((textToInsert: string) => {
     soundEngine.playSelectSound();
-    const target = activeInputRef.current;
+    let target = activeInputRef.current;
+
+    // If no target or target is not in document, fallback to entry input
+    if (!target || !document.body.contains(target)) {
+      target = entryInputRef.current;
+      activeInputRef.current = target;
+    }
 
     if (target && document.body.contains(target)) {
       const start = target.selectionStart ?? target.value.length;
@@ -98,7 +108,9 @@ export const VirtualKeyboard: React.FC = () => {
       const newVal = val.substring(0, start) + textToInsert + val.substring(end);
 
       const nativeSetter = Object.getOwnPropertyDescriptor(
-        target instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
+        target instanceof HTMLTextAreaElement
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype,
         'value'
       )?.set;
 
@@ -118,15 +130,22 @@ export const VirtualKeyboard: React.FC = () => {
       } catch {
         // ignore
       }
-    }
 
-    setBuffer((prev) => prev + textToInsert);
+      setBuffer(newVal);
+    } else {
+      setBuffer((prev) => prev + textToInsert);
+    }
   }, []);
 
   // Backspace handler
   const handleBackspace = useCallback(() => {
     soundEngine.playSelectSound();
-    const target = activeInputRef.current;
+    let target = activeInputRef.current;
+
+    if (!target || !document.body.contains(target)) {
+      target = entryInputRef.current;
+      activeInputRef.current = target;
+    }
 
     if (target && document.body.contains(target)) {
       const start = target.selectionStart ?? target.value.length;
@@ -138,7 +157,9 @@ export const VirtualKeyboard: React.FC = () => {
         const newVal = val.substring(0, deleteFrom) + val.substring(end);
 
         const nativeSetter = Object.getOwnPropertyDescriptor(
-          target instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
+          target instanceof HTMLTextAreaElement
+            ? window.HTMLTextAreaElement.prototype
+            : window.HTMLInputElement.prototype,
           'value'
         )?.set;
 
@@ -157,10 +178,12 @@ export const VirtualKeyboard: React.FC = () => {
         } catch {
           // ignore
         }
-      }
-    }
 
-    setBuffer((prev) => (prev.length > 0 ? prev.slice(0, -1) : ''));
+        setBuffer(newVal);
+      }
+    } else {
+      setBuffer((prev) => (prev.length > 0 ? prev.slice(0, -1) : ''));
+    }
   }, []);
 
   // Clear handler
@@ -169,7 +192,9 @@ export const VirtualKeyboard: React.FC = () => {
     const target = activeInputRef.current;
     if (target && document.body.contains(target)) {
       const nativeSetter = Object.getOwnPropertyDescriptor(
-        target instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
+        target instanceof HTMLTextAreaElement
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype,
         'value'
       )?.set;
 
@@ -186,6 +211,9 @@ export const VirtualKeyboard: React.FC = () => {
       } catch {
         // ignore
       }
+    }
+    if (entryInputRef.current) {
+      entryInputRef.current.value = '';
     }
     setBuffer('');
   }, []);
@@ -204,20 +232,18 @@ export const VirtualKeyboard: React.FC = () => {
     }
   }, []);
 
-  // Copy buffer to clipboard
+  // Copy entry box buffer to clipboard
   const handleCopyBuffer = () => {
-    if (!buffer) return;
-    navigator.clipboard.writeText(buffer).then(() => {
+    const textToCopy = buffer || entryInputRef.current?.value || '';
+    if (!textToCopy) return;
+    navigator.clipboard.writeText(textToCopy).then(() => {
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 1800);
     });
   };
 
-  // Pointer Drag Handlers (supports Mouse, Touch, & Tablet Stylus)
+  // Pointer Drag Handlers: ONLY attached to the drag handle button!
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('input')) return;
-
     if (!keyboardContainerRef.current) return;
     const rect = keyboardContainerRef.current.getBoundingClientRect();
 
@@ -275,13 +301,12 @@ export const VirtualKeyboard: React.FC = () => {
               : 'bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-300 shadow-slate-400/25'
           }`}
         >
-          {/* Only the clean keyboard icon */}
           <KeyboardIcon className={`w-5 h-5 transition-transform duration-200 ${isOpen ? 'text-white' : 'text-slate-700'}`} />
         </button>
       </div>
 
       {/* ================================================================= */}
-      {/* 2. DRAGGABLE & COMPACT VIRTUAL KEYBOARD (LIGHT GREY & WHITE)      */}
+      {/* 2. DRAGGABLE & COMPACT VIRTUAL KEYBOARD                           */}
       {/* ================================================================= */}
       {isOpen && (
         <div
@@ -295,25 +320,30 @@ export const VirtualKeyboard: React.FC = () => {
         >
           <div className="bg-slate-100/98 backdrop-blur-md border border-slate-300 rounded-2xl shadow-xl shadow-slate-900/15 flex flex-col overflow-hidden text-slate-800">
             
-            {/* --- Draggable Header Bar --- */}
-            <div
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              className={`px-2.5 py-1.5 bg-slate-200/90 border-b border-slate-300 flex items-center justify-between gap-1.5 touch-none select-none ${
-                isDragging ? 'cursor-grabbing' : 'cursor-grab'
-              }`}
-            >
-              {/* Drag Handle Grip Icon */}
-              <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-300/60 hover:bg-slate-300 text-slate-600 transition-colors shrink-0">
-                <GripHorizontal className="w-3.5 h-3.5 text-slate-600" />
-                <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-slate-600">
+            {/* --- Header Bar: Drag button only is draggable, not whole bar --- */}
+            <div className="px-2.5 py-1.5 bg-slate-200/90 border-b border-slate-300 flex items-center justify-between gap-1.5 select-none">
+              
+              {/* ONLY this Drag Handle button holds and moves the keyboard */}
+              <div
+                role="button"
+                tabIndex={0}
+                aria-label="Drag keyboard"
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-300/80 hover:bg-slate-300 text-slate-700 transition-colors shrink-0 touch-none select-none ${
+                  isDragging ? 'cursor-grabbing bg-slate-400 text-slate-900 shadow-inner' : 'cursor-grab'
+                }`}
+                title="Hold and drag to move keyboard"
+              >
+                <GripHorizontal className="w-3.5 h-3.5 text-slate-700" />
+                <span className="text-[10px] font-mono uppercase font-bold tracking-wider">
                   Drag
                 </span>
               </div>
 
               {/* Language Tabs */}
-              <div className="flex items-center gap-1 bg-slate-300/80 p-0.5 rounded-lg border border-slate-300">
+              <div className="flex items-center gap-1 bg-slate-300/80 p-0.5 rounded-lg border border-slate-300 shrink-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -360,21 +390,44 @@ export const VirtualKeyboard: React.FC = () => {
                 </button>
               </div>
 
-              {/* Center: Active Input Target / Preview */}
-              <div className="flex-1 min-w-[120px] max-w-[220px] flex items-center gap-1.5 bg-white px-2 py-1 rounded-lg border border-slate-300 text-[11px] truncate shadow-2xs">
-                <span className="text-slate-700 font-medium truncate flex-1 font-sans">
-                  {activeTargetName || (buffer ? buffer : 'Tap an input')}
-                </span>
-                {buffer && (
-                  <button
-                    type="button"
-                    onClick={handleCopyBuffer}
-                    title="Copy text"
-                    className="p-0.5 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded shrink-0 transition-all"
-                  >
-                    {isCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                  </button>
-                )}
+              {/* Center: Interactive Type-in Entry Box & Copy Button */}
+              <div className="flex-1 min-w-[130px] max-w-[240px] flex items-center gap-1 bg-white px-2 py-0.5 rounded-lg border border-slate-300 shadow-2xs focus-within:ring-2 focus-within:ring-emerald-500">
+                <input
+                  ref={entryInputRef}
+                  type="text"
+                  value={buffer}
+                  onChange={(e) => {
+                    setBuffer(e.target.value);
+                    if (activeInputRef.current && activeInputRef.current !== entryInputRef.current) {
+                      activeInputRef.current.value = e.target.value;
+                      activeInputRef.current.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                  }}
+                  onFocus={() => {
+                    activeInputRef.current = entryInputRef.current;
+                    setActiveTargetName('Entry Box');
+                  }}
+                  placeholder={activeTargetName ? `${activeTargetName}...` : 'Type or tap keys...'}
+                  className="w-full bg-transparent text-xs text-slate-800 placeholder-slate-400 focus:outline-none font-sans"
+                />
+
+                {/* Instant Copy Button */}
+                <button
+                  type="button"
+                  onClick={handleCopyBuffer}
+                  title={isCopied ? 'Copied to clipboard!' : 'Copy entry text'}
+                  className={`p-1 rounded transition-all shrink-0 flex items-center gap-0.5 text-[10px] font-bold ${
+                    isCopied
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'hover:bg-slate-100 text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {isCopied ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5 text-slate-500" />
+                  )}
+                </button>
               </div>
 
               {/* Right: Close Button */}
@@ -388,7 +441,7 @@ export const VirtualKeyboard: React.FC = () => {
               </button>
             </div>
 
-            {/* --- Keyboard Keys Surface (Compact Light Grey & White) --- */}
+            {/* --- Keyboard Keys Surface --- */}
             <div className="p-1.5 sm:p-2 flex flex-col gap-1 sm:gap-1.5">
 
               {/* ======================================================= */}
@@ -397,16 +450,17 @@ export const VirtualKeyboard: React.FC = () => {
               {mode === 'tamil' && (
                 <div className="flex flex-col gap-1 sm:gap-1.5">
                   
-                  {/* Row 1: Numbers & Aytham */}
+                  {/* Row 1: Numbers & Aytham + Backspace in GREEN */}
                   <div className="flex items-center gap-1 justify-center">
                     {TAMIL_NUMBERS.map((num) => (
                       <KeyButton key={num} label={num} onClick={() => insertText(num)} />
                     ))}
                     <KeyButton label="ஃ" sub="ஆய்தம்" highlight onClick={() => insertText('ஃ')} />
+                    {/* Backspace Button in Green */}
                     <KeyButton
                       label="Del"
-                      icon={<Delete className="w-3.5 h-3.5" />}
-                      className="bg-slate-200 hover:bg-slate-300 text-slate-700 flex-1 max-w-[70px]"
+                      icon={<Delete className="w-3.5 h-3.5 text-white" />}
+                      className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold border border-emerald-700 shadow-sm shadow-emerald-600/30 flex-1 max-w-[70px]"
                       onClick={handleBackspace}
                     />
                   </div>
@@ -467,21 +521,12 @@ export const VirtualKeyboard: React.FC = () => {
                     ))}
                   </div>
 
-                  {/* Bottom Control Row */}
+                  {/* Bottom Control Row: Down switch button between Tamil and English REMOVED */}
                   <div className="flex items-center gap-1 justify-center mt-0.5">
                     <button
                       type="button"
-                      onClick={() => setMode('english')}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 border border-slate-300 text-[11px] font-bold text-slate-700 flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
-                    >
-                      <Languages className="w-3 h-3 text-slate-600" />
-                      <span>ABC</span>
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={handleClear}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 border border-slate-300 text-[11px] font-bold text-slate-700 flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
+                      className="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 border border-slate-300 text-[11px] font-bold text-slate-700 flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
                     >
                       <Trash2 className="w-3 h-3" />
                       <span>Clear</span>
@@ -503,7 +548,7 @@ export const VirtualKeyboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleEnter}
-                      className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-bold text-[11px] flex items-center gap-1 active:scale-95 transition-all shadow-xs"
+                      className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-bold text-[11px] flex items-center gap-1 active:scale-95 transition-all shadow-xs"
                     >
                       <span>Enter</span>
                       <CornerDownLeft className="w-3 h-3" />
@@ -519,15 +564,16 @@ export const VirtualKeyboard: React.FC = () => {
               {mode === 'english' && (
                 <div className="flex flex-col gap-1 sm:gap-1.5">
                   
-                  {/* Row 1: Numbers */}
+                  {/* Row 1: Numbers + Backspace in GREEN */}
                   <div className="flex items-center gap-1 justify-center">
                     {ENGLISH_ROW_1.map((char) => (
                       <KeyButton key={char} label={char} onClick={() => insertText(char)} />
                     ))}
+                    {/* Backspace Button in Green */}
                     <KeyButton
                       label="Del"
-                      icon={<Delete className="w-3.5 h-3.5" />}
-                      className="bg-slate-200 hover:bg-slate-300 text-slate-700 flex-1 max-w-[70px]"
+                      icon={<Delete className="w-3.5 h-3.5 text-white" />}
+                      className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold border border-emerald-700 shadow-sm shadow-emerald-600/30 flex-1 max-w-[70px]"
                       onClick={handleBackspace}
                     />
                   </div>
@@ -591,21 +637,12 @@ export const VirtualKeyboard: React.FC = () => {
                     <KeyButton label="@" onClick={() => insertText('@')} className="min-w-[30px]" />
                   </div>
 
-                  {/* Bottom Row */}
+                  {/* Bottom Row: Down switch button between Tamil and English REMOVED */}
                   <div className="flex items-center gap-1 justify-center mt-0.5">
                     <button
                       type="button"
-                      onClick={() => setMode('tamil')}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 border border-slate-300 text-[11px] font-bold text-slate-700 flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
-                    >
-                      <Languages className="w-3 h-3 text-slate-600" />
-                      <span>தமிழ்</span>
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={handleClear}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 border border-slate-300 text-[11px] font-bold text-slate-700 flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
+                      className="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 border border-slate-300 text-[11px] font-bold text-slate-700 flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
                     >
                       <Trash2 className="w-3 h-3" />
                       <span>Clear</span>
@@ -624,7 +661,7 @@ export const VirtualKeyboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleEnter}
-                      className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-bold text-[11px] flex items-center gap-1 active:scale-95 transition-all shadow-xs"
+                      className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-bold text-[11px] flex items-center gap-1 active:scale-95 transition-all shadow-xs"
                     >
                       <span>Enter</span>
                       <CornerDownLeft className="w-3 h-3" />
@@ -643,10 +680,11 @@ export const VirtualKeyboard: React.FC = () => {
                     {SYMBOLS_ROW_1.map((sym) => (
                       <KeyButton key={sym} label={sym} onClick={() => insertText(sym)} />
                     ))}
+                    {/* Backspace Button in Green */}
                     <KeyButton
                       label="Del"
-                      icon={<Delete className="w-3.5 h-3.5" />}
-                      className="bg-slate-200 hover:bg-slate-300 text-slate-700 flex-1 max-w-[70px]"
+                      icon={<Delete className="w-3.5 h-3.5 text-white" />}
+                      className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold border border-emerald-700 shadow-sm shadow-emerald-600/30 flex-1 max-w-[70px]"
                       onClick={handleBackspace}
                     />
                   </div>
@@ -663,28 +701,12 @@ export const VirtualKeyboard: React.FC = () => {
                     ))}
                   </div>
 
-                  {/* Bottom Row */}
+                  {/* Bottom Row: Down switch buttons REMOVED */}
                   <div className="flex items-center gap-1 justify-center mt-0.5">
                     <button
                       type="button"
-                      onClick={() => setMode('tamil')}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 border border-slate-300 text-[11px] font-bold text-slate-700 flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
-                    >
-                      <span>தமிழ்</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setMode('english')}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 border border-slate-300 text-[11px] font-bold text-slate-700 active:scale-95 transition-all shadow-2xs"
-                    >
-                      ABC
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={handleClear}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 border border-slate-300 text-[11px] font-bold text-slate-700 flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
+                      className="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 border border-slate-300 text-[11px] font-bold text-slate-700 flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
                     >
                       <Trash2 className="w-3 h-3" />
                       <span>Clear</span>
@@ -702,7 +724,7 @@ export const VirtualKeyboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleEnter}
-                      className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-bold text-[11px] flex items-center gap-1 active:scale-95 transition-all shadow-xs"
+                      className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-bold text-[11px] flex items-center gap-1 active:scale-95 transition-all shadow-xs"
                     >
                       <span>Enter</span>
                       <CornerDownLeft className="w-3 h-3" />
@@ -720,7 +742,7 @@ export const VirtualKeyboard: React.FC = () => {
 };
 
 // ==============================================================================
-// KEY BUTTON REUSABLE SUB-COMPONENT (LIGHT GREY & WHITE THEME)
+// KEY BUTTON REUSABLE SUB-COMPONENT
 // ==============================================================================
 interface KeyButtonProps {
   label: string;
@@ -739,13 +761,18 @@ const KeyButton: React.FC<KeyButtonProps> = ({
   className = '',
   onClick,
 }) => {
+  const isCustomBg = className.includes('bg-');
+  const baseClasses = isCustomBg
+    ? className
+    : `bg-white hover:bg-slate-50 active:bg-slate-200 text-slate-800 border border-slate-300/90 shadow-2xs ${className}`;
+
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`relative min-w-[24px] sm:min-w-[30px] md:min-w-[34px] h-7 sm:h-7.5 px-1 rounded-lg flex flex-col items-center justify-center transition-all duration-100 active:scale-90 select-none text-[11px] sm:text-xs font-medium bg-white hover:bg-slate-50 active:bg-slate-200 text-slate-800 border border-slate-300/90 shadow-2xs ${
+      className={`relative min-w-[24px] sm:min-w-[30px] md:min-w-[34px] h-7 sm:h-7.5 px-1 rounded-lg flex flex-col items-center justify-center transition-all duration-100 active:scale-90 select-none text-[11px] sm:text-xs font-medium ${baseClasses} ${
         highlight ? 'font-bold bg-slate-50 border-slate-400 text-slate-900' : ''
-      } ${className}`}
+      }`}
     >
       {icon ? (
         icon
