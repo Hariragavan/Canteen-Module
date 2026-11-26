@@ -87,18 +87,17 @@ export interface Order {
 
 export interface PersonSpendingRow {
   sNo: number;
-  empId: string;
+  workerId: string;
+  empId?: string; // alias for compatibility
   name: string;
   dept: string;
   tiffinAmount: number;
   lunchAmount: number;
   snacksAmount: number;
-  dinnerAmount: number;
   totalAmount: number;
   tiffinCount: number;
   lunchCount: number;
   snacksCount: number;
-  dinnerCount: number;
   totalOrders: number;
 }
 

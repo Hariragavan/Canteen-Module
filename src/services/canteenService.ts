@@ -81,20 +81,6 @@ export const DEFAULT_MEAL_SLOTS: MealSlotConfig[] = [
     isEligible: true,
     isActive: true,
   },
-  {
-    name: 'Dinner',
-    startTime: '19:30',
-    endTime: '22:30',
-    displayName: 'Dinner',
-    tamilDisplayName: 'இரவு உணவு',
-    emoji: '🌙',
-    category: 'Night Slot',
-    description: 'சப்பாத்தி, தால் குருமா, தோசை, சாம்பார், சட்னி (Chappathi, Dal Kurma, Dosa, Chutney)',
-    rate: 40,
-    cost: 40,
-    isEligible: true,
-    isActive: true,
-  },
 ];
 
 export const MEAL_SLOTS: MealSlotConfig[] = DEFAULT_MEAL_SLOTS;
