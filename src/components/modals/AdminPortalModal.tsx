@@ -79,6 +79,53 @@ interface MultiSampleFingerCardProps {
   fingerOptions: string[];
 }
 
+const RealisticFingerprintSvg: React.FC<{
+  isScanning: boolean;
+  isComplete: boolean;
+  isEmerald: boolean;
+}> = ({ isScanning, isComplete, isEmerald }) => {
+  const glowClass = isEmerald ? 'animate-fp-ridges-emerald' : 'animate-fp-ridges-blue';
+
+  return (
+    <svg
+      viewBox="0 0 100 120"
+      className={`w-full h-full max-w-[80px] max-h-[105px] transition-all duration-300 ${
+        isComplete
+          ? isEmerald
+            ? 'text-emerald-400 drop-shadow-[0_0_10px_rgba(52,211,153,0.85)]'
+            : 'text-blue-400 drop-shadow-[0_0_10px_rgba(96,165,250,0.85)]'
+          : isScanning
+          ? `${glowClass}`
+          : 'text-slate-600 group-hover:text-slate-500'
+      }`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* Outer Whorl Arcs */}
+      <path d="M 16 80 C 14 48, 24 22, 50 18 C 76 22, 86 48, 84 80" />
+      <path d="M 22 88 C 20 58, 28 30, 50 26 C 72 30, 80 58, 78 88" />
+      <path d="M 28 94 C 26 66, 33 38, 50 34 C 67 38, 74 66, 72 94" />
+
+      {/* Mid Contours & Loops */}
+      <path d="M 34 98 C 32 73, 38 46, 50 42 C 62 46, 68 73, 66 98" />
+      <path d="M 40 100 C 38 80, 43 54, 50 50 C 57 54, 62 80, 60 100" />
+
+      {/* Core Loop & Minutiae */}
+      <path d="M 46 95 C 44 85, 46 62, 50 58 C 54 62, 56 85, 54 95" />
+      <path d="M 50 66 L 50 86" strokeWidth="2.2" />
+
+      {/* Delta Ridges / Lower Branching */}
+      <path d="M 18 90 C 22 96, 28 104, 34 110" />
+      <path d="M 82 90 C 78 96, 72 104, 66 110" />
+      <path d="M 26 102 C 30 106, 36 111, 42 114" />
+      <path d="M 74 102 C 70 106, 64 111, 58 114" />
+    </svg>
+  );
+};
+
 const MultiSampleFingerCard: React.FC<MultiSampleFingerCardProps> = ({
   cardTitle,
   finger,
@@ -99,7 +146,7 @@ const MultiSampleFingerCard: React.FC<MultiSampleFingerCardProps> = ({
       : samplesCount === 1
       ? '2. Angle Tilt (Edges)'
       : samplesCount === 2
-      ? '3. Firm Press (Tip ridges)'
+      ? '3. Firm Press (Tip)'
       : '3/3 Captured (Enrolled)';
 
   return (
@@ -129,7 +176,7 @@ const MultiSampleFingerCard: React.FC<MultiSampleFingerCardProps> = ({
               <span>{cardTitle}</span>
               <span className="text-rose-500">*</span>
             </h4>
-            <span className="text-[10px] text-slate-400 font-medium">
+            <span className="text-[10px] text-slate-400 font-medium font-mono">
               {samplesCount}/3 Scans Enrolled
             </span>
           </div>
@@ -182,98 +229,199 @@ const MultiSampleFingerCard: React.FC<MultiSampleFingerCardProps> = ({
           </select>
         </div>
 
-        {/* Modern Biometric Sensor Pod & HUD */}
-        <div className="relative h-34 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-center overflow-hidden shadow-inner group">
-          {/* Subtle Grid Background */}
-          <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:12px_12px] opacity-40 pointer-events-none" />
+        {/* Modern Mobile Biometric Sensor Pod & Tracing HUD */}
+        <div className="relative h-44 bg-gradient-to-b from-slate-950 via-slate-900 to-black rounded-2xl border border-slate-800 flex items-center justify-center overflow-hidden shadow-inner group">
+          {/* Subtle Grid Matrix Background */}
+          <div className="absolute inset-0 bg-[radial-gradient(#334155_1px,transparent_1px)] [background-size:12px_12px] opacity-40 pointer-events-none" />
 
-          {/* Corner Biometric Brackets */}
-          <div className="absolute top-2 left-2 w-3 h-3 border-t-2 border-l-2 border-emerald-500/40 rounded-tl-sm pointer-events-none" />
-          <div className="absolute top-2 right-2 w-3 h-3 border-t-2 border-r-2 border-emerald-500/40 rounded-tr-sm pointer-events-none" />
-          <div className="absolute bottom-2 left-2 w-3 h-3 border-b-2 border-l-2 border-emerald-500/40 rounded-bl-sm pointer-events-none" />
-          <div className="absolute bottom-2 right-2 w-3 h-3 border-b-2 border-r-2 border-emerald-500/40 rounded-br-sm pointer-events-none" />
+          {/* Corner Biometric Tech Brackets */}
+          <div
+            className={`absolute top-2.5 left-2.5 w-3.5 h-3.5 border-t-2 border-l-2 rounded-tl-sm pointer-events-none transition-colors ${
+              isScanning
+                ? isEmerald
+                  ? 'border-emerald-400 animate-pulse'
+                  : 'border-blue-400 animate-pulse'
+                : 'border-slate-700'
+            }`}
+          />
+          <div
+            className={`absolute top-2.5 right-2.5 w-3.5 h-3.5 border-t-2 border-r-2 rounded-tr-sm pointer-events-none transition-colors ${
+              isScanning
+                ? isEmerald
+                  ? 'border-emerald-400 animate-pulse'
+                  : 'border-blue-400 animate-pulse'
+                : 'border-slate-700'
+            }`}
+          />
+          <div
+            className={`absolute bottom-2.5 left-2.5 w-3.5 h-3.5 border-b-2 border-l-2 rounded-bl-sm pointer-events-none transition-colors ${
+              isScanning
+                ? isEmerald
+                  ? 'border-emerald-400 animate-pulse'
+                  : 'border-blue-400 animate-pulse'
+                : 'border-slate-700'
+            }`}
+          />
+          <div
+            className={`absolute bottom-2.5 right-2.5 w-3.5 h-3.5 border-b-2 border-r-2 rounded-br-sm pointer-events-none transition-colors ${
+              isScanning
+                ? isEmerald
+                  ? 'border-emerald-400 animate-pulse'
+                  : 'border-blue-400 animate-pulse'
+                : 'border-slate-700'
+            }`}
+          />
 
-          {/* Biometric Pod Center */}
-          <div className="relative flex items-center justify-center">
-            {/* SVG Circular Progress Ring around the scanner */}
-            <svg className="w-24 h-24 transform -rotate-90 pointer-events-none absolute">
+          {/* Center Pod: Realistic Fingerprint + Phone Animations */}
+          <div className="relative flex items-center justify-center w-32 h-32">
+            {/* Circular 360 Progress Gauge (Enrolled Samples / 3) */}
+            <svg className="w-32 h-32 transform -rotate-90 pointer-events-none absolute inset-0">
               <circle
-                cx="48"
-                cy="48"
-                r="42"
+                cx="64"
+                cy="64"
+                r="56"
                 stroke="currentColor"
                 strokeWidth="3"
                 className="text-slate-800/80"
                 fill="transparent"
               />
               <circle
-                cx="48"
-                cy="48"
-                r="42"
+                cx="64"
+                cy="64"
+                r="56"
                 stroke="currentColor"
                 strokeWidth="3.5"
-                strokeDasharray={263.89}
-                strokeDashoffset={263.89 - (263.89 * samplesCount) / 3}
+                strokeDasharray={351.86}
+                strokeDashoffset={351.86 - (351.86 * samplesCount) / 3}
                 strokeLinecap="round"
-                className={`transition-all duration-500 ${
+                className={`transition-all duration-700 ${
                   isEmerald ? 'text-emerald-400' : 'text-blue-400'
                 }`}
                 fill="transparent"
               />
             </svg>
 
-            {/* Content inside Pod */}
-            {finger.bitmapData ? (
-              <div className="relative w-18 h-18 rounded-full overflow-hidden bg-slate-900 border border-slate-700/80 flex items-center justify-center shadow-lg">
+            {/* Ultrasonic Ripple Waves (Expanding when scanning like phone screen touch) */}
+            {isScanning && (
+              <>
+                <div
+                  className={`absolute w-20 h-20 rounded-full border pointer-events-none animate-fp-ripple-1 ${
+                    isEmerald ? 'border-emerald-400/70' : 'border-blue-400/70'
+                  }`}
+                />
+                <div
+                  className={`absolute w-20 h-20 rounded-full border pointer-events-none animate-fp-ripple-2 ${
+                    isEmerald ? 'border-emerald-400/50' : 'border-blue-400/50'
+                  }`}
+                />
+                <div
+                  className={`absolute w-20 h-20 rounded-full border pointer-events-none animate-fp-ripple-3 ${
+                    isEmerald ? 'border-emerald-400/30' : 'border-blue-400/30'
+                  }`}
+                />
+              </>
+            )}
+
+            {/* Central Graphic: Bitmap image if enrolled or Phone-style SVG */}
+            {finger.bitmapData && !isScanning ? (
+              <div className="relative w-20 h-20 rounded-2xl overflow-hidden bg-slate-900 border border-slate-700 flex items-center justify-center shadow-lg">
                 <img
                   src={finger.bitmapData}
                   alt={`${cardTitle} scan`}
                   className="w-full h-full object-contain filter invert contrast-125 transition-transform duration-300 group-hover:scale-105"
                 />
-                {isScanning && (
-                  <div className="absolute inset-0 bg-emerald-500/20 backdrop-blur-[0.5px] animate-pulse" />
-                )}
+                <div className="absolute inset-0 bg-emerald-500/10 pointer-events-none" />
               </div>
             ) : (
-              <div className="w-18 h-18 rounded-full bg-slate-900/90 border border-slate-800 flex flex-col items-center justify-center text-slate-500">
-                <FingerprintIcon
-                  className={`w-8 h-8 stroke-1 transition-all ${
-                    isScanning
-                      ? isEmerald
-                        ? 'text-emerald-400 animate-pulse scale-110'
-                        : 'text-blue-400 animate-pulse scale-110'
-                      : 'text-slate-600'
-                  }`}
+              <div className="relative flex items-center justify-center">
+                <RealisticFingerprintSvg
+                  isScanning={isScanning}
+                  isComplete={isComplete}
+                  isEmerald={isEmerald}
                 />
-                <span className="text-[8px] font-mono text-slate-400 mt-0.5">
-                  {isScanning ? 'Scanning...' : 'Optical Prism'}
-                </span>
+                {isComplete && !isScanning && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-7 h-7 rounded-full bg-emerald-500/90 text-white flex items-center justify-center shadow-lg shadow-emerald-500/50 animate-in zoom-in-75">
+                      <CheckCircle2 className="w-5 h-5 text-white" />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Scanning Laser Beam */}
+            {/* Phone-Style Sweeping Tracing Laser Beam */}
             {isScanning && (
-              <div className="absolute inset-x-0 w-24 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-lg shadow-emerald-400/80 animate-bounce pointer-events-none" />
+              <>
+                <div
+                  className={`absolute inset-x-1 h-0.5 pointer-events-none z-20 animate-fp-trace ${
+                    isEmerald
+                      ? 'bg-gradient-to-r from-transparent via-emerald-300 to-transparent shadow-[0_0_12px_rgba(52,211,153,1)]'
+                      : 'bg-gradient-to-r from-transparent via-blue-300 to-transparent shadow-[0_0_12px_rgba(96,165,250,1)]'
+                  }`}
+                />
+                <div
+                  className={`absolute inset-x-0 h-4 blur-xs pointer-events-none z-10 animate-fp-trace ${
+                    isEmerald
+                      ? 'bg-gradient-to-r from-transparent via-emerald-400/25 to-transparent'
+                      : 'bg-gradient-to-r from-transparent via-blue-400/25 to-transparent'
+                  }`}
+                />
+              </>
             )}
           </div>
 
-          {/* Top-Right Pill on Sensor: Quality */}
+          {/* Top-Right Badge: Live Quality Score */}
           <div className="absolute top-2 right-2.5 z-10">
             {finger.quality > 0 ? (
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-500/30">
-                {finger.quality}%
+              <span
+                className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border shadow-xs ${
+                  isEmerald
+                    ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/40'
+                    : 'bg-blue-950/90 text-blue-300 border-blue-500/40'
+                }`}
+              >
+                Quality: {finger.quality}%
+              </span>
+            ) : isScanning ? (
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-950/90 text-amber-300 border border-amber-500/40 animate-pulse">
+                Tracing...
               </span>
             ) : null}
           </div>
 
-          {/* Bottom Banner on Sensor: Prompt */}
-          <div className="absolute bottom-1 inset-x-2 text-center pointer-events-none">
-            <span className="text-[9px] font-mono text-slate-400 bg-slate-950/85 px-2 py-0.5 rounded border border-slate-800">
+          {/* Top-Left Badge: Touch step hint */}
+          <div className="absolute top-2 left-2.5 z-10">
+            <span className="text-[10px] font-mono text-slate-400 bg-slate-900/80 px-2 py-0.5 rounded-full border border-slate-800">
+              {samplesCount === 0
+                ? 'Angle 1: Flat'
+                : samplesCount === 1
+                ? 'Angle 2: Tilt'
+                : samplesCount === 2
+                ? 'Angle 3: Firm'
+                : 'Enrolled'}
+            </span>
+          </div>
+
+          {/* Bottom Banner: Real-time Phone Scanning Guidance */}
+          <div className="absolute bottom-1.5 inset-x-2 text-center pointer-events-none z-10">
+            <span
+              className={`text-[9.5px] font-medium font-mono px-2.5 py-0.5 rounded-md border shadow-2xs ${
+                isScanning
+                  ? 'bg-emerald-950/90 text-emerald-300 border-emerald-500/40 animate-pulse'
+                  : isComplete
+                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-600/30'
+                  : 'bg-slate-950/85 text-slate-400 border-slate-800'
+              }`}
+            >
               {isScanning
-                ? 'Place finger firmly on sensor prism...'
+                ? '⚡ Tracing biometric ridges on scanner...'
                 : isComplete
-                ? '✓ All 3 angle samples captured'
-                : `Ready for Tap ${samplesCount + 1}`}
+                ? '✓ All 3 touch samples enrolled successfully'
+                : samplesCount === 0
+                ? 'Place flat center of finger on glass'
+                : samplesCount === 1
+                ? 'Tilt finger slightly to capture outer ridges'
+                : 'Press tip firmly on scanner glass'}
             </span>
           </div>
         </div>
@@ -335,7 +483,7 @@ const MultiSampleFingerCard: React.FC<MultiSampleFingerCardProps> = ({
           {isScanning ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Scanning on Sensor...</span>
+              <span>Tracing Ridges on Sensor...</span>
             </>
           ) : isComplete ? (
             <>
@@ -345,7 +493,9 @@ const MultiSampleFingerCard: React.FC<MultiSampleFingerCardProps> = ({
           ) : (
             <>
               <FingerprintIcon className="w-4 h-4" />
-              <span>Capture Tap {samplesCount + 1}: {nextStepLabel}</span>
+              <span>
+                Capture Tap {samplesCount + 1}: {nextStepLabel}
+              </span>
             </>
           )}
         </button>
@@ -759,6 +909,23 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     }
   }, [isOpen]);
 
+  // Global Escape key listener to cleanly close active modals
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isRegisteringNew) {
+          setIsRegisteringNew(false);
+          setErrorMessage(null);
+          setSuccessMessage(null);
+        } else if (editingEmployee) {
+          handleCancelEdit();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isRegisteringNew, editingEmployee]);
+
   const stopCamera = () => {
     // Pure fingerprint registration: no camera needed
   };
@@ -975,6 +1142,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   };
 
   const handleStartEdit = (emp: Employee) => {
+    setIsRegisteringNew(false);
     setEditingOriginalId(emp.id);
     setEditingEmployee({ ...emp });
     setEditErrorMessage(null);
@@ -1693,6 +1861,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    setEditingEmployee(null);
                     setIsRegisteringNew(true);
                     loadEmployees();
                     if (!formData.id) {
@@ -1703,7 +1872,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                     }
                   }}
                   className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/25 transition-all active:scale-95 cursor-pointer ml-auto"
-                  title="Enroll a new staff or employee with facial recognition"
+                  title="Enroll a new worker or staff with biometric touch recognition"
                 >
                   <UserPlus className="w-4 h-4" />
                   <span>+ New Registration</span>
@@ -2081,11 +2250,11 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       </div>
 
       {/* ============================================================= */}
-      {/* NEW PERSONNEL REGISTRATION MODAL (REDESIGNED)                 */}
+      {/* NEW WORKER REGISTRATION MODAL (REDESIGNED)                    */}
       {/* ============================================================= */}
       {isRegisteringNew && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-5 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-150">
-          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-5xl shadow-2xl flex flex-col max-h-[95vh] overflow-hidden relative animate-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-[75] flex items-center justify-center p-3 sm:p-5 bg-slate-950/75 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-5xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden relative animate-in zoom-in-95 duration-200">
             
             {/* Registering Overlay Spinner Popup */}
             {isSubmitting && (
@@ -2096,10 +2265,10 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 </div>
                 <div className="text-center">
                   <h4 className="text-base font-black text-slate-900 tracking-tight">
-                    Registering Personnel...
+                    Registering Worker...
                   </h4>
                   <p className="text-xs text-slate-500 mt-1 font-medium">
-                    Encrypting multi-sample touch templates & syncing central database...
+                    Encrypting multi-angle touch templates & syncing central database...
                   </p>
                 </div>
               </div>
@@ -2113,7 +2282,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 </div>
                 <div>
                   <h3 className="font-black text-slate-900 text-base sm:text-lg tracking-tight">
-                    Personnel Registration & Biometric Enrollment
+                    Worker Registration & Biometric Enrollment
                   </h3>
                   <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -2139,6 +2308,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                     setSuccessMessage(null);
                   }}
                   className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="Close (Esc)"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -2163,11 +2333,11 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
             <form onSubmit={handleRegisterSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1 bg-slate-50/50">
                 
-                {/* 1. Personnel Profile Information (Horizontal 3-Col Card) */}
+                {/* 1. Worker Profile Information (Horizontal 3-Col Card) */}
                 <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs space-y-3">
                   <div className="flex items-center space-x-2 text-xs font-bold text-slate-700">
                     <User className="w-4 h-4 text-emerald-600" />
-                    <span>Personnel Information</span>
+                    <span>Worker Information</span>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
@@ -2189,10 +2359,10 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Personnel ID */}
+                    {/* Worker ID */}
                     <div>
                       <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                        Personnel ID *
+                        Worker ID *
                       </label>
                       <div className="relative">
                         <Hash className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -2315,7 +2485,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                     {isSubmitting ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Registering Personnel...</span>
+                        <span>Registering Worker...</span>
                       </>
                     ) : (
                       <>
@@ -2332,142 +2502,207 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       )}
 
       {/* ============================================================= */}
-      {/* EDIT USER DRAWER / MODAL OVERLAY                              */}
+      {/* EDIT WORKER MODAL (REDESIGNED & HIGH-END BIOMETRIC RESCAN)    */}
       {/* ============================================================= */}
       {editingEmployee && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-lg shadow-modal p-6 space-y-4 max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div className="fixed inset-0 z-[75] flex items-center justify-center p-3 sm:p-5 bg-slate-950/75 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-5xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden relative animate-in zoom-in-95 duration-200">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shadow-indigo-600/30">
+                  <Edit2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base sm:text-lg tracking-tight">
+                    Edit Worker: {editingEmployee.name}
+                  </h3>
+                  <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <span>Update worker details and re-enroll multi-angle biometric touches if required.</span>
+                  </p>
+                </div>
+              </div>
+
               <div className="flex items-center space-x-2">
-                <Edit2 className="w-4 h-4 text-emerald-600" />
-                <h4 className="font-bold text-slate-900 text-base">
-                  Edit User: {editingEmployee.name}
-                </h4>
-              </div>
-              <button
-                type="button"
-                onClick={handleCancelEdit}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
-              
-              {/* Fingerprint / Touch Rescanning Section */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                  <div className="flex items-center space-x-2">
-                    <FingerprintIcon className="w-4 h-4 text-emerald-600" />
-                    <span className="font-bold text-xs text-slate-800">
-                      Touch Enrolment (Rescan & Update)
-                    </span>
-                  </div>
-                  <span className="text-[10px] font-mono text-slate-500">
-                    Mantra RD Service
-                  </span>
-                </div>
-
-                {editErrorMessage && (
-                  <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs flex items-center space-x-2 animate-shake">
-                    <span className="text-rose-500 font-bold shrink-0">⚠️</span>
-                    <span>{editErrorMessage}</span>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Touch 1 (Primary) with 3-Tap Multi-Sampling */}
-                  <MultiSampleFingerCard
-                    cardTitle="Primary Touch"
-                    finger={editFinger1}
-                    onNameChange={(name) => setEditFinger1({ ...editFinger1, fingerName: name })}
-                    onScan={handleEditScanFinger1}
-                    onReset={handleEditResetFinger1}
-                    isScanning={editIsScanningFp1}
-                    themeColor="emerald"
-                    fingerOptions={FINGER_OPTIONS}
-                  />
-
-                  {/* Touch 2 (Backup) with 3-Tap Multi-Sampling */}
-                  <MultiSampleFingerCard
-                    cardTitle="Backup Touch"
-                    finger={editFinger2}
-                    onNameChange={(name) => setEditFinger2({ ...editFinger2, fingerName: name })}
-                    onScan={handleEditScanFinger2}
-                    onReset={handleEditResetFinger2}
-                    isScanning={editIsScanningFp2}
-                    themeColor="blue"
-                    fingerOptions={FINGER_OPTIONS}
-                  />
-                </div>
-              </div>
-
-              {/* Full Name */}
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Full Name *</label>
-                <input
-                  type="text"
-                  value={editingEmployee.name}
-                  onChange={(e) =>
-                    setEditingEmployee({ ...editingEmployee, name: e.target.value })
-                  }
-                  placeholder="e.g. Ananya Roy"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
-                  required
-                />
-              </div>
-
-              {/* Personnel ID */}
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  Personnel ID (Staff / Employee ID) *
-                </label>
-                <input
-                  type="text"
-                  value={editingEmployee.id}
-                  onChange={(e) =>
-                    setEditingEmployee({ ...editingEmployee, id: e.target.value.toUpperCase() })
-                  }
-                  placeholder="e.g. EMP-1011 or STF-2001"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono uppercase font-bold"
-                  required
-                />
-              </div>
-
-              {/* Department (Strictly Staff / Employee) */}
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  Department (Staff / Employee) *
-                </label>
-                <select
-                  value={editingEmployee.dept}
-                  onChange={(e) =>
-                    setEditingEmployee({ ...editingEmployee, dept: e.target.value })
-                  }
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
-                >
-                  <option value="Staff">Staff</option>
-                  <option value="Employee">Employee</option>
-                </select>
-              </div>
-
-              {/* Modal Actions */}
-              <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+                <span className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 font-mono text-xs font-bold shadow-2xs">
+                  <Usb className={`w-3.5 h-3.5 ${mantraInfo.isConnected ? 'text-emerald-600 animate-pulse' : 'text-amber-500'}`} />
+                  <span>{mantraInfo.isConnected ? 'Sensor Ready' : 'Sensor Offline'}</span>
+                </span>
+                <span className="text-xs font-mono font-black px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-200">
+                  {editingEmployee.id}
+                </span>
                 <button
                   type="button"
                   onClick={handleCancelEdit}
-                  className="px-4 py-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl font-bold"
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="Close (Esc)"
                 >
-                  Cancel
+                  <X className="w-5 h-5" />
                 </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-xs flex items-center space-x-1.5"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Save Changes</span>
-                </button>
+              </div>
+            </div>
+
+            {/* In-Modal Alerts */}
+            {editErrorMessage && (
+              <div className="mx-6 mt-3 p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center space-x-2 text-xs font-bold text-rose-800 animate-in fade-in shrink-0">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{editErrorMessage}</span>
+              </div>
+            )}
+
+            {/* Modal Body */}
+            <form onSubmit={handleSaveEdit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1 bg-slate-50/50">
+                
+                {/* 1. Worker Identity Card */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs space-y-3">
+                  <div className="flex items-center space-x-2 text-xs font-bold text-slate-700">
+                    <User className="w-4 h-4 text-indigo-600" />
+                    <span>Worker Identity & Role</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                    {/* Full Name */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        Full Name *
+                      </label>
+                      <div className="relative">
+                        <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={editingEmployee.name}
+                          onChange={(e) => setEditingEmployee({ ...editingEmployee, name: e.target.value })}
+                          placeholder="e.g. Ananya Roy"
+                          className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white font-medium"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    {/* Worker ID */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        Worker ID *
+                      </label>
+                      <div className="relative">
+                        <Hash className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={editingEmployee.id}
+                          onChange={(e) => setEditingEmployee({ ...editingEmployee, id: e.target.value.toUpperCase() })}
+                          placeholder="e.g. EMP-1011"
+                          className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono uppercase text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white font-bold"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    {/* Department */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        Department / Role *
+                      </label>
+                      <select
+                        value={editingEmployee.dept}
+                        onChange={(e) => setEditingEmployee({ ...editingEmployee, dept: e.target.value })}
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white font-bold"
+                      >
+                        {DEPARTMENTS.map((dept) => (
+                          <option key={dept} value={dept}>
+                            {dept}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Biometric Touch ID Rescan Section */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center space-x-2 text-xs font-bold text-slate-700">
+                      <FingerprintIcon className="w-4 h-4 text-indigo-600" />
+                      <span>Biometric Touch Rescan & Update (3 Progressive Angles Each)</span>
+                    </div>
+                    <span className="text-[11px] font-medium text-slate-500 font-mono">
+                      {(editFinger1.samples?.length || 0) + (editFinger2.samples?.length || 0)}/6 Taps Recorded
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Primary Touch Card */}
+                    <MultiSampleFingerCard
+                      cardTitle="Primary Touch"
+                      finger={editFinger1}
+                      onNameChange={(name) => setEditFinger1({ ...editFinger1, fingerName: name })}
+                      onScan={handleEditScanFinger1}
+                      onReset={handleEditResetFinger1}
+                      isScanning={editIsScanningFp1}
+                      themeColor="emerald"
+                      fingerOptions={FINGER_OPTIONS}
+                    />
+
+                    {/* Backup Touch Card */}
+                    <MultiSampleFingerCard
+                      cardTitle="Backup Touch"
+                      finger={editFinger2}
+                      onNameChange={(name) => setEditFinger2({ ...editFinger2, fingerName: name })}
+                      onScan={handleEditScanFinger2}
+                      onReset={handleEditResetFinger2}
+                      isScanning={editIsScanningFp2}
+                      themeColor="blue"
+                      fingerOptions={FINGER_OPTIONS}
+                    />
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Modal Footer Bar */}
+              <div className="px-6 py-3.5 border-t border-slate-200 bg-white flex flex-wrap items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center space-x-3 text-xs">
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border ${
+                      (editFinger1.samples?.length || 0) >= 3
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}
+                  >
+                    <span>Primary: {editFinger1.samples?.length || 0}/3</span>
+                    {(editFinger1.samples?.length || 0) >= 3 && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+                  </span>
+
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border ${
+                      (editFinger2.samples?.length || 0) >= 3
+                        ? 'bg-blue-50 text-blue-800 border-blue-300'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}
+                  >
+                    <span>Backup: {editFinger2.samples?.length || 0}/3</span>
+                    {(editFinger2.samples?.length || 0) >= 3 && <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />}
+                  </span>
+                </div>
+
+                <div className="flex items-center space-x-2 ml-auto">
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/30 flex items-center space-x-2 transition-all transform active:scale-95 cursor-pointer"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Save Changes</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>

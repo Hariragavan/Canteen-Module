@@ -138,3 +138,88 @@
     break-inside: avoid !important;
   }
 }
+
+/* ==========================================================================
+   Phone-Style In-Display Biometric Fingerprint Tracing Animations
+   ========================================================================== */
+@keyframes fpTraceBeam {
+  0% {
+    top: 6%;
+    opacity: 0.2;
+  }
+  15% {
+    opacity: 1;
+  }
+  50% {
+    top: 86%;
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    top: 6%;
+    opacity: 0.2;
+  }
+}
+
+@keyframes fpRippleWave {
+  0% {
+    transform: scale(0.65);
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+}
+
+@keyframes fpRidgePulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 3px rgba(52, 211, 153, 0.5));
+    stroke-opacity: 0.75;
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(52, 211, 153, 1)) drop-shadow(0 0 18px rgba(16, 185, 129, 0.7));
+    stroke-opacity: 1;
+  }
+}
+
+@keyframes fpRidgePulseBlue {
+  0%, 100% {
+    filter: drop-shadow(0 0 3px rgba(96, 165, 250, 0.5));
+    stroke-opacity: 0.75;
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(96, 165, 250, 1)) drop-shadow(0 0 18px rgba(59, 130, 246, 0.7));
+    stroke-opacity: 1;
+  }
+}
+
+.animate-fp-trace {
+  animation: fpTraceBeam 2.2s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+}
+
+.animate-fp-ripple-1 {
+  animation: fpRippleWave 2.2s cubic-bezier(0.1, 0.5, 0.4, 1) infinite;
+}
+
+.animate-fp-ripple-2 {
+  animation: fpRippleWave 2.2s cubic-bezier(0.1, 0.5, 0.4, 1) infinite 0.7s;
+}
+
+.animate-fp-ripple-3 {
+  animation: fpRippleWave 2.2s cubic-bezier(0.1, 0.5, 0.4, 1) infinite 1.4s;
+}
+
+.animate-fp-ridges-emerald {
+  animation: fpRidgePulse 1.8s ease-in-out infinite;
+}
+
+.animate-fp-ridges-blue {
+  animation: fpRidgePulseBlue 1.8s ease-in-out infinite;
+}
+
