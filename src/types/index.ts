@@ -85,6 +85,23 @@ export interface Order {
   dateStr: string;          // YYYY-MM-DD
 }
 
+export interface PersonSpendingRow {
+  sNo: number;
+  empId: string;
+  name: string;
+  dept: string;
+  tiffinAmount: number;
+  lunchAmount: number;
+  snacksAmount: number;
+  dinnerAmount: number;
+  totalAmount: number;
+  tiffinCount: number;
+  lunchCount: number;
+  snacksCount: number;
+  dinnerCount: number;
+  totalOrders: number;
+}
+
 export interface VerificationResult {
   type: 'SUCCESS' | 'DUPLICATE_CLAIM' | 'INVALID_TOKEN' | 'IDLE';
   order?: Order;

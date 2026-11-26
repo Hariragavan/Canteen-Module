@@ -10,7 +10,15 @@ import type {
   FoodTransportRecord,
 } from '../types';
 import { apiClient } from './apiClient';
-import { exportOrdersToCSV, exportOrdersToExcel, exportOrdersToPDF } from './reportExportService';
+import {
+  exportOrdersToCSV,
+  exportOrdersToExcel,
+  exportOrdersToPDF,
+  exportPersonSpendingCSV,
+  exportPersonSpendingExcel,
+  exportPersonSpendingPDF,
+  computePersonSpendingRows,
+} from './reportExportService';
 
 const STORAGE_ORDERS_KEY = 'canteen_local_orders_v3';
 const STORAGE_TOKEN_KEY = 'canteen_token_seq_v3';
@@ -821,6 +829,29 @@ class CanteenService {
   public exportAuditPDF(fromDate?: string, toDate?: string, customOrders?: Order[]): void {
     const targetOrders = this.getTargetOrdersForExport(fromDate, toDate, customOrders);
     exportOrdersToPDF(targetOrders, fromDate, toDate);
+  }
+
+  // =========================================================================
+  // PERSON-WISE SPENDING EXPORTS (PRINT ALL / SUMMARY REQUIREMENT)
+  // =========================================================================
+  public getPersonSpendingRows(fromDate?: string, toDate?: string, customOrders?: Order[]) {
+    const targetOrders = this.getTargetOrdersForExport(fromDate, toDate, customOrders);
+    return computePersonSpendingRows(targetOrders);
+  }
+
+  public exportPersonSpendingCSV(fromDate?: string, toDate?: string, customOrders?: Order[]): void {
+    const targetOrders = this.getTargetOrdersForExport(fromDate, toDate, customOrders);
+    exportPersonSpendingCSV(targetOrders, fromDate, toDate);
+  }
+
+  public exportPersonSpendingExcel(fromDate?: string, toDate?: string, customOrders?: Order[]): void {
+    const targetOrders = this.getTargetOrdersForExport(fromDate, toDate, customOrders);
+    exportPersonSpendingExcel(targetOrders, fromDate, toDate);
+  }
+
+  public exportPersonSpendingPDF(fromDate?: string, toDate?: string, customOrders?: Order[]): void {
+    const targetOrders = this.getTargetOrdersForExport(fromDate, toDate, customOrders);
+    exportPersonSpendingPDF(targetOrders, fromDate, toDate);
   }
 
   // =========================================================================
